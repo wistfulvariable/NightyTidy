@@ -1,0 +1,5 @@
+node_modules/
+nightytidy-run.log
+*.log
+.env
+.DS_Store

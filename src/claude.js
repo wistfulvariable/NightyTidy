@@ -1,0 +1,186 @@
+import { spawn } from 'child_process';
+import { platform } from 'os';
+import { info, debug, warn, error as logError } from './logger.js';
+
+const DEFAULT_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+const DEFAULT_RETRIES = 3;
+const RETRY_DELAY = 10000; // 10 seconds
+const STDIN_THRESHOLD = 8000; // chars
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function spawnClaude(prompt, cwd, useShell = false) {
+  const useStdin = prompt.length > STDIN_THRESHOLD;
+
+  const args = useStdin ? [] : ['-p', prompt];
+  const stdinMode = useStdin ? 'pipe' : 'ignore';
+
+  debug(`Spawn mode: ${useStdin ? 'stdin' : '-p flag'}, prompt length: ${prompt.length} chars`);
+
+  const child = spawn('claude', args, {
+    cwd,
+    stdio: [stdinMode, 'pipe', 'pipe'],
+    shell: useShell,
+  });
+
+  if (useStdin) {
+    child.stdin.write(prompt);
+    child.stdin.end();
+  }
+
+  return child;
+}
+
+function runOnce(prompt, cwd, timeoutMs) {
+  return new Promise((resolve) => {
+    let child;
+    let useShell = false;
+
+    try {
+      child = spawnClaude(prompt, cwd, false);
+    } catch {
+      // If spawn fails immediately, try with shell on Windows
+      if (platform() === 'win32') {
+        useShell = true;
+        try {
+          child = spawnClaude(prompt, cwd, true);
+          warn('Claude Code spawned with shell: true (Windows fallback)');
+        } catch (err) {
+          resolve({ success: false, output: '', error: err.message, exitCode: -1 });
+          return;
+        }
+      } else {
+        resolve({ success: false, output: '', error: 'Failed to spawn claude process', exitCode: -1 });
+        return;
+      }
+    }
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill();
+      // Give 5 seconds for graceful exit, then force kill
+      setTimeout(() => {
+        try { child.kill('SIGKILL'); } catch { /* already dead */ }
+      }, 5000);
+      resolve({ success: false, output: stdout, error: 'Claude Code timed out after 30 minutes', exitCode: -1 });
+    }, timeoutMs);
+
+    child.stdout.on('data', (chunk) => {
+      const text = chunk.toString();
+      stdout += text;
+      debug(text.trimEnd());
+    });
+
+    child.stderr.on('data', (chunk) => {
+      const text = chunk.toString();
+      stderr += text;
+      if (text.trim()) warn(`Claude stderr: ${text.trimEnd()}`);
+    });
+
+    child.on('error', (err) => {
+      if (settled) return;
+
+      // Windows ENOENT fallback
+      if (err.code === 'ENOENT' && platform() === 'win32' && !useShell) {
+        clearTimeout(timer);
+        warn('Claude Code ENOENT — retrying with shell: true (Windows fallback)');
+        const retry = runOnce(prompt, cwd, timeoutMs);
+        // Patch: the retry is already resolving with the shell fallback internally
+        // We need to spawn with shell this time
+        settled = true;
+        const shellChild = spawnClaude(prompt, cwd, true);
+        let shellStdout = '';
+        let shellSettled = false;
+
+        const shellTimer = setTimeout(() => {
+          if (shellSettled) return;
+          shellSettled = true;
+          shellChild.kill();
+          resolve({ success: false, output: shellStdout, error: 'Claude Code timed out after 30 minutes', exitCode: -1 });
+        }, timeoutMs);
+
+        shellChild.stdout.on('data', (chunk) => { shellStdout += chunk.toString(); });
+        shellChild.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+
+        shellChild.on('error', (shellErr) => {
+          if (shellSettled) return;
+          shellSettled = true;
+          clearTimeout(shellTimer);
+          resolve({ success: false, output: '', error: shellErr.message, exitCode: -1 });
+        });
+
+        shellChild.on('close', (code) => {
+          if (shellSettled) return;
+          shellSettled = true;
+          clearTimeout(shellTimer);
+          const ok = code === 0 && shellStdout.trim().length > 0;
+          resolve({ success: ok, output: shellStdout, error: ok ? null : `Exit code ${code}`, exitCode: code });
+        });
+        return;
+      }
+
+      settled = true;
+      clearTimeout(timer);
+      resolve({ success: false, output: '', error: err.message, exitCode: -1 });
+    });
+
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      const ok = code === 0 && stdout.trim().length > 0;
+      resolve({
+        success: ok,
+        output: stdout,
+        error: ok ? null : (code === 0 ? 'Empty output' : `Exit code ${code}`),
+        exitCode: code,
+      });
+    });
+  });
+}
+
+export async function runPrompt(prompt, cwd, options = {}) {
+  const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT;
+  const maxRetries = options.retries ?? DEFAULT_RETRIES;
+  const label = options.label ?? 'prompt';
+  const totalAttempts = maxRetries + 1;
+
+  const startTime = Date.now();
+
+  for (let attempt = 1; attempt <= totalAttempts; attempt++) {
+    info(`Running Claude Code: ${label} (attempt ${attempt}/${totalAttempts})`);
+
+    const result = await runOnce(prompt, cwd, timeoutMs);
+
+    if (result.success) {
+      const duration = Date.now() - startTime;
+      info(`Claude Code completed: ${label} — exit code ${result.exitCode}, ${Math.round(duration / 1000)}s`);
+      return { ...result, duration, attempts: attempt };
+    }
+
+    warn(`Claude Code failed: ${label} — ${result.error} (attempt ${attempt}/${totalAttempts})`);
+
+    if (attempt < totalAttempts) {
+      warn(`Retrying ${label} in 10s (attempt ${attempt + 1}/${totalAttempts})`);
+      await sleep(RETRY_DELAY);
+    }
+  }
+
+  const duration = Date.now() - startTime;
+  logError(`Claude Code failed: ${label} — all ${totalAttempts} attempts exhausted`);
+  return {
+    success: false,
+    output: '',
+    error: `Failed after ${totalAttempts} attempts`,
+    exitCode: -1,
+    duration,
+    attempts: totalAttempts,
+  };
+}

@@ -1,0 +1,27 @@
+{
+  "name": "nightytidy",
+  "version": "0.1.0",
+  "description": "Automated overnight codebase improvement through Claude Code",
+  "type": "module",
+  "bin": {
+    "nightytidy": "./bin/nightytidy.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@inquirer/checkbox": "^5.1.0",
+    "chalk": "^5.6.2",
+    "commander": "^12.1.0",
+    "node-notifier": "^10.0.1",
+    "ora": "^8.2.0",
+    "simple-git": "^3.32.3"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.9"
+  }
+}
