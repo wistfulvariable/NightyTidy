@@ -3,3 +3,7 @@ nightytidy-run.log
 *.log
 .env
 .DS_Store
+
+# Claude Code — ignore all except memory files
+.claude/*
+!.claude/memory/

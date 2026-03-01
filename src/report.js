@@ -25,7 +25,7 @@ function fallbackNarration(results) {
 function buildSummarySection(results, metadata) {
   const date = new Date(metadata.startTime).toISOString().split('T')[0];
   const duration = formatDuration(metadata.endTime - metadata.startTime);
-  const total = results.completedCount + results.failedCount + results.skippedCount;
+  const total = results.completedCount + results.failedCount;
 
   return (
     `## Run Summary\n\n` +

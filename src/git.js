@@ -92,11 +92,6 @@ export async function mergeRunBranch(originalBranch, runBranch) {
   }
 }
 
-export async function findExistingRunBranches() {
-  const branches = await git.branch();
-  return branches.all.filter(b => b.startsWith('nightytidy/run-'));
-}
-
 export function getGitInstance() {
   return git;
 }

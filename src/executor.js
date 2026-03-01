@@ -88,6 +88,5 @@ export async function executeSteps(selectedSteps, projectDir, { signal, onStepSt
     totalDuration,
     completedCount,
     failedCount,
-    skippedCount: 0,
   };
 }

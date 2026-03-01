@@ -132,6 +132,27 @@ describe('executeSteps', () => {
     expect(fallbackCommit).toHaveBeenCalledWith(5, 'Refactor');
   });
 
+  it('does not log doc update warning when doc update succeeds', async () => {
+    const steps = [makeStep(1, 'Lint')];
+
+    // Both improvement and doc update succeed
+    runPrompt.mockResolvedValue({
+      success: true,
+      output: 'ok',
+      error: null,
+      exitCode: 0,
+      attempts: 1,
+    });
+
+    await executeSteps(steps, '/fake/project');
+
+    // warn should NOT have been called with a doc update failure message
+    const docUpdateWarnings = warn.mock.calls.filter(
+      (call) => call[0]?.includes?.('Doc update failed')
+    );
+    expect(docUpdateWarnings).toHaveLength(0);
+  });
+
   it('stops processing when abort signal fires after step 1', async () => {
     const steps = [makeStep(1, 'Lint'), makeStep(2, 'Format'), makeStep(3, 'Docs')];
     const controller = new AbortController();

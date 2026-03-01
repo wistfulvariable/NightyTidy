@@ -56,7 +56,6 @@ function makeResults({ completedCount = 2, failedCount = 0 } = {}) {
     results,
     completedCount,
     failedCount,
-    skippedCount: 0,
   };
 }
 

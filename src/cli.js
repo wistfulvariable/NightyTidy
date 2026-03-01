@@ -13,7 +13,7 @@ import { runPrompt } from './claude.js';
 import { STEPS, CHANGELOG_PROMPT } from './prompts/steps.js';
 import { executeSteps } from './executor.js';
 import { notify } from './notifications.js';
-import { generateReport } from './report.js';
+import { generateReport, formatDuration } from './report.js';
 
 function showWelcome() {
   const markerDir = path.join(homedir(), '.nightytidy');
@@ -237,7 +237,7 @@ export async function run() {
     }
 
     // 15. Terminal summary
-    const durationStr = formatTerminalDuration(executionResults.totalDuration);
+    const durationStr = formatDuration(executionResults.totalDuration);
 
     if (mergeResult.success) {
       if (executionResults.failedCount === 0) {
@@ -279,15 +279,4 @@ export async function run() {
 
     process.exit(1);
   }
-}
-
-function formatTerminalDuration(ms) {
-  const seconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-
-  if (hours > 0) {
-    return `${hours}h ${String(minutes % 60).padStart(2, '0')}m`;
-  }
-  return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`;
 }

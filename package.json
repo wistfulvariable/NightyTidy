@@ -8,7 +8,8 @@
   },
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:ci": "vitest run --coverage"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -22,6 +23,7 @@
     "simple-git": "^3.32.3"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^2.1.9",
     "vitest": "^2.1.9"
   }
 }
