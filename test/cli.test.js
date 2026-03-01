@@ -89,6 +89,7 @@ vi.mock('../src/notifications.js', () => ({
 vi.mock('../src/report.js', () => ({
   generateReport: vi.fn(),
   formatDuration: vi.fn((ms) => `${Math.round(ms / 1000)}s`),
+  getVersion: vi.fn(() => '0.1.0'),
 }));
 
 // ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ import { runPrompt } from './claude.js';
 import { STEPS, CHANGELOG_PROMPT } from './prompts/steps.js';
 import { executeSteps } from './executor.js';
 import { notify } from './notifications.js';
-import { generateReport, formatDuration } from './report.js';
+import { generateReport, formatDuration, getVersion } from './report.js';
 
 function buildStepCallbacks(spinner, selected) {
   return {
@@ -142,7 +142,7 @@ export async function run() {
   program
     .name('nightytidy')
     .description('Automated overnight codebase improvement through Claude Code')
-    .version('0.1.0');
+    .version(getVersion());
 
   program.parse();
 
