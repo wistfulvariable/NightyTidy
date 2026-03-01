@@ -6,6 +6,7 @@ const DEFAULT_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 const DEFAULT_RETRIES = 3;
 const RETRY_DELAY = 10000; // 10 seconds
 const STDIN_THRESHOLD = 8000; // chars
+const TIMEOUT_MESSAGE = 'Claude Code timed out after 30 minutes';
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -69,7 +70,7 @@ function runOnce(prompt, cwd, timeoutMs) {
       setTimeout(() => {
         try { child.kill('SIGKILL'); } catch { /* already dead */ }
       }, 5000);
-      resolve({ success: false, output: stdout, error: 'Claude Code timed out after 30 minutes', exitCode: -1 });
+      resolve({ success: false, output: stdout, error: TIMEOUT_MESSAGE, exitCode: -1 });
     }, timeoutMs);
 
     child.stdout.on('data', (chunk) => {
@@ -100,7 +101,7 @@ function runOnce(prompt, cwd, timeoutMs) {
           if (shellSettled) return;
           shellSettled = true;
           shellChild.kill();
-          resolve({ success: false, output: shellStdout, error: 'Claude Code timed out after 30 minutes', exitCode: -1 });
+          resolve({ success: false, output: shellStdout, error: TIMEOUT_MESSAGE, exitCode: -1 });
         }, timeoutMs);
 
         shellChild.stdout.on('data', (chunk) => { shellStdout += chunk.toString(); });
