@@ -111,6 +111,7 @@ No secrets or API keys — Claude Code handles its own authentication.
 - **Imports**: Node builtins first, then npm packages, then local modules
 - **Functions**: export only public API; keep helpers as unexported module-level functions
 - **Git commit messages**: prefixed with `NightyTidy:` for all automated commits
+- **Error message style**: specific, actionable, blame-free. Follow patterns in `docs/ERROR_MESSAGES.md`
 
 ## Init Sequence (Order Matters)
 
