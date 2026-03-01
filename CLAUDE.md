@@ -59,6 +59,8 @@ test/
   contracts.test.js        # 17 tests — module API contract verification against CLAUDE.md
   helpers/
     cleanup.js             # Shared temp directory cleanup with EBUSY retry for Windows
+    mocks.js               # Shared mock factories: createMockProcess, createErrorProcess, createMockGit
+    testdata.js            # Shared test data factories: makeMetadata, makeResults
 vitest.config.js           # Coverage thresholds only (statements 90%, branches 80%, functions 80%)
 00_README.md .. 14_*.md    # PRD decomposition docs (reference only — not loaded by AI)
 ```
