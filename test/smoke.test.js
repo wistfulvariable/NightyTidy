@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'fs/promises';
+import { mkdtemp, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
+import { robustCleanup } from './helpers/cleanup.js';
 
 // ---------------------------------------------------------------------------
 // Smoke tests — structural integrity of the NightyTidy CLI tool
@@ -53,7 +54,7 @@ describe('smoke tests', () => {
       const logPath = path.join(tempDir, 'nightytidy-run.log');
       expect(existsSync(logPath)).toBe(true);
     } finally {
-      await rm(tempDir, { recursive: true, force: true });
+      await robustCleanup(tempDir);
     }
   });
 
@@ -81,7 +82,7 @@ describe('smoke tests', () => {
       expect(typeof branch).toBe('string');
       expect(branch.length).toBeGreaterThan(0);
     } finally {
-      await rm(tempDir, { recursive: true, force: true });
+      await robustCleanup(tempDir);
     }
   });
 

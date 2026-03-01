@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile, readFile } from 'fs/promises';
+import { mkdtemp, writeFile, readFile } from 'fs/promises';
 import { existsSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
+import { robustCleanup } from './helpers/cleanup.js';
 import simpleGit from 'simple-git';
 
 // ---------------------------------------------------------------------------
@@ -54,7 +55,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await rm(tempDir, { recursive: true, force: true });
+  await robustCleanup(tempDir);
 });
 
 describe('integration: full execution flow', () => {

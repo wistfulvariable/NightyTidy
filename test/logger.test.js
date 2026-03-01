@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'fs';
-import { mkdtemp, rm } from 'fs/promises';
+import { mkdtemp } from 'fs/promises';
 import { tmpdir } from 'os';
 import path from 'path';
+import { robustCleanup } from './helpers/cleanup.js';
 
 // ---------------------------------------------------------------------------
 // Logger tests — using real file I/O against temp directories
@@ -23,7 +24,7 @@ describe('logger', () => {
   });
 
   afterEach(async () => {
-    await rm(tempDir, { recursive: true, force: true });
+    await robustCleanup(tempDir);
   });
 
   it('throws if log functions are called before initLogger', async () => {
@@ -193,7 +194,7 @@ describe('logger', () => {
       initLogger(ephemeralDir);
 
       // Remove the directory (and log file) so writes fail
-      await rm(ephemeralDir, { recursive: true, force: true });
+      await robustCleanup(ephemeralDir);
 
       info('fallback test');
 

@@ -9,7 +9,7 @@ Automated overnight codebase improvement through Claude Code. NightyTidy is an o
 - **All steps run on a dedicated branch** — `nightytidy/run-*` branches with pre-run safety tag
 - **No bare `console.log`** in production code — use logger (exception: `cli.js` terminal UX output)
 - **No TypeScript, no build step** — plain JavaScript ESM, runs directly
-- **Tests must pass before merging** — `npm test` (119 tests, all must be green)
+- **Tests must pass before merging** — `npm test` (136 tests, all must be green)
 - **Coverage thresholds enforced** — `npm run test:ci` fails if statements < 90%, branches < 80%, functions < 80%
 
 ## Tech Stack
@@ -56,6 +56,9 @@ test/
   report-extended.test.js  # 15 tests — updateClaudeMd, formatDuration edge cases
   steps.test.js            # 6 tests — structural integrity of prompt data
   integration.test.js      # 5 tests — multi-module integration with real git repos
+  contracts.test.js        # 17 tests — module API contract verification against CLAUDE.md
+  helpers/
+    cleanup.js             # Shared temp directory cleanup with EBUSY retry for Windows
 vitest.config.js           # Coverage thresholds only (statements 90%, branches 80%, functions 80%)
 00_README.md .. 14_*.md    # PRD decomposition docs (reference only — not loaded by AI)
 ```
@@ -121,7 +124,7 @@ No secrets or API keys — Claude Code handles its own authentication.
 
 Calling any module before `initLogger()` throws. Calling git operations before `initGit()` gives null reference errors.
 
-## Key Constants
+## Key Constants (internal — not exported)
 
 | Constant | Value | Location | Affects |
 |----------|-------|----------|---------|
@@ -152,6 +155,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **Don't make notifications blocking** — they must be fire-and-forget
 - **Don't use raw `child_process.exec`** — use `spawn` for streaming stdout and timeout control
 - **Don't commit `nightytidy-run.log`** — it's per-run ephemeral output
+- **Don't use raw `rm()` in tests** — use `robustCleanup()` from `test/helpers/cleanup.js` for temp directory cleanup (prevents EBUSY flakiness on Windows)
 
 ## Architectural Rules
 
@@ -223,12 +227,14 @@ bin/nightytidy.js
 ## Testing
 
 - **Framework**: Vitest v2, `vitest.config.js` for coverage thresholds only
-- **119 tests** across 14 files — `npm test` to run, `npm run test:ci` for coverage enforcement
+- **136 tests** across 15 files — `npm test` to run, `npm run test:ci` for coverage enforcement
 - **Coverage thresholds**: 90% statements, 80% branches, 80% functions — enforced by `test:ci`
 - **Philosophy**: Mock Claude Code subprocess, use real git against temp directories. Test failure paths harder than success paths
 - **Universal mock**: All test files mock `../src/logger.js` to prevent file I/O during tests (exception: `logger.test.js` tests the real logger)
 - **Integration tests**: `git.test.js`, `git-extended.test.js`, `integration.test.js` use real temp git repos — run slower but catch real issues
 - **Smoke tests**: `smoke.test.js` — 6 fast structural checks for deploy verification (< 3s)
+- **Contract tests**: `contracts.test.js` — 17 tests verifying each module's error handling contract matches this document
+- **Temp dir cleanup**: Always use `robustCleanup()` from `test/helpers/cleanup.js` instead of raw `rm()` — Windows EBUSY from git file handles causes flaky failures otherwise
 - See `.claude/memory/testing.md` for detailed mock patterns and pitfalls
 
 ## Known Technical Debt
