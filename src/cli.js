@@ -155,7 +155,7 @@ export async function run() {
 
   // Unhandled rejection safety net
   process.on('unhandledRejection', (reason) => {
-    try { logError(`Unhandled rejection: ${reason}`); } catch { /* logger may not be init */ }
+    try { logError(`Unhandled rejection: ${reason instanceof Error ? reason.message : String(reason)}`); } catch { /* logger may not be init */ }
     console.error(chalk.red('\n\u274c An unexpected error occurred. Check nightytidy-run.log for details.'));
     process.exit(1);
   });

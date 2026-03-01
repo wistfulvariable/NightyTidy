@@ -67,10 +67,10 @@ describe('generateReport', () => {
 
     const reportContent = writeFileSync.mock.calls[0][1];
 
-    // Fallback narration mentions step counts and suggests checking the log
+    // Fallback narration mentions step counts and suggests a recovery action
     expect(reportContent).toContain('NightyTidy ran 3 improvement steps');
     expect(reportContent).toContain('2 steps completed successfully');
-    expect(reportContent).toContain('nightytidy-run.log');
+    expect(reportContent).toContain('Try re-running the changelog step individually');
   });
 });
 

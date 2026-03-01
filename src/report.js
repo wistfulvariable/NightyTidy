@@ -30,8 +30,9 @@ function fallbackNarration(results) {
   return (
     `NightyTidy ran ${results.completedCount + results.failedCount} improvement steps on your codebase. ` +
     `${results.completedCount} steps completed successfully. ` +
-    `See the step results below for details on what changed. The detailed changelog couldn't ` +
-    `be generated this time \u2014 check nightytidy-run.log for more information.`
+    `See the step results below for details on what changed. A detailed changelog could not ` +
+    `be generated \u2014 this typically happens when Claude Code is under heavy load. ` +
+    `Try re-running the changelog step individually if needed.`
   );
 }
 
@@ -71,7 +72,7 @@ function buildFailedSection(results) {
   for (const r of results.results) {
     if (r.status !== 'failed') continue;
     section += `### Step ${r.step.number}: ${r.step.name}\n`;
-    section += `- **Error**: ${r.error || 'Unknown error'}\n`;
+    section += `- **Error**: ${r.error || 'No error details available'}\n`;
     section += `- **Attempts**: ${r.attempts} (1 initial + ${r.attempts - 1} retries)\n`;
     section += `- **Suggestion**: Try running this step individually later with \`nightytidy\` and selecting only this step.\n\n`;
   }
