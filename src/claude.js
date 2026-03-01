@@ -59,7 +59,7 @@ function waitForChild(child, timeoutMs, { verbose = true } = {}) {
 
     child.stderr.on('data', (chunk) => {
       const text = chunk.toString();
-      if (verbose && text.trim()) warn(`Claude stderr: ${text.trimEnd()}`);
+      if (verbose && text.trim()) warn(`Claude Code warning output: ${text.trimEnd()}`);
     });
 
     child.on('error', (err) => {
@@ -77,7 +77,7 @@ function waitForChild(child, timeoutMs, { verbose = true } = {}) {
       resolve({
         success: ok,
         output: stdout,
-        error: ok ? null : (code === 0 ? 'Empty output' : `Exit code ${code}`),
+        error: ok ? null : (code === 0 ? 'Claude Code returned empty output' : `Claude Code exited with error code ${code}`),
         exitCode: code,
       });
     });
@@ -96,12 +96,12 @@ async function runOnce(prompt, cwd, timeoutMs) {
       useShell = true;
       try {
         child = spawnClaude(prompt, cwd, true);
-        warn('Claude Code spawned with shell: true (Windows fallback)');
+        warn('Claude Code started using shell mode (Windows compatibility)');
       } catch (err) {
         return { success: false, output: '', error: err.message, exitCode: -1 };
       }
     } else {
-      return { success: false, output: '', error: 'Failed to spawn claude process', exitCode: -1 };
+      return { success: false, output: '', error: 'Failed to start Claude Code. Ensure the "claude" command is installed and on your PATH.', exitCode: -1 };
     }
   }
 
@@ -109,7 +109,7 @@ async function runOnce(prompt, cwd, timeoutMs) {
 
   // Windows ENOENT fallback — retry with shell: true
   if (result._errorCode === 'ENOENT' && platform() === 'win32' && !useShell) {
-    warn('Claude Code ENOENT — retrying with shell: true (Windows fallback)');
+    warn('Claude Code command not found — retrying with shell mode (Windows)');
     const shellChild = spawnClaude(prompt, cwd, true);
     const shellResult = await waitForChild(shellChild, timeoutMs, { verbose: false });
     delete shellResult._errorCode;
@@ -135,7 +135,7 @@ export async function runPrompt(prompt, cwd, options = {}) {
 
     if (result.success) {
       const duration = Date.now() - startTime;
-      info(`Claude Code completed: ${label} — exit code ${result.exitCode}, ${Math.round(duration / 1000)}s`);
+      info(`Claude Code completed: ${label} — ${Math.round(duration / 1000)}s`);
       return { ...result, duration, attempts: attempt };
     }
 
