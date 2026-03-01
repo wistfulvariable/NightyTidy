@@ -124,7 +124,7 @@ No secrets or API keys — Claude Code handles its own authentication.
 
 Calling any module before `initLogger()` throws. Calling git operations before `initGit()` gives null reference errors.
 
-## Key Constants
+## Key Constants (internal — not exported)
 
 | Constant | Value | Location | Affects |
 |----------|-------|----------|---------|
@@ -155,6 +155,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **Don't make notifications blocking** — they must be fire-and-forget
 - **Don't use raw `child_process.exec`** — use `spawn` for streaming stdout and timeout control
 - **Don't commit `nightytidy-run.log`** — it's per-run ephemeral output
+- **Don't use raw `rm()` in tests** — use `robustCleanup()` from `test/helpers/cleanup.js` for temp directory cleanup (prevents EBUSY flakiness on Windows)
 
 ## Architectural Rules
 
@@ -232,6 +233,8 @@ bin/nightytidy.js
 - **Universal mock**: All test files mock `../src/logger.js` to prevent file I/O during tests (exception: `logger.test.js` tests the real logger)
 - **Integration tests**: `git.test.js`, `git-extended.test.js`, `integration.test.js` use real temp git repos — run slower but catch real issues
 - **Smoke tests**: `smoke.test.js` — 6 fast structural checks for deploy verification (< 3s)
+- **Contract tests**: `contracts.test.js` — 17 tests verifying each module's error handling contract matches this document
+- **Temp dir cleanup**: Always use `robustCleanup()` from `test/helpers/cleanup.js` instead of raw `rm()` — Windows EBUSY from git file handles causes flaky failures otherwise
 - See `.claude/memory/testing.md` for detailed mock patterns and pitfalls
 
 ## Known Technical Debt
