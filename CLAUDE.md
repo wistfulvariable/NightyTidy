@@ -77,7 +77,7 @@ vitest.config.js           # Coverage thresholds only (statements 90%, branches 
 | `src/checks.js` | Pre-run validation (5 checks) | logger |
 | `src/notifications.js` | Desktop notifications | logger |
 | `src/logger.js` | File + stdout logger (universal dep) | none |
-| `src/report.js` | Report generation + CLAUDE.md update | logger |
+| `src/report.js` | Report generation + CLAUDE.md update + `getVersion()` | logger |
 | `src/prompts/steps.js` | 28 prompts + doc update + changelog | none (data only) |
 
 ## Build & Run Commands
@@ -134,6 +134,10 @@ Calling any module before `initLogger()` throws. Calling git operations before `
 | `DEFAULT_RETRIES` | 3 | `claude.js` | Retry count per prompt (total attempts = retries + 1) |
 | `RETRY_DELAY` | 10,000 ms | `claude.js` | Delay between retry attempts |
 | `STDIN_THRESHOLD` | 8,000 chars | `claude.js` | Prompts above this use stdin pipe instead of `-p` flag |
+| `TIMEOUT_MESSAGE` | `'Claude Code timed out after 30 minutes'` | `claude.js` | Error message on timeout |
+| `AUTH_TIMEOUT_MS` | 30,000 ms | `checks.js` | Timeout for Claude auth check |
+| `CRITICAL_DISK_MB` | 100 MB | `checks.js` | Disk space below this = fatal error |
+| `LOW_DISK_MB` | 1,024 MB | `checks.js` | Disk space below this = warning |
 | `LEVELS` | `{ debug:0, info:1, warn:2, error:3 }` | `logger.js` | Log level filtering |
 
 ## Generated Files (in target project)
@@ -210,7 +214,7 @@ bin/nightytidy.js
         ├── src/executor.js          → claude, git, notifications, logger, prompts/steps
         ├── src/prompts/steps.js     (no deps — data only)
         ├── src/notifications.js     → logger
-        └── src/report.js            → logger  (cli.js also imports formatDuration from here)
+        └── src/report.js            → logger  (cli.js imports formatDuration + getVersion)
 ```
 
 `logger.js` is the single universal dependency — every module imports it.

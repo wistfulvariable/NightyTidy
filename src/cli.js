@@ -13,7 +13,96 @@ import { runPrompt } from './claude.js';
 import { STEPS, CHANGELOG_PROMPT } from './prompts/steps.js';
 import { executeSteps } from './executor.js';
 import { notify } from './notifications.js';
-import { generateReport, formatDuration } from './report.js';
+import { generateReport, formatDuration, getVersion } from './report.js';
+
+function buildStepCallbacks(spinner, selected) {
+  return {
+    onStepStart: (step, idx, total) => {
+      spinner.text = `\u23f3 Step ${idx + 1}/${total}: ${step.name}...`;
+    },
+    onStepComplete: (step, idx, total) => {
+      spinner.stop();
+      console.log(chalk.green(`\u2713 Step ${idx + 1}/${total}: ${step.name} \u2014 done`));
+      if (idx + 1 < total) {
+        spinner.start(`\u23f3 Step ${idx + 2}/${total}: ${selected[idx + 1].name}...`);
+      }
+    },
+    onStepFail: (step, idx, total) => {
+      spinner.stop();
+      console.log(chalk.red(`\u2717 Step ${idx + 1}/${total}: ${step.name} \u2014 failed`));
+      if (idx + 1 < total) {
+        spinner.start(`\u23f3 Step ${idx + 2}/${total}: ${selected[idx + 1].name}...`);
+      }
+    },
+  };
+}
+
+async function handleAbortedRun(executionResults, { projectDir, runBranch, tagName, originalBranch }) {
+  info('Run interrupted by user');
+  await generateReport(executionResults, null, {
+    projectDir,
+    branchName: runBranch,
+    tagName,
+    originalBranch,
+    startTime: Date.now() - executionResults.totalDuration,
+    endTime: Date.now(),
+  });
+
+  const gitInstance = getGitInstance();
+  try {
+    await gitInstance.add(['NIGHTYTIDY-REPORT.md']);
+    await gitInstance.commit('NightyTidy: Add partial run report');
+  } catch { /* ignore */ }
+
+  notify('NightyTidy Stopped', `${executionResults.completedCount} steps completed. Changes on branch ${runBranch}.`);
+
+  console.log(chalk.yellow(
+    `\n\u26a0\ufe0f  NightyTidy stopped. ${executionResults.completedCount} steps completed.\n` +
+    `   Changes are on branch: ${runBranch}\n` +
+    `   To merge what was done: git checkout ${originalBranch} && git merge ${runBranch}\n`
+  ));
+  process.exit(0);
+}
+
+function printCompletionSummary(executionResults, mergeResult, { runBranch, tagName }) {
+  const totalSteps = executionResults.completedCount + executionResults.failedCount;
+  const durationStr = formatDuration(executionResults.totalDuration);
+
+  if (mergeResult.success) {
+    if (executionResults.failedCount === 0) {
+      notify('NightyTidy Complete \u2713', `All ${executionResults.completedCount} steps succeeded. See NIGHTYTIDY-REPORT.md`);
+    } else {
+      notify('NightyTidy Complete', `${executionResults.completedCount}/${totalSteps} succeeded, ${executionResults.failedCount} failed. See NIGHTYTIDY-REPORT.md`);
+    }
+  } else {
+    notify('NightyTidy Complete', `${executionResults.completedCount}/${totalSteps} steps done. Merge needs attention \u2014 see terminal.`);
+    notify('NightyTidy: Merge Conflict', `Changes are on branch ${runBranch}. See NIGHTYTIDY-REPORT.md for resolution steps.`);
+  }
+
+  if (mergeResult.success) {
+    if (executionResults.failedCount === 0) {
+      console.log(chalk.green(`\n\u2705 NightyTidy complete \u2014 ${executionResults.completedCount}/${totalSteps} steps succeeded (${durationStr})`));
+    } else {
+      console.log(chalk.yellow(`\n\u26a0\ufe0f  NightyTidy complete \u2014 ${executionResults.completedCount}/${totalSteps} steps succeeded, ${executionResults.failedCount} failed (${durationStr})`));
+    }
+    console.log(chalk.dim(`\ud83d\udcc4 Report: NIGHTYTIDY-REPORT.md`));
+    console.log(chalk.dim(`\ud83c\udff7\ufe0f  Safety tag: ${tagName}`));
+  } else {
+    console.log(chalk.yellow(`\n\u26a0\ufe0f  NightyTidy complete \u2014 ${executionResults.completedCount}/${totalSteps} steps succeeded, but merge needs attention.`));
+    console.log(chalk.dim(`\ud83d\udcc4 Changes on branch: ${runBranch}`));
+    console.log(chalk.dim(`\ud83c\udff7\ufe0f  Safety tag: ${tagName}`));
+    console.log(chalk.yellow(
+      `\n   Your improvements are safe on: ${runBranch}\n\n` +
+      `   To merge manually:\n` +
+      `     git merge ${runBranch}\n` +
+      `     (resolve conflicts)\n` +
+      `     git commit\n\n` +
+      `   Or ask Claude Code:\n` +
+      `     "Merge the branch ${runBranch} into my current branch\n` +
+      `      and resolve any conflicts."\n`
+    ));
+  }
+}
 
 function showWelcome() {
   const markerDir = path.join(homedir(), '.nightytidy');
@@ -53,7 +142,7 @@ export async function run() {
   program
     .name('nightytidy')
     .description('Automated overnight codebase improvement through Claude Code')
-    .version('0.1.0');
+    .version(getVersion());
 
   program.parse();
 
@@ -137,54 +226,14 @@ export async function run() {
     // 9. Execute steps
     const executionResults = await executeSteps(selected, projectDir, {
       signal: abortController.signal,
-      onStepStart: (step, idx, total) => {
-        spinner.text = `\u23f3 Step ${idx + 1}/${total}: ${step.name}...`;
-      },
-      onStepComplete: (step, idx, total) => {
-        spinner.stop();
-        console.log(chalk.green(`\u2713 Step ${idx + 1}/${total}: ${step.name} \u2014 done`));
-        if (idx + 1 < total) {
-          spinner.start(`\u23f3 Step ${idx + 2}/${total}: ${selected[idx + 1].name}...`);
-        }
-      },
-      onStepFail: (step, idx, total) => {
-        spinner.stop();
-        console.log(chalk.red(`\u2717 Step ${idx + 1}/${total}: ${step.name} \u2014 failed`));
-        if (idx + 1 < total) {
-          spinner.start(`\u23f3 Step ${idx + 2}/${total}: ${selected[idx + 1].name}...`);
-        }
-      },
+      ...buildStepCallbacks(spinner, selected),
     });
 
     spinner.stop();
 
     // Handle interrupted run
     if (abortController.signal.aborted) {
-      info('Run interrupted by user');
-      await generateReport(executionResults, null, {
-        projectDir,
-        branchName: runBranch,
-        tagName,
-        originalBranch,
-        startTime: Date.now() - executionResults.totalDuration,
-        endTime: Date.now(),
-      });
-
-      // Commit partial report on run branch
-      const gitInstance = getGitInstance();
-      try {
-        await gitInstance.add(['NIGHTYTIDY-REPORT.md']);
-        await gitInstance.commit('NightyTidy: Add partial run report');
-      } catch { /* ignore */ }
-
-      notify('NightyTidy Stopped', `${executionResults.completedCount} steps completed. Changes on branch ${runBranch}.`);
-
-      console.log(chalk.yellow(
-        `\n\u26a0\ufe0f  NightyTidy stopped. ${executionResults.completedCount} steps completed.\n` +
-        `   Changes are on branch: ${runBranch}\n` +
-        `   To merge what was done: git checkout ${originalBranch} && git merge ${runBranch}\n`
-      ));
-      process.exit(0);
+      await handleAbortedRun(executionResults, { projectDir, runBranch, tagName, originalBranch });
     }
 
     // 10. Narrated changelog
@@ -222,46 +271,8 @@ export async function run() {
     // 13. Merge run branch
     const mergeResult = await mergeRunBranch(originalBranch, runBranch);
 
-    // 14. Completion notification
-    const totalSteps = executionResults.completedCount + executionResults.failedCount;
-
-    if (mergeResult.success) {
-      if (executionResults.failedCount === 0) {
-        notify('NightyTidy Complete \u2713', `All ${executionResults.completedCount} steps succeeded. See NIGHTYTIDY-REPORT.md`);
-      } else {
-        notify('NightyTidy Complete', `${executionResults.completedCount}/${totalSteps} succeeded, ${executionResults.failedCount} failed. See NIGHTYTIDY-REPORT.md`);
-      }
-    } else {
-      notify('NightyTidy Complete', `${executionResults.completedCount}/${totalSteps} steps done. Merge needs attention \u2014 see terminal.`);
-      notify('NightyTidy: Merge Conflict', `Changes are on branch ${runBranch}. See NIGHTYTIDY-REPORT.md for resolution steps.`);
-    }
-
-    // 15. Terminal summary
-    const durationStr = formatDuration(executionResults.totalDuration);
-
-    if (mergeResult.success) {
-      if (executionResults.failedCount === 0) {
-        console.log(chalk.green(`\n\u2705 NightyTidy complete \u2014 ${executionResults.completedCount}/${totalSteps} steps succeeded (${durationStr})`));
-      } else {
-        console.log(chalk.yellow(`\n\u26a0\ufe0f  NightyTidy complete \u2014 ${executionResults.completedCount}/${totalSteps} steps succeeded, ${executionResults.failedCount} failed (${durationStr})`));
-      }
-      console.log(chalk.dim(`\ud83d\udcc4 Report: NIGHTYTIDY-REPORT.md`));
-      console.log(chalk.dim(`\ud83c\udff7\ufe0f  Safety tag: ${tagName}`));
-    } else {
-      console.log(chalk.yellow(`\n\u26a0\ufe0f  NightyTidy complete \u2014 ${executionResults.completedCount}/${totalSteps} steps succeeded, but merge needs attention.`));
-      console.log(chalk.dim(`\ud83d\udcc4 Changes on branch: ${runBranch}`));
-      console.log(chalk.dim(`\ud83c\udff7\ufe0f  Safety tag: ${tagName}`));
-      console.log(chalk.yellow(
-        `\n   Your improvements are safe on: ${runBranch}\n\n` +
-        `   To merge manually:\n` +
-        `     git merge ${runBranch}\n` +
-        `     (resolve conflicts)\n` +
-        `     git commit\n\n` +
-        `   Or ask Claude Code:\n` +
-        `     "Merge the branch ${runBranch} into my current branch\n` +
-        `      and resolve any conflicts."\n`
-      ));
-    }
+    // 14. Completion notification + terminal summary
+    printCompletionSummary(executionResults, mergeResult, { runBranch, tagName });
 
   } catch (err) {
     spinner?.stop();

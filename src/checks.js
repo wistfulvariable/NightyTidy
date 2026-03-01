@@ -2,45 +2,34 @@ import { spawn } from 'child_process';
 import { platform } from 'os';
 import { info, warn, debug } from './logger.js';
 
-function runCommand(cmd, args, options = {}) {
+const AUTH_TIMEOUT_MS = 30000;
+const CRITICAL_DISK_MB = 100;
+const LOW_DISK_MB = 1024;
+
+function runCommand(cmd, args, { timeoutMs, ...spawnOptions } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
       shell: platform() === 'win32',
-      ...options,
+      ...spawnOptions,
     });
 
     let stdout = '';
     let stderr = '';
+    let timer;
+
+    if (timeoutMs) {
+      timer = setTimeout(() => {
+        child.kill();
+        reject(new Error('timeout'));
+      }, timeoutMs);
+    }
 
     child.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
     child.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
 
-    child.on('error', reject);
-    child.on('close', (code) => resolve({ code, stdout, stderr }));
-  });
-}
-
-function runCommandWithTimeout(cmd, args, timeoutMs, options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, {
-      shell: platform() === 'win32',
-      ...options,
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error('timeout'));
-    }, timeoutMs);
-
-    child.stdout?.on('data', (chunk) => { stdout += chunk.toString(); });
-    child.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
-
-    child.on('error', (err) => { clearTimeout(timer); reject(err); });
+    child.on('error', (err) => { if (timer) clearTimeout(timer); reject(err); });
     child.on('close', (code) => {
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
       resolve({ code, stdout, stderr });
     });
   });
@@ -85,7 +74,7 @@ async function checkClaudeInstalled() {
 
 async function checkClaudeAuthenticated() {
   try {
-    const result = await runCommandWithTimeout('claude', ['-p', 'Say OK'], 30000);
+    const result = await runCommand('claude', ['-p', 'Say OK'], { timeoutMs: AUTH_TIMEOUT_MS });
     if (result.code !== 0 || !result.stdout.trim()) {
       throw new Error('auth-failed');
     }
@@ -149,14 +138,14 @@ async function checkDiskSpace(projectDir) {
   const freeMB = Math.round(freeBytes / (1024 * 1024));
   const freeGB = (freeBytes / (1024 * 1024 * 1024)).toFixed(1);
 
-  if (freeMB < 100) {
+  if (freeMB < CRITICAL_DISK_MB) {
     throw new Error(
       `Very low disk space (${freeMB} MB free). NightyTidy needs room for git operations.\n` +
       'Free up some space and try again.'
     );
   }
 
-  if (freeMB < 1024) {
+  if (freeMB < LOW_DISK_MB) {
     warn(`Low disk space (${freeMB} MB free). NightyTidy may fail if your project generates large diffs. Continuing anyway...`);
   }
 

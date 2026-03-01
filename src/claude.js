@@ -6,6 +6,7 @@ const DEFAULT_TIMEOUT = 30 * 60 * 1000; // 30 minutes
 const DEFAULT_RETRIES = 3;
 const RETRY_DELAY = 10000; // 10 seconds
 const STDIN_THRESHOLD = 8000; // chars
+const TIMEOUT_MESSAGE = 'Claude Code timed out after 30 minutes';
 
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -33,99 +34,39 @@ function spawnClaude(prompt, cwd, useShell = false) {
   return child;
 }
 
-function runOnce(prompt, cwd, timeoutMs) {
+function waitForChild(child, timeoutMs, { verbose = true } = {}) {
   return new Promise((resolve) => {
-    let child;
-    let useShell = false;
-
-    try {
-      child = spawnClaude(prompt, cwd, false);
-    } catch {
-      // If spawn fails immediately, try with shell on Windows
-      if (platform() === 'win32') {
-        useShell = true;
-        try {
-          child = spawnClaude(prompt, cwd, true);
-          warn('Claude Code spawned with shell: true (Windows fallback)');
-        } catch (err) {
-          resolve({ success: false, output: '', error: err.message, exitCode: -1 });
-          return;
-        }
-      } else {
-        resolve({ success: false, output: '', error: 'Failed to spawn claude process', exitCode: -1 });
-        return;
-      }
-    }
-
     let stdout = '';
-    let stderr = '';
     let settled = false;
 
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
       child.kill();
-      // Give 5 seconds for graceful exit, then force kill
-      setTimeout(() => {
-        try { child.kill('SIGKILL'); } catch { /* already dead */ }
-      }, 5000);
-      resolve({ success: false, output: stdout, error: 'Claude Code timed out after 30 minutes', exitCode: -1 });
+      if (verbose) {
+        setTimeout(() => {
+          try { child.kill('SIGKILL'); } catch { /* already dead */ }
+        }, 5000);
+      }
+      resolve({ success: false, output: stdout, error: TIMEOUT_MESSAGE, exitCode: -1 });
     }, timeoutMs);
 
     child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
       stdout += text;
-      debug(text.trimEnd());
+      if (verbose) debug(text.trimEnd());
     });
 
     child.stderr.on('data', (chunk) => {
       const text = chunk.toString();
-      stderr += text;
-      if (text.trim()) warn(`Claude stderr: ${text.trimEnd()}`);
+      if (verbose && text.trim()) warn(`Claude stderr: ${text.trimEnd()}`);
     });
 
     child.on('error', (err) => {
       if (settled) return;
-
-      // Windows ENOENT fallback
-      if (err.code === 'ENOENT' && platform() === 'win32' && !useShell) {
-        clearTimeout(timer);
-        warn('Claude Code ENOENT — retrying with shell: true (Windows fallback)');
-        settled = true;
-        const shellChild = spawnClaude(prompt, cwd, true);
-        let shellStdout = '';
-        let shellSettled = false;
-
-        const shellTimer = setTimeout(() => {
-          if (shellSettled) return;
-          shellSettled = true;
-          shellChild.kill();
-          resolve({ success: false, output: shellStdout, error: 'Claude Code timed out after 30 minutes', exitCode: -1 });
-        }, timeoutMs);
-
-        shellChild.stdout.on('data', (chunk) => { shellStdout += chunk.toString(); });
-        shellChild.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-
-        shellChild.on('error', (shellErr) => {
-          if (shellSettled) return;
-          shellSettled = true;
-          clearTimeout(shellTimer);
-          resolve({ success: false, output: '', error: shellErr.message, exitCode: -1 });
-        });
-
-        shellChild.on('close', (code) => {
-          if (shellSettled) return;
-          shellSettled = true;
-          clearTimeout(shellTimer);
-          const ok = code === 0 && shellStdout.trim().length > 0;
-          resolve({ success: ok, output: shellStdout, error: ok ? null : `Exit code ${code}`, exitCode: code });
-        });
-        return;
-      }
-
       settled = true;
       clearTimeout(timer);
-      resolve({ success: false, output: '', error: err.message, exitCode: -1 });
+      resolve({ success: false, output: '', error: err.message, exitCode: -1, _errorCode: err.code });
     });
 
     child.on('close', (code) => {
@@ -141,6 +82,42 @@ function runOnce(prompt, cwd, timeoutMs) {
       });
     });
   });
+}
+
+async function runOnce(prompt, cwd, timeoutMs) {
+  let child;
+  let useShell = false;
+
+  try {
+    child = spawnClaude(prompt, cwd, false);
+  } catch {
+    // If spawn fails immediately, try with shell on Windows
+    if (platform() === 'win32') {
+      useShell = true;
+      try {
+        child = spawnClaude(prompt, cwd, true);
+        warn('Claude Code spawned with shell: true (Windows fallback)');
+      } catch (err) {
+        return { success: false, output: '', error: err.message, exitCode: -1 };
+      }
+    } else {
+      return { success: false, output: '', error: 'Failed to spawn claude process', exitCode: -1 };
+    }
+  }
+
+  const result = await waitForChild(child, timeoutMs);
+
+  // Windows ENOENT fallback — retry with shell: true
+  if (result._errorCode === 'ENOENT' && platform() === 'win32' && !useShell) {
+    warn('Claude Code ENOENT — retrying with shell: true (Windows fallback)');
+    const shellChild = spawnClaude(prompt, cwd, true);
+    const shellResult = await waitForChild(shellChild, timeoutMs, { verbose: false });
+    delete shellResult._errorCode;
+    return shellResult;
+  }
+
+  delete result._errorCode;
+  return result;
 }
 
 export async function runPrompt(prompt, cwd, options = {}) {
