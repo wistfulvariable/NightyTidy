@@ -1,6 +1,6 @@
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 import path from 'path';
-import { info, warn, debug } from './logger.js';
+import { info, warn } from './logger.js';
 
 export function formatDuration(ms) {
   const seconds = Math.floor(ms / 1000);

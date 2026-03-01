@@ -1,6 +1,6 @@
 import { spawn } from 'child_process';
 import { platform } from 'os';
-import { info, error as logError, warn, debug } from './logger.js';
+import { info, warn, debug } from './logger.js';
 
 function runCommand(cmd, args, options = {}) {
   return new Promise((resolve, reject) => {

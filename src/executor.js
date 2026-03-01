@@ -2,7 +2,7 @@ import { runPrompt } from './claude.js';
 import { getHeadHash, hasNewCommit, fallbackCommit } from './git.js';
 import { DOC_UPDATE_PROMPT } from './prompts/steps.js';
 import { notify } from './notifications.js';
-import { info, warn, error as logError, debug } from './logger.js';
+import { info, warn, error as logError } from './logger.js';
 
 export async function executeSteps(selectedSteps, projectDir, { signal, onStepStart, onStepComplete, onStepFail } = {}) {
   const results = [];
