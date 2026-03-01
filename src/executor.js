@@ -4,6 +4,17 @@ import { DOC_UPDATE_PROMPT } from './prompts/steps.js';
 import { notify } from './notifications.js';
 import { info, warn, error as logError } from './logger.js';
 
+function makeStepResult(step, status, result, duration) {
+  return {
+    step: { number: step.number, name: step.name },
+    status,
+    output: result.output,
+    duration,
+    attempts: result.attempts,
+    error: status === 'failed' ? result.error : null,
+  };
+}
+
 export async function executeSteps(selectedSteps, projectDir, { signal, onStepStart, onStepComplete, onStepFail } = {}) {
   const results = [];
   const totalSteps = selectedSteps.length;
@@ -38,14 +49,7 @@ export async function executeSteps(selectedSteps, projectDir, { signal, onStepSt
         `NightyTidy: Step ${step.number} Failed`,
         `Step ${step.number} (${step.name}) failed after ${result.attempts} attempts. Skipped — run continuing.`
       );
-      results.push({
-        step: { number: step.number, name: step.name },
-        status: 'failed',
-        output: result.output,
-        duration,
-        attempts: result.attempts,
-        error: result.error,
-      });
+      results.push(makeStepResult(step, 'failed', result, duration));
       failedCount++;
       onStepFail?.(step, i, totalSteps);
       continue;
@@ -71,14 +75,7 @@ export async function executeSteps(selectedSteps, projectDir, { signal, onStepSt
     const duration = Date.now() - stepStart;
     info(`${stepLabel} — completed (${Math.round(duration / 1000)}s)`);
 
-    results.push({
-      step: { number: step.number, name: step.name },
-      status: 'completed',
-      output: result.output,
-      duration,
-      attempts: result.attempts,
-      error: null,
-    });
+    results.push(makeStepResult(step, 'completed', result, duration));
     completedCount++;
     onStepComplete?.(step, i, totalSteps);
   }
