@@ -80,7 +80,7 @@ function buildUndoSection(metadata) {
   );
 }
 
-export async function generateReport(results, narration, metadata) {
+export function generateReport(results, narration, metadata) {
   const date = new Date(metadata.startTime).toISOString().split('T')[0];
 
   let report = `# NightyTidy Report \u2014 ${date}\n\n`;

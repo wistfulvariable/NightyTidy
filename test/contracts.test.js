@@ -395,7 +395,7 @@ describe('contract: report.js — warns but never throws', () => {
       originalBranch: 'main',
     };
 
-    await expect(generateReport(results, null, metadata)).resolves.not.toThrow();
+    expect(() => generateReport(results, null, metadata)).not.toThrow();
   });
 
   it('formatDuration returns a non-empty string for all valid inputs', async () => {
