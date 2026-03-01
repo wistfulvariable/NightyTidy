@@ -8,6 +8,8 @@ export async function executeSteps(selectedSteps, projectDir, { signal, onStepSt
   const results = [];
   const totalSteps = selectedSteps.length;
   const runStart = Date.now();
+  let completedCount = 0;
+  let failedCount = 0;
 
   for (let i = 0; i < totalSteps; i++) {
     if (signal?.aborted) {
@@ -44,6 +46,7 @@ export async function executeSteps(selectedSteps, projectDir, { signal, onStepSt
         attempts: result.attempts,
         error: result.error,
       });
+      failedCount++;
       onStepFail?.(step, i, totalSteps);
       continue;
     }
@@ -76,12 +79,11 @@ export async function executeSteps(selectedSteps, projectDir, { signal, onStepSt
       attempts: result.attempts,
       error: null,
     });
+    completedCount++;
     onStepComplete?.(step, i, totalSteps);
   }
 
   const totalDuration = Date.now() - runStart;
-  const completedCount = results.filter(r => r.status === 'completed').length;
-  const failedCount = results.filter(r => r.status === 'failed').length;
 
   return {
     results,
