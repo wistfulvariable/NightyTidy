@@ -56,9 +56,4 @@ After each step:
 | `hasNewCommit(hash)` | boolean | If git fails |
 | `fallbackCommit(num, name)` | boolean | If commit fails |
 | `mergeRunBranch(orig, run)` | `{ success }` or `{ success, conflict }` | **Never** |
-| `findExistingRunBranches()` | string[] | If git fails |
 | `getGitInstance()` | git instance | No |
-
-## Dead Code
-
-`findExistingRunBranches()` is exported but never called — `checks.js` duplicates the logic inline in `checkExistingBranches()`.

@@ -38,7 +38,6 @@ For each step in `selectedSteps`:
   totalDuration: number,    // ms for entire run
   completedCount: number,
   failedCount: number,
-  skippedCount: 0,          // Hardcoded — skip not implemented
 }
 ```
 

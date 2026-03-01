@@ -1,6 +1,6 @@
 # CLI Lifecycle — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. Orchestration lives in `src/cli.js` (294 lines).
+Assumes CLAUDE.md loaded. Orchestration lives in `src/cli.js` (~282 lines).
 
 ## Entry Point
 
@@ -58,7 +58,7 @@ No subcommands, no options beyond `--version` and `--help`. `projectDir = proces
 
 ## Terminal Summary
 
-`formatTerminalDuration(ms)` — duplicates `formatDuration` in report.js:
+Uses `formatDuration(ms)` imported from `report.js`:
 - `>= 1h`: `"Xh YYm"` (e.g., `"1h 02m"`)
 - `< 1h`: `"Xm YYs"` (e.g., `"5m 03s"`)
 

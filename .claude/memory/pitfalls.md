@@ -12,9 +12,9 @@ Assumes CLAUDE.md loaded. Platform-specific issues, bugs, and gotchas.
 - `claude.js` tries without shell first, falls back on ENOENT
 
 ### Disk Space Check
-- Windows: uses `wmic logicaldisk` command (may be deprecated on newer Windows)
+- Windows: tries PowerShell `Get-PSDrive` first, falls back to `wmic logicaldisk`
 - Unix: uses `df -k`
-- Both can fail — check is non-fatal, logs "skipped" and continues
+- All methods can fail — check is non-fatal, logs "skipped" and continues
 
 ### Path Separators
 - `simple-git` handles path normalization internally
@@ -38,17 +38,11 @@ Assumes CLAUDE.md loaded. Platform-specific issues, bugs, and gotchas.
 - The SIGKILL timer is NOT cleared if the process exits gracefully during the 5s window
 - Minor issue — `try { child.kill('SIGKILL') } catch {}` handles "already dead"
 
-## Known DRY Violations
+## Resolved Technical Debt (for reference)
 
-| Duplication | Location 1 | Location 2 |
-|-------------|-----------|-----------|
-| Duration formatting | `formatTerminalDuration()` in `cli.js:284` | `formatDuration()` in `report.js:5` |
-| Branch listing | `findExistingRunBranches()` in `git.js:95` | Inline in `checkExistingBranches()` in `checks.js:155` |
-
-## Dead Code
-
-- `findExistingRunBranches()` — exported from `git.js` but never imported by any module
-- `skippedCount: 0` — hardcoded in executor.js, skip mechanism not implemented
+- `formatTerminalDuration` in `cli.js` was consolidated — now imports `formatDuration` from `report.js`
+- `findExistingRunBranches()` removed from `git.js` — was dead code (logic inline in `checks.js`)
+- `skippedCount` removed from executor return — was hardcoded `0`, phantom feature
 
 ## Singleton State Risks
 

@@ -61,7 +61,7 @@ Logic:
 - `< 1 hour`: `"Xm YYs"` (seconds zero-padded)
 - Example: `3720000` → `"1h 02m"`, `30000` → `"0m 30s"`
 
-**Note**: `cli.js` has `formatTerminalDuration(ms)` which is identical — DRY violation.
+**Note**: `cli.js` imports `formatDuration` from `report.js` for its terminal summary (consolidated — no longer duplicated).
 
 ## Metadata Shape
 

@@ -194,7 +194,7 @@ bin/nightytidy.js
         ├── src/executor.js          → claude, git, notifications, logger, prompts/steps
         ├── src/prompts/steps.js     (no deps — data only)
         ├── src/notifications.js     → logger
-        └── src/report.js            → logger
+        └── src/report.js            → logger  (cli.js also imports formatDuration from here)
 ```
 
 `logger.js` is the single universal dependency — every module imports it.
@@ -221,9 +221,6 @@ bin/nightytidy.js
 
 ## Known Technical Debt
 
-- `formatTerminalDuration()` in `cli.js` duplicates `formatDuration()` in `report.js`
-- `findExistingRunBranches()` in `git.js` is exported but never called (duplicated inline in `checks.js`)
-- `skippedCount` in executor return is always `0` — skip functionality not yet implemented
 - No `.nightytidyrc` config file — only `NIGHTYTIDY_LOG_LEVEL` env var exists
 - `extracted-prompts.json` not committed — `steps.js` was generated externally
 

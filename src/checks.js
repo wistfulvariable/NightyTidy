@@ -110,11 +110,22 @@ async function checkDiskSpace(projectDir) {
   try {
     if (platform() === 'win32') {
       const driveLetter = projectDir.charAt(0).toUpperCase();
-      const result = await runCommand('wmic', [
-        'logicaldisk', 'where', `DeviceID='${driveLetter}:'`, 'get', 'FreeSpace',
+      // Try PowerShell first (wmic is deprecated on newer Windows)
+      const psResult = await runCommand('powershell', [
+        '-NoProfile', '-Command',
+        `(Get-PSDrive ${driveLetter}).Free`,
       ]);
-      const match = result.stdout.match(/(\d+)/);
-      if (match) freeBytes = parseInt(match[1], 10);
+      const psMatch = psResult.stdout.trim().match(/^(\d+)$/);
+      if (psResult.code === 0 && psMatch) {
+        freeBytes = parseInt(psMatch[1], 10);
+      } else {
+        // Fallback to wmic for older Windows
+        const result = await runCommand('wmic', [
+          'logicaldisk', 'where', `DeviceID='${driveLetter}:'`, 'get', 'FreeSpace',
+        ]);
+        const match = result.stdout.match(/(\d+)/);
+        if (match) freeBytes = parseInt(match[1], 10);
+      }
     } else {
       const result = await runCommand('df', ['-k', projectDir]);
       const lines = result.stdout.trim().split('\n');

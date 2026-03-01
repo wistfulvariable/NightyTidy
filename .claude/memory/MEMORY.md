@@ -9,7 +9,7 @@ NightyTidy: automated overnight codebase improvement via Claude Code subprocess 
 - **Source files**: 9 modules in `src/`, 1 entry point in `bin/`
 - **Prompt count**: 28 improvement steps + DOC_UPDATE_PROMPT + CHANGELOG_PROMPT
 - **Last major change**: Initial implementation (commit `36e47ee`)
-- **Technical debt**: 2 DRY violations, 1 dead export, 1 unimplemented feature (skip)
+- **Technical debt**: Minimal — no config file, prompts source not committed
 
 ## Topic Files
 
