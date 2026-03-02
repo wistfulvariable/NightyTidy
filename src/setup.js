@@ -19,29 +19,35 @@ NightyTidy is installed and available as a global command. It runs AI-driven imp
 
 Only when the user explicitly asks to "run NightyTidy" or "run nightytidy". Do NOT run NightyTidy for general requests like "improve my code" or "tidy up" — only when the user mentions NightyTidy by name.
 
-### Workflow
+### Workflow — MANDATORY (follow every step)
 
-1. Present the available steps below and ask the user which ones they'd like to run (or all)
-2. Run the appropriate command based on their selection
-3. NightyTidy handles everything else — do not intervene in the process
+**CRITICAL: You MUST follow ALL steps below in order. NEVER skip any step.**
 
-### Commands
-
-- **Run all steps**: \`nightytidy --all\`
-- **Run specific steps**: \`nightytidy --steps 1,5,12\` (comma-separated numbers)
-- **List steps**: \`nightytidy --list\`
+1. Show the user the numbered step list below (copy the full list into your response)
+2. Ask: "Which steps would you like to run? Pick numbers (e.g. 1,5,12), say 'all', or tell me what areas you care about."
+3. Wait for the user's response — do NOT proceed until they answer
+4. Run the matching command **in the background** (it takes hours):
+   - User says "all" or similar → \`nightytidy --all\`
+   - User picks specific numbers → \`nightytidy --steps 1,5,12\` (comma-separated)
+5. **CRITICAL — ALWAYS do this**: After launching, read the file \`nightytidy-dashboard.url\` from the project root (wait a few seconds for it to appear) and share the URL with the user. Tell them: "Open this link in your browser to see live progress, step-by-step status, and a stop button." NEVER skip this — the user has no other way to monitor progress.
+6. Do not intervene after that — NightyTidy handles git, execution, and reporting
 
 ### Available Steps
 
 ${generateStepList()}
 
+### Commands (reference)
+
+- \`nightytidy --all\` — run all steps
+- \`nightytidy --steps 1,5,12\` — run specific steps by number
+- \`nightytidy --list\` — list steps in terminal
+
 ### Important notes
 
-- **Live progress window**: NightyTidy automatically opens a separate terminal window showing real-time progress. No user action needed \u2014 it appears on its own
-- **Background execution is fine**: The progress window provides visibility even when stdout is not visible
+- **Live dashboard**: After launch, \`nightytidy-dashboard.url\` contains a localhost URL. The user can open it in a browser for real-time progress with SSE streaming, step-by-step status, and a stop button
 - A safety git tag is created before starting — all changes can be undone
 - All changes happen on a dedicated branch and are auto-merged when done
-- A full run (all steps) typically takes 4–8 hours; individual steps take 15–30 minutes
+- A full run (all steps) typically takes 4\u20138 hours; individual steps take 15\u201330 minutes
 - Progress is logged to \`nightytidy-run.log\`; results saved in \`NIGHTYTIDY-REPORT.md\`
 - The computer must not go to sleep during the run
 
