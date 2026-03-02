@@ -17,7 +17,7 @@ NightyTidy is installed and available as a global command. It runs AI-driven imp
 
 ### When to use
 
-When the user asks to improve their code, run NightyTidy, tidy up, or mentions any of the improvement categories listed below — use the \`nightytidy\` command.
+Only when the user explicitly asks to "run NightyTidy" or "run nightytidy". Do NOT run NightyTidy for general requests like "improve my code" or "tidy up" — only when the user mentions NightyTidy by name.
 
 ### Workflow
 

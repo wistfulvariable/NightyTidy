@@ -72,6 +72,7 @@ Every error message should follow this pattern:
 | Trigger | Message | Type |
 |---------|---------|------|
 | No steps selected | `You need to select at least one step. Exiting.` | Validation (yellow) |
+| Invalid --steps numbers | `Invalid step number(s): [N, ...]. Valid range: 1-28.` | Validation (red) |
 | First SIGINT | `Stopping NightyTidy... finishing current step.` | Feedback (yellow) |
 | Second SIGINT | `Force stopping.` | Confirmation (plain) |
 | Unexpected error | `An unexpected error occurred. Check nightytidy-run.log for details.` | Error (red) |
