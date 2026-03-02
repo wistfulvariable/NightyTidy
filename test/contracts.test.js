@@ -483,7 +483,46 @@ describe('contract: steps.js — data shape', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 9. Init sequence — order matters
+// 9. dashboard.js — "Swallows all errors silently"
+// ---------------------------------------------------------------------------
+describe('contract: dashboard.js — swallows all errors', () => {
+  beforeEach(() => {
+    vi.resetModules();
+
+    vi.doMock('../src/logger.js', () => ({
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }));
+  });
+
+  afterEach(() => {
+    vi.doUnmock('../src/logger.js');
+    vi.restoreAllMocks();
+  });
+
+  it('updateDashboard does not throw when dashboard was never started', async () => {
+    const { updateDashboard } = await import('../src/dashboard.js');
+    expect(() => updateDashboard({ status: 'running' })).not.toThrow();
+  });
+
+  it('stopDashboard does not throw when dashboard was never started', async () => {
+    const { stopDashboard } = await import('../src/dashboard.js');
+    expect(() => stopDashboard()).not.toThrow();
+  });
+
+  it('exports all documented functions', async () => {
+    const mod = await import('../src/dashboard.js');
+    expect(mod.startDashboard).toBeTypeOf('function');
+    expect(mod.updateDashboard).toBeTypeOf('function');
+    expect(mod.stopDashboard).toBeTypeOf('function');
+    expect(mod.scheduleShutdown).toBeTypeOf('function');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10. Init sequence — order matters
 // ---------------------------------------------------------------------------
 describe('contract: initialization sequence', () => {
   beforeEach(() => {

@@ -9,7 +9,7 @@ Automated overnight codebase improvement through Claude Code. NightyTidy is an o
 - **All steps run on a dedicated branch** — `nightytidy/run-*` branches with pre-run safety tag
 - **No bare `console.log`** in production code — use logger (exception: `cli.js` terminal UX output)
 - **No TypeScript, no build step** — plain JavaScript ESM, runs directly
-- **Tests must pass before merging** — `npm test` (144 tests, all must be green)
+- **Tests must pass before merging** — `npm test` (all must be green)
 - **Coverage thresholds enforced** — `npm run test:ci` fails if statements < 90%, branches < 80%, functions < 80%
 
 ## Tech Stack
@@ -37,6 +37,8 @@ src/
   git.js                   # Git operations — branches, tags, commits, merges
   checks.js                # Pre-run validation (git, Claude CLI, disk space)
   notifications.js         # Desktop notifications (silent on failure)
+  dashboard.js             # Progress file writer + TUI window spawner + HTTP fallback (~180 LOC)
+  dashboard-tui.js         # Standalone TUI progress display (spawned in separate terminal window)
   logger.js                # File + stdout logger with chalk coloring (~50 LOC)
   report.js                # NIGHTYTIDY-REPORT.md generation + CLAUDE.md update
   setup.js                 # --setup command: generates CLAUDE.md integration snippet for target projects
@@ -44,7 +46,8 @@ src/
     steps.js               # 28 improvement prompts + DOC_UPDATE_PROMPT + CHANGELOG_PROMPT (5400+ lines, auto-generated)
 test/
   smoke.test.js            # 6 tests — structural integrity, module imports, deploy verification
-  cli.test.js              # 20 tests — full lifecycle orchestration, SIGINT handling, --setup
+  cli.test.js              # 23 tests — full lifecycle orchestration, SIGINT handling, --setup, dashboard
+  dashboard.test.js        # 14 tests — HTTP server start/stop, SSE events, stop callback
   logger.test.js           # 10 tests — real file I/O, level filtering, stderr fallback
   checks.test.js           # 4 tests — mock subprocess, mock git
   checks-extended.test.js  # 9 tests — auth paths, disk space, branch warnings
@@ -58,7 +61,7 @@ test/
   steps.test.js            # 6 tests — structural integrity of prompt data
   integration.test.js      # 5 tests — multi-module integration with real git repos
   setup.test.js            # 7 tests — integration snippet generation, idempotent setup
-  contracts.test.js        # 17 tests — module API contract verification against CLAUDE.md
+  contracts.test.js        # 20 tests — module API contract verification against CLAUDE.md
   helpers/
     cleanup.js             # Shared temp directory cleanup with EBUSY retry for Windows
     mocks.js               # Shared mock factories: createMockProcess, createErrorProcess, createMockGit
@@ -78,6 +81,8 @@ vitest.config.js           # Coverage thresholds only (statements 90%, branches 
 | `src/git.js` | Git operations via simple-git | logger |
 | `src/checks.js` | Pre-run validation (5 checks) | logger |
 | `src/notifications.js` | Desktop notifications | logger |
+| `src/dashboard.js` | Progress file + TUI window spawner + HTTP fallback | logger |
+| `src/dashboard-tui.js` | Standalone TUI progress display (reads progress JSON, renders with chalk) | chalk (standalone script) |
 | `src/logger.js` | File + stdout logger (universal dep) | none |
 | `src/report.js` | Report generation + CLAUDE.md update + `getVersion()` | logger |
 | `src/setup.js` | `--setup` command: CLAUDE.md integration for target projects | logger, prompts/steps |
@@ -92,7 +97,7 @@ npx nightytidy --all      # Run all 28 steps (non-interactive)
 npx nightytidy --steps 1,5,12  # Run specific steps by number
 npx nightytidy --list     # List all available steps
 npx nightytidy --setup    # Add Claude Code integration to target project's CLAUDE.md
-npm test                  # Vitest — single pass (144 tests)
+npm test                  # Vitest — single pass
 npm run test:watch        # Vitest — watch mode
 npm run test:ci           # Vitest with coverage + threshold enforcement
 # No build step — plain JavaScript ESM
@@ -147,6 +152,9 @@ Calling any module before `initLogger()` throws. Calling git operations before `
 | `CRITICAL_DISK_MB` | 100 MB | `checks.js` | Disk space below this = fatal error |
 | `LOW_DISK_MB` | 1,024 MB | `checks.js` | Disk space below this = warning |
 | `LEVELS` | `{ debug:0, info:1, warn:2, error:3 }` | `logger.js` | Log level filtering |
+| `SHUTDOWN_DELAY` | 3,000 ms | `dashboard.js` | Delay before closing server after final state |
+| `POLL_INTERVAL` | 1,000 ms | `dashboard-tui.js` | How often TUI polls progress file |
+| `EXIT_DELAY` | 5,000 ms | `dashboard-tui.js` | Delay before TUI auto-closes after run finishes |
 
 ## Generated Files (in target project)
 
@@ -155,6 +163,8 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | Artifact | Purpose | Committed? |
 |----------|---------|------------|
 | `nightytidy-run.log` | Full run log (timestamped) | No |
+| `nightytidy-progress.json` | Live progress state (read by TUI window) | No (deleted on stop) |
+| `nightytidy-dashboard.url` | Dashboard URL for external discovery | No (deleted on stop) |
 | `NIGHTYTIDY-REPORT.md` | Run summary with step results | Yes (on run branch) |
 | `CLAUDE.md` (appended section) | "NightyTidy — Last Run" with undo tag | Yes (on run branch) |
 | `nightytidy-before-*` git tag | Safety snapshot before run | Yes (tag) |
@@ -167,6 +177,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **Don't change `steps.js` shape** — 28 steps with `{ number, name, prompt }` validated by tests
 - **Don't remove the logger mock** from any test — it will crash trying to write log files
 - **Don't make notifications blocking** — they must be fire-and-forget
+- **Don't make the dashboard blocking** — it must be fire-and-forget like notifications
 - **Don't use raw `child_process.exec`** — use `spawn` for streaming stdout and timeout control
 - **Don't commit `nightytidy-run.log`** — it's per-run ephemeral output
 - **Don't use raw `rm()` in tests** — use `robustCleanup()` from `test/helpers/cleanup.js` for temp directory cleanup (prevents EBUSY flakiness on Windows)
@@ -184,6 +195,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | `executor.js` | **Never throws** → failed steps recorded, run continues |
 | `git.js` `mergeRunBranch` | **Never throws** → returns `{ success: false, conflict: true }` on conflict |
 | `notifications.js` | **Swallows all errors** silently (try/catch in `notify()`) |
+| `dashboard.js` | **Swallows all errors** silently — dashboard failure must not crash a run |
 | `report.js` | **Warns but never throws** (report failure must not crash a run) |
 | `setup.js` | **Writes to filesystem** → returns `'created'`/`'appended'`/`'updated'` |
 | `cli.js` `run()` | **Top-level try/catch** catches everything |
@@ -225,6 +237,8 @@ bin/nightytidy.js
         ├── src/executor.js          → claude, git, notifications, logger, prompts/steps
         ├── src/prompts/steps.js     (no deps — data only)
         ├── src/notifications.js     → logger
+        ├── src/dashboard.js         → logger, child_process
+        ├── src/dashboard-tui.js     (standalone — chalk only, spawned by dashboard.js)
         ├── src/setup.js             → logger, prompts/steps
         └── src/report.js            → logger  (cli.js imports formatDuration + getVersion)
 ```
@@ -245,7 +259,7 @@ bin/nightytidy.js
 ## Testing
 
 - **Framework**: Vitest v2, `vitest.config.js` for coverage thresholds only
-- **144 tests** across 16 files — `npm test` to run, `npm run test:ci` for coverage enforcement
+- **Tests** across 18 files — `npm test` to run, `npm run test:ci` for coverage enforcement
 - **Coverage thresholds**: 90% statements, 80% branches, 80% functions — enforced by `test:ci`
 - **Philosophy**: Mock Claude Code subprocess, use real git against temp directories. Test failure paths harder than success paths
 - **Universal mock**: All test files mock `../src/logger.js` to prevent file I/O during tests (exception: `logger.test.js` tests the real logger)

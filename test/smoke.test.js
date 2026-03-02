@@ -28,6 +28,8 @@ describe('smoke tests', () => {
       '../src/notifications.js',
       '../src/report.js',
       '../src/setup.js',
+      '../src/dashboard.js',
+      '../src/dashboard-tui.js',
       '../src/prompts/steps.js',
     ];
 

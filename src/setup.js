@@ -37,6 +37,8 @@ ${generateStepList()}
 
 ### Important notes
 
+- **Live progress window**: NightyTidy automatically opens a separate terminal window showing real-time progress. No user action needed \u2014 it appears on its own
+- **Background execution is fine**: The progress window provides visibility even when stdout is not visible
 - A safety git tag is created before starting — all changes can be undone
 - All changes happen on a dedicated branch and are auto-merged when done
 - A full run (all steps) typically takes 4–8 hours; individual steps take 15–30 minutes

@@ -13,11 +13,23 @@ import { executeSteps } from './executor.js';
 import { notify } from './notifications.js';
 import { generateReport, formatDuration, getVersion } from './report.js';
 import { setupProject } from './setup.js';
+import { startDashboard, updateDashboard, stopDashboard, scheduleShutdown } from './dashboard.js';
 
-function buildStepCallbacks(spinner, selected) {
+function buildStepCallbacks(spinner, selected, dashState) {
+  const stepStartTimes = new Map();
+
   return {
     onStepStart: (step, idx, total) => {
       spinner.text = `\u23f3 Step ${idx + 1}/${total}: ${step.name}...`;
+      stepStartTimes.set(idx, Date.now());
+      if (dashState) {
+        dashState.status = 'running';
+        dashState.currentStepIndex = idx;
+        dashState.currentStepName = step.name;
+        dashState.steps[idx].status = 'running';
+        if (!dashState.startTime) dashState.startTime = Date.now();
+        updateDashboard(dashState);
+      }
     },
     onStepComplete: (step, idx, total) => {
       spinner.stop();
@@ -25,12 +37,24 @@ function buildStepCallbacks(spinner, selected) {
       if (idx + 1 < total) {
         spinner.start(`\u23f3 Step ${idx + 2}/${total}: ${selected[idx + 1].name}...`);
       }
+      if (dashState) {
+        dashState.steps[idx].status = 'completed';
+        dashState.steps[idx].duration = Date.now() - (stepStartTimes.get(idx) || Date.now());
+        dashState.completedCount++;
+        updateDashboard(dashState);
+      }
     },
     onStepFail: (step, idx, total) => {
       spinner.stop();
       console.log(chalk.red(`\u2717 Step ${idx + 1}/${total}: ${step.name} \u2014 failed`));
       if (idx + 1 < total) {
         spinner.start(`\u23f3 Step ${idx + 2}/${total}: ${selected[idx + 1].name}...`);
+      }
+      if (dashState) {
+        dashState.steps[idx].status = 'failed';
+        dashState.steps[idx].duration = Date.now() - (stepStartTimes.get(idx) || Date.now());
+        dashState.failedCount++;
+        updateDashboard(dashState);
       }
     },
   };
@@ -144,6 +168,7 @@ export async function run() {
   let tagName = '';
   let runBranch = '';
   let originalBranch = '';
+  let dashState = null;
 
   // Unhandled rejection safety net
   process.on('unhandledRejection', (reason) => {
@@ -228,13 +253,36 @@ export async function run() {
       }
     }
 
-    // 5. Sleep tip
+    // 5. Start live dashboard
+    dashState = {
+      status: 'starting',
+      totalSteps: selected.length,
+      currentStepIndex: -1,
+      currentStepName: '',
+      steps: selected.map(s => ({ number: s.number, name: s.name, status: 'pending', duration: null })),
+      completedCount: 0,
+      failedCount: 0,
+      startTime: null,
+      error: null,
+    };
+    const dashboard = await startDashboard(dashState, {
+      onStop: () => abortController.abort(),
+      projectDir,
+    });
+    if (dashboard) {
+      console.log(chalk.cyan('\n\ud83d\udcca Progress window opened.'));
+      if (dashboard.url) {
+        console.log(chalk.dim(`   Browser fallback: ${dashboard.url}`));
+      }
+    }
+
+    // 6. Sleep tip
     console.log(chalk.dim(
       '\n\ud83d\udca1 Tip: Make sure your computer won\'t go to sleep during the run.\n' +
       '   This typically takes 4-8 hours. Disable sleep in your power settings.\n'
     ));
 
-    // 6. Git setup
+    // 7. Git setup
     originalBranch = await getCurrentBranch();
     tagName = await createPreRunTag();
     runBranch = await createRunBranch(originalBranch);
@@ -252,14 +300,27 @@ export async function run() {
     // 9. Execute steps
     const executionResults = await executeSteps(selected, projectDir, {
       signal: abortController.signal,
-      ...buildStepCallbacks(spinner, selected),
+      ...buildStepCallbacks(spinner, selected, dashState),
     });
 
     spinner.stop();
 
     // Handle interrupted run
     if (abortController.signal.aborted) {
+      if (dashState) {
+        dashState.status = 'stopped';
+        updateDashboard(dashState);
+      }
+      scheduleShutdown();
       await handleAbortedRun(executionResults, { projectDir, runBranch, tagName, originalBranch });
+    }
+
+    // Update dashboard to finishing state
+    if (dashState) {
+      dashState.status = 'finishing';
+      dashState.currentStepIndex = -1;
+      dashState.currentStepName = '';
+      updateDashboard(dashState);
     }
 
     // 10. Narrated changelog
@@ -300,6 +361,13 @@ export async function run() {
     // 14. Completion notification + terminal summary
     printCompletionSummary(executionResults, mergeResult, { runBranch, tagName });
 
+    // Update dashboard to completed and schedule shutdown
+    if (dashState) {
+      dashState.status = 'completed';
+      updateDashboard(dashState);
+    }
+    scheduleShutdown();
+
   } catch (err) {
     spinner?.stop();
     console.error(chalk.red(`\n\u274c ${err.message}`));
@@ -308,6 +376,13 @@ export async function run() {
       logError(`Fatal: ${err.message}`);
       debug(`Stack: ${err.stack}`);
     } catch { /* logger may not be initialized */ }
+
+    if (dashState) {
+      dashState.status = 'error';
+      dashState.error = err.message;
+      updateDashboard(dashState);
+    }
+    scheduleShutdown();
 
     if (runStarted) {
       notify('NightyTidy Error', `Run stopped: ${err.message}. Check nightytidy-run.log.`);

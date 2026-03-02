@@ -92,6 +92,13 @@ vi.mock('../src/setup.js', () => ({
   setupProject: vi.fn().mockReturnValue('created'),
 }));
 
+vi.mock('../src/dashboard.js', () => ({
+  startDashboard: vi.fn().mockResolvedValue({ url: 'http://localhost:9999', port: 9999 }),
+  updateDashboard: vi.fn(),
+  stopDashboard: vi.fn(),
+  scheduleShutdown: vi.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // Imports — after mocks
 // ---------------------------------------------------------------------------
@@ -106,6 +113,7 @@ import { executeSteps } from '../src/executor.js';
 import { notify } from '../src/notifications.js';
 import { generateReport } from '../src/report.js';
 import { setupProject } from '../src/setup.js';
+import { startDashboard, updateDashboard, scheduleShutdown } from '../src/dashboard.js';
 import { Command } from 'commander';
 
 // ---------------------------------------------------------------------------
@@ -523,5 +531,52 @@ describe('cli.js run()', () => {
 
     // Force exit uses exit code 1
     expect(processExitSpy).toHaveBeenCalledWith(1);
+  });
+
+  // -------------------------------------------------------------------------
+  // Dashboard integration
+  // -------------------------------------------------------------------------
+  it('starts dashboard and prints URL during a successful run', async () => {
+    await run();
+
+    expect(startDashboard).toHaveBeenCalledTimes(1);
+
+    // dashState is a mutable reference — by the time we inspect, it has been
+    // mutated through the run lifecycle. Verify shape and options instead.
+    const [state, opts] = startDashboard.mock.calls[0];
+    expect(state).toHaveProperty('totalSteps');
+    expect(state).toHaveProperty('steps');
+    expect(Array.isArray(state.steps)).toBe(true);
+    expect(opts.onStop).toBeTypeOf('function');
+    expect(opts.projectDir).toBeTypeOf('string');
+
+    // Dashboard URL should be printed
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('http://localhost:9999'),
+    );
+  });
+
+  it('updates dashboard to completed and schedules shutdown on success', async () => {
+    await run();
+
+    // updateDashboard should have been called with completed status
+    const calls = updateDashboard.mock.calls;
+    const lastCall = calls[calls.length - 1];
+    expect(lastCall[0].status).toBe('completed');
+
+    expect(scheduleShutdown).toHaveBeenCalled();
+  });
+
+  it('updates dashboard to error on fatal failure', async () => {
+    executeSteps.mockRejectedValue(new Error('unexpected crash'));
+
+    await expect(run()).rejects.toThrow('process.exit called');
+
+    const calls = updateDashboard.mock.calls;
+    const errorCall = calls.find(c => c[0].status === 'error');
+    expect(errorCall).toBeDefined();
+    expect(errorCall[0].error).toBe('unexpected crash');
+
+    expect(scheduleShutdown).toHaveBeenCalled();
   });
 });
