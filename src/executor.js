@@ -40,6 +40,7 @@ export async function executeSteps(selectedSteps, projectDir, { signal, onStepSt
     // Run improvement prompt
     const result = await runPrompt(step.prompt, projectDir, {
       label: `Step ${step.number} — ${step.name}`,
+      signal,
     });
 
     if (!result.success) {
@@ -58,6 +59,7 @@ export async function executeSteps(selectedSteps, projectDir, { signal, onStepSt
     // Run doc update prompt
     const docResult = await runPrompt(DOC_UPDATE_PROMPT, projectDir, {
       label: `Step ${step.number} — doc update`,
+      signal,
     });
 
     if (!docResult.success) {

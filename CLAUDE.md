@@ -51,8 +51,8 @@ test/
   logger.test.js           # 10 tests — real file I/O, level filtering, stderr fallback
   checks.test.js           # 4 tests — mock subprocess, mock git
   checks-extended.test.js  # 9 tests — auth paths, disk space, branch warnings
-  claude.test.js           # 15 tests — fake child process, fake timers
-  executor.test.js         # 6 tests — mocks claude, git, notifications
+  claude.test.js           # 18 tests — fake child process, fake timers, abort signal
+  executor.test.js         # 7 tests — mocks claude, git, notifications, signal propagation
   git.test.js              # 11 tests — real git against temp dirs (integration)
   git-extended.test.js     # 3 tests — getGitInstance, getHeadHash
   notifications.test.js    # 2 tests — mock node-notifier
@@ -207,6 +207,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - Success = exit code 0 AND non-empty stdout (whitespace-only = failure)
 - Windows ENOENT fallback: re-spawn with `shell: true`
 - **CLAUDECODE env var**: Claude Code sets this to prevent nested sessions. Both `claude.js` and `checks.js` strip it via `cleanEnv()` before spawning `claude` subprocesses. NightyTidy only uses non-interactive `claude -p` calls, so nesting is safe.
+- **Abort signal propagation**: `runPrompt()` accepts `options.signal` (AbortSignal). The signal is threaded through `runOnce()` → `waitForChild()`, which kills the subprocess immediately on abort. Retry sleeps also short-circuit on abort. The executor passes the signal to both improvement and doc-update `runPrompt()` calls. The dashboard's Stop button triggers `abortController.abort()` via the `onStop` callback, which propagates all the way down to kill the active subprocess.
 - **Auth check**: Two-phase — silent `claude -p "Say OK"` with `stdio: ['ignore', 'pipe', 'pipe']` first, then interactive `stdio: 'inherit'` fallback if sign-in is needed
 
 ### Git Workflow

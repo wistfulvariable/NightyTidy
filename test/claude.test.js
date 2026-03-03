@@ -372,6 +372,81 @@ describe('runPrompt', () => {
   });
 
   // -----------------------------------------------------------------------
+  // 7. Abort signal
+  // -----------------------------------------------------------------------
+  describe('abort signal', () => {
+    it('kills the child process immediately when signal is aborted', async () => {
+      const controller = new AbortController();
+      let capturedChild;
+
+      setupSpawnSequence((child) => {
+        capturedChild = child;
+        // Process hangs — never emits close
+      });
+
+      const promise = runPrompt('do something', '/tmp', {
+        ...FAST_OPTIONS,
+        retries: 0,
+        signal: controller.signal,
+      });
+
+      // Abort after a brief delay
+      await vi.advanceTimersByTimeAsync(50);
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(50);
+
+      const result = await promise;
+
+      expect(capturedChild.kill).toHaveBeenCalled();
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Aborted by user');
+    });
+
+    it('returns immediately without spawning when signal is already aborted', async () => {
+      const controller = new AbortController();
+      controller.abort();
+
+      const result = await runPrompt('do something', '/tmp', {
+        ...FAST_OPTIONS,
+        signal: controller.signal,
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Aborted by user');
+      expect(spawn).not.toHaveBeenCalled();
+    });
+
+    it('skips remaining retries when signal is aborted between attempts', async () => {
+      const controller = new AbortController();
+
+      setupSpawnSequence(
+        // Attempt 1: fails
+        (child) => { child.emitClose(1); },
+        // Attempt 2: should never happen
+        (child) => { child.emitStdout('ok'); child.emitClose(0); },
+      );
+
+      const promise = runPrompt('do something', '/tmp', {
+        timeout: 500,
+        retries: 3,
+        label: 'abort-retry-test',
+        signal: controller.signal,
+      });
+
+      // Let first attempt fail, then abort during retry delay
+      await vi.advanceTimersByTimeAsync(100);
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      const result = await promise;
+
+      expect(result.success).toBe(false);
+      // Only 1 spawn call — second attempt never started
+      expect(spawn).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // Edge cases
   // -----------------------------------------------------------------------
   describe('edge cases', () => {

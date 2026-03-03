@@ -153,6 +153,21 @@ describe('executeSteps', () => {
     expect(docUpdateWarnings).toHaveLength(0);
   });
 
+  it('passes the abort signal to runPrompt', async () => {
+    const steps = [makeStep(1, 'Lint')];
+    const controller = new AbortController();
+
+    runPrompt.mockResolvedValue({ success: true, output: 'ok', error: null, exitCode: 0, attempts: 1 });
+
+    await executeSteps(steps, '/fake/project', { signal: controller.signal });
+
+    // Both the improvement and doc-update calls should receive the signal
+    expect(runPrompt).toHaveBeenCalledTimes(2);
+    for (const call of runPrompt.mock.calls) {
+      expect(call[2]).toHaveProperty('signal', controller.signal);
+    }
+  });
+
   it('stops processing when abort signal fires after step 1', async () => {
     const steps = [makeStep(1, 'Lint'), makeStep(2, 'Format'), makeStep(3, 'Docs')];
     const controller = new AbortController();

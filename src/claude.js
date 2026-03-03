@@ -17,8 +17,13 @@ function cleanEnv() {
   return env;
 }
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+function sleep(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) { resolve(); return; }
+    const timer = setTimeout(resolve, ms);
+    const onAbort = () => { clearTimeout(timer); resolve(); };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 function spawnClaude(prompt, cwd, useShell = false) {
@@ -44,7 +49,7 @@ function spawnClaude(prompt, cwd, useShell = false) {
   return child;
 }
 
-function waitForChild(child, timeoutMs, { verbose = true } = {}) {
+function waitForChild(child, timeoutMs, { verbose = true, signal } = {}) {
   return new Promise((resolve) => {
     let stdout = '';
     let settled = false;
@@ -61,6 +66,20 @@ function waitForChild(child, timeoutMs, { verbose = true } = {}) {
       resolve({ success: false, output: stdout, error: TIMEOUT_MESSAGE, exitCode: -1 });
     }, timeoutMs);
 
+    // Kill child when abort signal fires
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      child.kill();
+      setTimeout(() => {
+        try { child.kill('SIGKILL'); } catch { /* already dead */ }
+      }, 5000);
+      resolve({ success: false, output: stdout, error: 'Aborted by user', exitCode: -1 });
+    };
+    if (signal?.aborted) { onAbort(); return; }
+    signal?.addEventListener('abort', onAbort, { once: true });
+
     child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
       stdout += text;
@@ -76,6 +95,7 @@ function waitForChild(child, timeoutMs, { verbose = true } = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
       resolve({ success: false, output: '', error: err.message, exitCode: -1, _errorCode: err.code });
     });
 
@@ -83,6 +103,7 @@ function waitForChild(child, timeoutMs, { verbose = true } = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
       const ok = code === 0 && stdout.trim().length > 0;
       resolve({
         success: ok,
@@ -94,7 +115,7 @@ function waitForChild(child, timeoutMs, { verbose = true } = {}) {
   });
 }
 
-async function runOnce(prompt, cwd, timeoutMs) {
+async function runOnce(prompt, cwd, timeoutMs, signal) {
   let child;
   let useShell = false;
 
@@ -115,13 +136,13 @@ async function runOnce(prompt, cwd, timeoutMs) {
     }
   }
 
-  const result = await waitForChild(child, timeoutMs);
+  const result = await waitForChild(child, timeoutMs, { signal });
 
   // Windows ENOENT fallback — retry with shell: true
   if (result._errorCode === 'ENOENT' && platform() === 'win32' && !useShell) {
     warn('Claude Code command not found — retrying with shell mode (Windows)');
     const shellChild = spawnClaude(prompt, cwd, true);
-    const shellResult = await waitForChild(shellChild, timeoutMs, { verbose: false });
+    const shellResult = await waitForChild(shellChild, timeoutMs, { verbose: false, signal });
     delete shellResult._errorCode;
     return shellResult;
   }
@@ -134,14 +155,26 @@ export async function runPrompt(prompt, cwd, options = {}) {
   const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT;
   const maxRetries = options.retries ?? DEFAULT_RETRIES;
   const label = options.label ?? 'prompt';
+  const signal = options.signal;
   const totalAttempts = maxRetries + 1;
 
   const startTime = Date.now();
 
   for (let attempt = 1; attempt <= totalAttempts; attempt++) {
+    if (signal?.aborted) {
+      const duration = Date.now() - startTime;
+      return { success: false, output: '', error: 'Aborted by user', exitCode: -1, duration, attempts: attempt };
+    }
+
     info(`Running Claude Code: ${label} (attempt ${attempt}/${totalAttempts})`);
 
-    const result = await runOnce(prompt, cwd, timeoutMs);
+    const result = await runOnce(prompt, cwd, timeoutMs, signal);
+
+    // Abort detected — return immediately without retry
+    if (signal?.aborted) {
+      const duration = Date.now() - startTime;
+      return { success: false, output: result.output || '', error: 'Aborted by user', exitCode: -1, duration, attempts: attempt };
+    }
 
     if (result.success) {
       const duration = Date.now() - startTime;
@@ -153,7 +186,7 @@ export async function runPrompt(prompt, cwd, options = {}) {
 
     if (attempt < totalAttempts) {
       warn(`Retrying ${label} in 10s (attempt ${attempt + 1}/${totalAttempts})`);
-      await sleep(RETRY_DELAY);
+      await sleep(RETRY_DELAY, signal);
     }
   }
 
