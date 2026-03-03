@@ -13,28 +13,35 @@ function generateStepList() {
 export function generateIntegrationSnippet() {
   return `${MARKER_START}
 
-NightyTidy is installed and available as a global command. It runs AI-driven improvement steps against this codebase, handling git branching, execution, reporting, and merging automatically.
+NightyTidy runs AI-driven improvement steps against this codebase. It handles git branching, execution, reporting, and merging automatically.
 
-### When to use
+**Only run when the user explicitly mentions "NightyTidy" by name.** Not for general "improve my code" requests.
 
-Only when the user explicitly asks to "run NightyTidy" or "run nightytidy". Do NOT run NightyTidy for general requests like "improve my code" or "tidy up" — only when the user mentions NightyTidy by name.
+### RULE 1 — ALWAYS ASK WHICH STEPS (NEVER SKIP)
 
-### Workflow — MANDATORY (follow every step)
+**You are FORBIDDEN from running \`nightytidy --all\` on your own.** You MUST show the step list and ask the user which steps to run BEFORE executing anything. This is not optional.
 
-**CRITICAL: You MUST follow ALL steps below in order. NEVER skip any step.**
+Do this EVERY TIME:
 
-1. Show the user the numbered step list below (copy the full list into your response)
+1. Copy the full step list below into your response so the user can see it
 2. Ask: "Which steps would you like to run? Pick numbers (e.g. 1,5,12), say 'all', or tell me what areas you care about."
-3. Wait for the user's response — do NOT proceed until they answer
-4. Run the matching command **in the background** (it takes hours):
-   - User says "all" or similar → \`nightytidy --all\`
-   - User picks specific numbers → \`nightytidy --steps 1,5,12\` (comma-separated)
-5. **CRITICAL — ALWAYS do this, NEVER skip**: After launching, wait 5 seconds, then read the file \`nightytidy-dashboard.url\` from the project root. It contains a localhost URL. Tell the user:
+3. **STOP and WAIT for the user's reply — do NOT proceed until they answer**
+4. Only after the user responds, run the command in the background:
+   - User says "all" → \`nightytidy --all\`
+   - User picks numbers → \`nightytidy --steps 1,5,12\`
 
-   "NightyTidy is about to run. Check out the live progress on this URL: [paste the URL here]"
+**If you run \`nightytidy --all\` without asking the user first, you have failed this instruction.**
 
-   If the file doesn't exist yet, wait another 5 seconds and read it again. Do NOT ask the user to run any commands — just read the file yourself and give them the link.
-6. Do not intervene after that — NightyTidy handles git, execution, and reporting
+### RULE 2 — ALWAYS SHARE THE DASHBOARD URL (NEVER SKIP)
+
+After launching NightyTidy in the background, you MUST do this:
+
+1. Wait 8 seconds for the dashboard to start
+2. Read the file \`nightytidy-dashboard.url\` from the project root (it contains a localhost URL)
+3. Share the URL with the user: "Here's your live dashboard: [URL]"
+4. If the file doesn't exist yet, wait 5 more seconds and try again
+
+**Do NOT skip this. Do NOT tell the user to find the URL themselves. YOU read the file and give them the link.**
 
 ### Available Steps
 
@@ -42,18 +49,16 @@ ${generateStepList()}
 
 ### Commands (reference)
 
-- \`nightytidy --all\` — run all steps
+- \`nightytidy --all\` — run all steps (only after user says "all")
 - \`nightytidy --steps 1,5,12\` — run specific steps by number
 - \`nightytidy --list\` — list steps in terminal
 
-### Important notes
+### Notes
 
-- **Live dashboard**: After launch, \`nightytidy-dashboard.url\` contains a localhost URL for real-time progress with SSE streaming, step-by-step status, and a stop button. You MUST read this file and share the URL with the user (see step 5 above)
-- A safety git tag is created before starting — all changes can be undone
-- All changes happen on a dedicated branch and are auto-merged when done
-- A full run (all steps) typically takes 4\u20138 hours; individual steps take 15\u201330 minutes
-- Progress is logged to \`nightytidy-run.log\`; results saved in \`NIGHTYTIDY-REPORT.md\`
-- The computer must not go to sleep during the run
+- Safety git tag created before starting — all changes can be undone
+- All changes on a dedicated branch, auto-merged when done
+- Full run (all steps): 4–8 hours. Individual steps: 15–30 minutes
+- Progress logged to \`nightytidy-run.log\`; results in \`NIGHTYTIDY-REPORT.md\`
 
 ${MARKER_END}`;
 }
