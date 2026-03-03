@@ -123,7 +123,7 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'short prompt'],
+        ['-p', 'short prompt', '--dangerously-skip-permissions'],
         expect.objectContaining({ cwd: '/tmp' }),
       );
     });
@@ -499,10 +499,10 @@ describe('runPrompt', () => {
 
       await runPrompt(longPrompt, '/tmp', FAST_OPTIONS);
 
-      // When using stdin mode, args should be empty (no -p flag)
+      // When using stdin mode, args should only contain permission flag (no -p flag)
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        [],
+        ['--dangerously-skip-permissions'],
         expect.objectContaining({ stdio: ['pipe', 'pipe', 'pipe'] }),
       );
     });

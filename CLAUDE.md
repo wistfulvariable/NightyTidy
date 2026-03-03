@@ -204,6 +204,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 
 - Timeout: 30 min per prompt (`DEFAULT_TIMEOUT`), retries: 3 (`DEFAULT_RETRIES`), 10s delay
 - Prompts > 8000 chars → stdin pipe; shorter → `-p` flag (`STDIN_THRESHOLD`)
+- **Permissions**: All subprocess calls include `--dangerously-skip-permissions`. Required because non-interactive `claude -p` has no TTY to approve tool permissions (Bash, Edit, Write, etc.). NightyTidy is the permission layer — it controls prompts and operates on a safety branch.
 - Success = exit code 0 AND non-empty stdout (whitespace-only = failure)
 - Windows ENOENT fallback: re-spawn with `shell: true`
 - **CLAUDECODE env var**: Claude Code sets this to prevent nested sessions. Both `claude.js` and `checks.js` strip it via `cleanEnv()` before spawning `claude` subprocesses. NightyTidy only uses non-interactive `claude -p` calls, so nesting is safe.

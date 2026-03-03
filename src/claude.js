@@ -29,7 +29,13 @@ function sleep(ms, signal) {
 function spawnClaude(prompt, cwd, useShell = false) {
   const useStdin = prompt.length > STDIN_THRESHOLD;
 
-  const args = useStdin ? [] : ['-p', prompt];
+  // --dangerously-skip-permissions: required for non-interactive mode.
+  // Without it, Claude Code blocks on tool permission prompts (Bash, Edit, etc.)
+  // that cannot be approved without a TTY. NightyTidy is the permission layer —
+  // it controls what prompts are sent and operates on a safety branch.
+  const args = useStdin
+    ? ['--dangerously-skip-permissions']
+    : ['-p', prompt, '--dangerously-skip-permissions'];
   const stdinMode = useStdin ? 'pipe' : 'ignore';
 
   debug(`Spawn mode: ${useStdin ? 'stdin' : '-p flag'}, prompt length: ${prompt.length} chars`);
