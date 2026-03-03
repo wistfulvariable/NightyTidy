@@ -233,9 +233,11 @@ export async function run() {
       selected = STEPS.filter(step => requestedNums.includes(step.number));
       info(`Running ${selected.length} selected step(s) (--steps ${opts.steps})`);
     } else if (!process.stdin.isTTY) {
-      // Non-interactive environment (e.g. Claude Code, CI) — run all steps
-      selected = STEPS;
-      info(`Running all ${STEPS.length} steps (non-interactive mode)`);
+      console.log(chalk.red('Non-interactive mode requires --all or --steps <numbers>.'));
+      console.log(chalk.dim('  Example: npx nightytidy --all'));
+      console.log(chalk.dim('  Example: npx nightytidy --steps 1,5,12'));
+      console.log(chalk.dim('  Run npx nightytidy --list to see available steps.'));
+      process.exit(1);
     } else {
       selected = await checkbox({
         message: 'Select steps to run (Enter to run all):',
@@ -272,7 +274,8 @@ export async function run() {
     if (dashboard) {
       console.log(chalk.cyan('\n\ud83d\udcca Progress window opened.'));
       if (dashboard.url) {
-        console.log(chalk.dim(`   Browser fallback: ${dashboard.url}`));
+        console.log(chalk.cyan(`\n\ud83c\udf10 Live dashboard: ${dashboard.url}`));
+        console.log(chalk.dim('   Open this link in your browser to monitor progress in real time.'));
       }
     }
 

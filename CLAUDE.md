@@ -249,7 +249,7 @@ bin/nightytidy.js
 
 1. **Init**: Logger initialized, welcome screen shown
 2. **Pre-checks**: git installed → git repo → Claude CLI installed → Claude authenticated → disk space
-3. **Step selection**: `--all` runs everything; `--steps 1,5,12` picks by number; non-TTY auto-selects all; interactive checkbox otherwise
+3. **Step selection**: `--all` runs everything; `--steps 1,5,12` picks by number; non-TTY requires `--all` or `--steps` (exits with error otherwise); interactive checkbox otherwise
 4. **Git setup**: Save branch → safety tag → run branch
 5. **Execution**: Run each step (improvement + doc update), with fallback commits
 6. **Abort handling**: SIGINT generates partial report; second SIGINT force-exits

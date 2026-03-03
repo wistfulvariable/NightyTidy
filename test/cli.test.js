@@ -534,6 +534,21 @@ describe('cli.js run()', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Non-TTY mode requires explicit step selection
+  // -------------------------------------------------------------------------
+  it('exits with error in non-TTY mode without --all or --steps', async () => {
+    delete process.stdin.isTTY; // simulate non-interactive
+
+    await expect(run()).rejects.toThrow('process.exit called');
+
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+    expect(consoleLogSpy).toHaveBeenCalledWith(
+      expect.stringContaining('--all'),
+    );
+    expect(executeSteps).not.toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
   // Dashboard integration
   // -------------------------------------------------------------------------
   it('starts dashboard and prints URL during a successful run', async () => {

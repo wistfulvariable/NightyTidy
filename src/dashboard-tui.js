@@ -39,8 +39,9 @@ export function formatMs(ms) {
   return `${h}h ${String(m % 60).padStart(2, '0')}m`;
 }
 
-export function progressBar(done, total) {
-  const pct = total > 0 ? done / total : 0;
+export function progressBar(done, total, hasActive = false) {
+  const effective = hasActive ? done + 0.5 : done;
+  const pct = total > 0 ? effective / total : 0;
   const filled = Math.round(pct * BAR_WIDTH);
   const empty = BAR_WIDTH - filled;
   const bar = chalk.cyan('\u2588'.repeat(filled)) + chalk.dim('\u2591'.repeat(empty));
@@ -82,7 +83,8 @@ export function render(state) {
 
   // Progress bar
   const done = state.completedCount + state.failedCount;
-  lines.push(`  ${progressBar(done, state.totalSteps)}`);
+  const hasActive = state.status === 'running' && state.currentStepIndex >= 0;
+  lines.push(`  ${progressBar(done, state.totalSteps, hasActive)}`);
   lines.push('');
 
   // Step list
@@ -132,13 +134,16 @@ export function render(state) {
 
 function startPolling(filePath) {
   progressFilePath = filePath;
+  let lastState = null;
 
   const interval = setInterval(() => {
-    const state = readState();
-    if (state) {
-      render(state);
+    const newState = readState();
+    if (newState) lastState = newState;
 
-      if (['completed', 'stopped', 'error'].includes(state.status)) {
+    if (lastState) {
+      render(lastState);
+
+      if (['completed', 'stopped', 'error'].includes(lastState.status)) {
         clearInterval(interval);
         setTimeout(() => process.exit(0), EXIT_DELAY);
       }
@@ -147,7 +152,10 @@ function startPolling(filePath) {
 
   // Initial render attempt
   const initial = readState();
-  if (initial) render(initial);
+  if (initial) {
+    lastState = initial;
+    render(initial);
+  }
 }
 
 // Only run as main entry point — safe to import without side effects

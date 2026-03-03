@@ -485,9 +485,10 @@ function render(s) {
   badge.className = 'status-badge status-' + s.status;
   badge.textContent = s.status.charAt(0).toUpperCase() + s.status.slice(1);
 
-  // Progress
+  // Progress — count the running step as partial progress
   const done = s.completedCount + s.failedCount;
-  const pct = s.totalSteps > 0 ? Math.round((done / s.totalSteps) * 100) : 0;
+  const active = (s.status === 'running' && s.currentStepIndex >= 0) ? 1 : 0;
+  const pct = s.totalSteps > 0 ? Math.round(((done + active * 0.5) / s.totalSteps) * 100) : 0;
   document.getElementById('progress-text').textContent = done + ' / ' + s.totalSteps + ' steps';
   document.getElementById('progress-fill').style.width = pct + '%';
   document.getElementById('percentage').textContent = pct + '%';
