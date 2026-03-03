@@ -48,7 +48,7 @@ ${generateStepList()}
 
 ### Important notes
 
-- **Live dashboard**: After launch, \`nightytidy-dashboard.url\` contains a localhost URL. The user can open it in a browser for real-time progress with SSE streaming, step-by-step status, and a stop button
+- **Live dashboard**: After launch, \`nightytidy-dashboard.url\` contains a localhost URL for real-time progress with SSE streaming, step-by-step status, and a stop button. You MUST read this file and share the URL with the user (see step 5 above)
 - A safety git tag is created before starting — all changes can be undone
 - All changes happen on a dedicated branch and are auto-merged when done
 - A full run (all steps) typically takes 4\u20138 hours; individual steps take 15\u201330 minutes

@@ -164,7 +164,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 |----------|---------|------------|
 | `nightytidy-run.log` | Full run log (timestamped) | No |
 | `nightytidy-progress.json` | Live progress state (read by TUI window) | No (deleted on stop) |
-| `nightytidy-dashboard.url` | Dashboard URL for external discovery | No (deleted on stop) |
+| `nightytidy-dashboard.url` | Dashboard URL — Claude reads this and shares with user | No (deleted on stop) |
 | `NIGHTYTIDY-REPORT.md` | Run summary with step results | Yes (on run branch) |
 | `CLAUDE.md` (appended section) | "NightyTidy — Last Run" with undo tag | Yes (on run branch) |
 | `nightytidy-before-*` git tag | Safety snapshot before run | Yes (tag) |
