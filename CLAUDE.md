@@ -46,15 +46,15 @@ src/
     steps.js               # 28 improvement prompts + DOC_UPDATE_PROMPT + CHANGELOG_PROMPT (5400+ lines, auto-generated)
 test/
   smoke.test.js            # 6 tests — structural integrity, module imports, deploy verification
-  cli.test.js              # 24 tests — full lifecycle orchestration, SIGINT handling, --setup, dashboard
+  cli.test.js              # 27 tests — full lifecycle orchestration, SIGINT handling, --setup, dashboard
   dashboard.test.js        # 14 tests — HTTP server start/stop, SSE events, stop callback
   logger.test.js           # 10 tests — real file I/O, level filtering, stderr fallback
   checks.test.js           # 4 tests — mock subprocess, mock git
-  checks-extended.test.js  # 10 tests — auth paths, disk space, branch warnings
+  checks-extended.test.js  # 12 tests — auth paths, disk space, branch warnings, empty repo
   claude.test.js           # 21 tests — fake child process, fake timers, abort signal, Windows shell mode
-  executor.test.js         # 7 tests — mocks claude, git, notifications, signal propagation
+  executor.test.js         # 9 tests — mocks claude, git, notifications, signal propagation
   git.test.js              # 16 tests — real git against temp dirs (integration)
-  git-extended.test.js     # 3 tests — getGitInstance, getHeadHash
+  git-extended.test.js     # 7 tests — getGitInstance, getHeadHash, tag/branch collision
   notifications.test.js    # 2 tests — mock node-notifier
   report.test.js           # 7 tests — mock fs, verify report format
   report-extended.test.js  # 15 tests — updateClaudeMd, formatDuration edge cases

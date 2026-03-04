@@ -312,6 +312,7 @@ describe('stopDashboard', () => {
     expect(() => mod.stopDashboard()).not.toThrow();
     expect(() => mod.stopDashboard()).not.toThrow();
   });
+
 });
 
 describe('updateDashboard', () => {

@@ -366,7 +366,7 @@ export async function run() {
         dashState.status = 'stopped';
         updateDashboard(dashState);
       }
-      scheduleShutdown();
+      stopDashboard();
       await handleAbortedRun(executionResults, { projectDir, runBranch, tagName, originalBranch });
     }
 

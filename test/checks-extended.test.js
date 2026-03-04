@@ -66,6 +66,26 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('runPreChecks — extended coverage', () => {
+  describe('empty repo (no commits)', () => {
+    it('throws when repo has no commits', async () => {
+      mockSpawnForChecks();
+
+      const mockGit = createMockGit({ isRepo: true, hasCommits: false });
+
+      await expect(runPreChecks('/fake/project', mockGit)).rejects.toThrow(
+        'no commits yet'
+      );
+    });
+
+    it('passes when repo has at least one commit', async () => {
+      mockSpawnForChecks();
+
+      const mockGit = createMockGit({ isRepo: true, hasCommits: true });
+
+      await expect(runPreChecks('/fake/project', mockGit)).resolves.toBeUndefined();
+    });
+  });
+
   describe('Claude authentication', () => {
     it('throws when both silent and interactive auth fail (empty stdout)', async () => {
       // Every claude -p call returns empty stdout → silent fails, interactive fails too

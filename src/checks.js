@@ -67,6 +67,19 @@ async function checkGitRepo(git) {
   info('Pre-check: git repository \u2713');
 }
 
+async function checkHasCommits(git) {
+  try {
+    const log = await git.log({ maxCount: 1 });
+    if (!log.latest) throw new Error('no commits');
+  } catch {
+    throw new Error(
+      "Your project has no commits yet. NightyTidy needs at least one commit to create a safety tag.\n" +
+      'Make an initial commit and try again: git add -A && git commit -m "Initial commit"'
+    );
+  }
+  info('Pre-check: has commits \u2713');
+}
+
 async function checkClaudeInstalled() {
   try {
     const result = await runCommand('claude', ['--version'], { env: cleanEnv() });
@@ -206,6 +219,7 @@ async function checkExistingBranches(git) {
 export async function runPreChecks(projectDir, git) {
   await checkGitInstalled();
   await checkGitRepo(git);
+  await checkHasCommits(git);
   await checkClaudeInstalled();
   await checkClaudeAuthenticated();
   await checkDiskSpace(projectDir);

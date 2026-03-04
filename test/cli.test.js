@@ -122,7 +122,7 @@ import { executeSteps } from '../src/executor.js';
 import { notify } from '../src/notifications.js';
 import { generateReport } from '../src/report.js';
 import { setupProject } from '../src/setup.js';
-import { startDashboard, updateDashboard, scheduleShutdown } from '../src/dashboard.js';
+import { startDashboard, updateDashboard, stopDashboard, scheduleShutdown } from '../src/dashboard.js';
 import { Command } from 'commander';
 
 // ---------------------------------------------------------------------------
@@ -562,6 +562,9 @@ describe('cli.js run()', () => {
     expect(consoleLogSpy).toHaveBeenCalledWith(
       expect.stringContaining('stopped'),
     );
+
+    // Dashboard should be stopped synchronously before process.exit
+    expect(stopDashboard).toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------

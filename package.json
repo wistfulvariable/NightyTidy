@@ -2,6 +2,21 @@
   "name": "nightytidy",
   "version": "0.1.0",
   "description": "Automated overnight codebase improvement through Claude Code",
+  "license": "MIT",
+  "author": "Dorian Spitz",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dorianspitz23/NightyTidy.git"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "ai",
+    "codebase",
+    "automation",
+    "refactoring",
+    "code-quality"
+  ],
   "type": "module",
   "bin": {
     "nightytidy": "./bin/nightytidy.js"

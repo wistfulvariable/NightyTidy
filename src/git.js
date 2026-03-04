@@ -51,32 +51,48 @@ export async function getCurrentBranch() {
 
 export async function createPreRunTag() {
   const timestamp = getTimestamp();
-  let tagName = `nightytidy-before-${timestamp}`;
+  const baseName = `nightytidy-before-${timestamp}`;
+  let tagName = baseName;
 
-  try {
-    await git.tag([tagName]);
-  } catch {
-    // Tag exists — append counter
-    tagName = `${tagName}-2`;
-    await git.tag([tagName]);
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      await git.tag([tagName]);
+      info(`Created pre-run safety tag: ${tagName}`);
+      return tagName;
+    } catch {
+      tagName = `${baseName}-${attempt + 2}`;
+    }
   }
 
-  info(`Created pre-run safety tag: ${tagName}`);
-  return tagName;
+  throw new Error(`Could not create safety tag — too many runs within the same minute. Try again shortly.`);
 }
 
 export async function createRunBranch(sourceBranch) {
   const timestamp = getTimestamp();
-  const branchName = `nightytidy/run-${timestamp}`;
+  const baseName = `nightytidy/run-${timestamp}`;
+  let branchName = baseName;
 
-  await git.checkoutLocalBranch(branchName);
-  info(`Created run branch: ${branchName} (from ${sourceBranch})`);
-  return branchName;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    try {
+      await git.checkoutLocalBranch(branchName);
+      info(`Created run branch: ${branchName} (from ${sourceBranch})`);
+      return branchName;
+    } catch {
+      branchName = `${baseName}-${attempt + 2}`;
+    }
+  }
+
+  throw new Error(`Could not create run branch — too many runs within the same minute. Try again shortly.`);
 }
 
 export async function getHeadHash() {
-  const log = await git.log({ maxCount: 1 });
-  return log.latest.hash;
+  try {
+    const log = await git.log({ maxCount: 1 });
+    return log.latest ? log.latest.hash : null;
+  } catch {
+    // Empty repo — git.log throws "does not have any commits yet"
+    return null;
+  }
 }
 
 export async function hasNewCommit(sinceHash) {

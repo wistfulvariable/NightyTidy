@@ -168,7 +168,21 @@ export function stopDashboard() {
     shutdownTimer = null;
   }
 
-  if (!server) return;
+  // Always clean up ephemeral files, even if no HTTP server was started (TUI-only mode)
+  if (urlFilePath) {
+    try { unlinkSync(urlFilePath); } catch { /* already gone */ }
+    urlFilePath = null;
+  }
+
+  if (progressFilePath) {
+    try { unlinkSync(progressFilePath); } catch { /* already gone */ }
+    progressFilePath = null;
+  }
+
+  if (!server) {
+    currentState = null;
+    return;
+  }
 
   // Close all SSE connections
   for (const client of sseClients) {
@@ -180,18 +194,6 @@ export function stopDashboard() {
     server.close();
   } catch { /* ignore */ }
   server = null;
-
-  // Remove URL file
-  if (urlFilePath) {
-    try { unlinkSync(urlFilePath); } catch { /* already gone */ }
-    urlFilePath = null;
-  }
-
-  // Remove progress file
-  if (progressFilePath) {
-    try { unlinkSync(progressFilePath); } catch { /* already gone */ }
-    progressFilePath = null;
-  }
 
   currentState = null;
 }
