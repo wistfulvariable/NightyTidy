@@ -337,6 +337,51 @@ describe('cli.js run()', () => {
   });
 
   // -------------------------------------------------------------------------
+  // --timeout flag
+  // -------------------------------------------------------------------------
+  it('passes parsed timeout to executeSteps and changelog runPrompt', async () => {
+    const program = new Command();
+    program.opts.mockReturnValueOnce({ all: true, timeout: 60 });
+
+    await run();
+
+    // executeSteps should receive timeout in ms
+    expect(executeSteps).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(String),
+      expect.objectContaining({ timeout: 60 * 60 * 1000 }),
+    );
+
+    // Changelog runPrompt should also receive timeout
+    const changelogCall = runPrompt.mock.calls.find(
+      (call) => call[2]?.label === 'Narrated changelog'
+    );
+    expect(changelogCall[2]).toHaveProperty('timeout', 60 * 60 * 1000);
+  });
+
+  it('does not pass timeout when --timeout is not specified', async () => {
+    await run();
+
+    expect(executeSteps).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(String),
+      expect.objectContaining({ timeout: undefined }),
+    );
+  });
+
+  it('exits with error for invalid --timeout value', async () => {
+    const program = new Command();
+    program.opts.mockReturnValueOnce({ timeout: -5 });
+
+    await expect(run()).rejects.toThrow('process.exit called');
+
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('--timeout must be a positive number'),
+    );
+    expect(processExitSpy).toHaveBeenCalledWith(1);
+  });
+
+  // -------------------------------------------------------------------------
   // Report commit failure (non-fatal)
   // -------------------------------------------------------------------------
   it('continues when report commit fails', async () => {

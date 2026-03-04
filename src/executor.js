@@ -25,7 +25,7 @@ function makeStepResult(step, status, result, duration) {
   };
 }
 
-export async function executeSteps(selectedSteps, projectDir, { signal, onStepStart, onStepComplete, onStepFail } = {}) {
+export async function executeSteps(selectedSteps, projectDir, { signal, timeout, onStepStart, onStepComplete, onStepFail } = {}) {
   const results = [];
   const totalSteps = selectedSteps.length;
   const runStart = Date.now();
@@ -51,6 +51,7 @@ export async function executeSteps(selectedSteps, projectDir, { signal, onStepSt
     const result = await runPrompt(SAFETY_PREAMBLE + step.prompt, projectDir, {
       label: `Step ${step.number} — ${step.name}`,
       signal,
+      timeout,
     });
 
     if (!result.success) {
@@ -70,6 +71,7 @@ export async function executeSteps(selectedSteps, projectDir, { signal, onStepSt
     const docResult = await runPrompt(SAFETY_PREAMBLE + DOC_UPDATE_PROMPT, projectDir, {
       label: `Step ${step.number} — doc update`,
       signal,
+      timeout,
     });
 
     if (!docResult.success) {

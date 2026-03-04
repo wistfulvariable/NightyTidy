@@ -198,12 +198,18 @@ export async function run() {
     .option('--all', 'Run all steps without interactive selection')
     .option('--steps <numbers>', 'Run specific steps by number (comma-separated, e.g. --steps 1,5,12)')
     .option('--list', 'List all available steps and exit')
-    .option('--setup', 'Add NightyTidy integration to this project\u2019s CLAUDE.md so Claude Code knows how to use it');
+    .option('--setup', 'Add NightyTidy integration to this project\u2019s CLAUDE.md so Claude Code knows how to use it')
+    .option('--timeout <minutes>', 'Timeout per step in minutes (default: 45)', parseInt);
 
   program.parse();
   const opts = program.opts();
 
   const projectDir = process.cwd();
+  const timeoutMs = opts.timeout ? opts.timeout * 60 * 1000 : undefined;
+  if (opts.timeout !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+    console.error(chalk.red('--timeout must be a positive number of minutes'));
+    process.exit(1);
+  }
   let spinner;
   let runStarted = false;
   let tagName = '';
@@ -348,6 +354,7 @@ export async function run() {
     // 9. Execute steps
     const executionResults = await executeSteps(selected, projectDir, {
       signal: abortController.signal,
+      timeout: timeoutMs,
       ...buildStepCallbacks(spinner, selected, dashState),
     });
 
@@ -377,6 +384,7 @@ export async function run() {
 
     const changelogResult = await runPrompt(SAFETY_PREAMBLE + CHANGELOG_PROMPT, projectDir, {
       label: 'Narrated changelog',
+      timeout: timeoutMs,
     });
     const narration = changelogResult.success ? changelogResult.output : null;
     if (!narration) warn('Narrated changelog generation failed — using fallback text');

@@ -2,11 +2,11 @@ import { spawn } from 'child_process';
 import { platform } from 'os';
 import { info, debug, warn, error as logError } from './logger.js';
 
-const DEFAULT_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+const DEFAULT_TIMEOUT = 45 * 60 * 1000; // 45 minutes
 const DEFAULT_RETRIES = 3;
 const RETRY_DELAY = 10000; // 10 seconds
 const STDIN_THRESHOLD = 8000; // chars
-const TIMEOUT_MESSAGE = 'Claude Code timed out after 30 minutes';
+const TIMEOUT_MESSAGE = 'Claude Code timed out after 45 minutes';
 
 // Remove CLAUDECODE env var so subprocess doesn't refuse to start
 // when NightyTidy is invoked from within a Claude Code session.

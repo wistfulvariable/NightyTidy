@@ -61,7 +61,7 @@ Every error message should follow this pattern:
 
 | Trigger | Message | Context |
 |---------|---------|---------|
-| 30-minute timeout | `Claude Code timed out after 30 minutes` | Returned in result object, surfaces in logs and notifications |
+| 45-minute timeout (or custom via `--timeout`) | `Claude Code timed out after 45 minutes` | Returned in result object, surfaces in logs and notifications |
 | Empty output on success exit | `Claude Code returned empty output` | Exit code 0 but no stdout content |
 | Non-zero exit code | `Claude Code exited with error code [N]` | Subprocess failed |
 | Spawn failure (non-Windows) | `Failed to start Claude Code. Ensure the "claude" command is installed and on your PATH.` | Cannot find/execute claude binary |

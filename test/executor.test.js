@@ -153,6 +153,33 @@ describe('executeSteps', () => {
     expect(docUpdateWarnings).toHaveLength(0);
   });
 
+  it('passes custom timeout to both runPrompt calls', async () => {
+    const steps = [makeStep(1, 'Lint')];
+    const customTimeout = 60 * 60 * 1000; // 60 minutes
+
+    runPrompt.mockResolvedValue({ success: true, output: 'ok', error: null, exitCode: 0, attempts: 1 });
+
+    await executeSteps(steps, '/fake/project', { timeout: customTimeout });
+
+    expect(runPrompt).toHaveBeenCalledTimes(2);
+    for (const call of runPrompt.mock.calls) {
+      expect(call[2]).toHaveProperty('timeout', customTimeout);
+    }
+  });
+
+  it('leaves timeout undefined when not specified', async () => {
+    const steps = [makeStep(1, 'Lint')];
+
+    runPrompt.mockResolvedValue({ success: true, output: 'ok', error: null, exitCode: 0, attempts: 1 });
+
+    await executeSteps(steps, '/fake/project');
+
+    expect(runPrompt).toHaveBeenCalledTimes(2);
+    for (const call of runPrompt.mock.calls) {
+      expect(call[2].timeout).toBeUndefined();
+    }
+  });
+
   it('passes the abort signal to runPrompt', async () => {
     const steps = [makeStep(1, 'Lint')];
     const controller = new AbortController();

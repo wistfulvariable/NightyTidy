@@ -96,6 +96,7 @@ npx nightytidy            # Run (interactive step selection)
 npx nightytidy --all      # Run all 28 steps (non-interactive)
 npx nightytidy --steps 1,5,12  # Run specific steps by number
 npx nightytidy --list     # List all available steps
+npx nightytidy --timeout 60  # Set per-step timeout to 60 minutes (default: 45)
 npx nightytidy --setup    # Add Claude Code integration to target project's CLAUDE.md
 npm test                  # Vitest — single pass
 npm run test:watch        # Vitest — watch mode
@@ -145,11 +146,11 @@ Calling any module before `initLogger()` throws. Calling git operations before `
 
 | Constant | Value | Location | Affects |
 |----------|-------|----------|---------|
-| `DEFAULT_TIMEOUT` | 30 min (1,800,000 ms) | `claude.js` | How long each Claude prompt can run |
+| `DEFAULT_TIMEOUT` | 45 min (2,700,000 ms) | `claude.js` | How long each Claude prompt can run (overridable via `--timeout`) |
 | `DEFAULT_RETRIES` | 3 | `claude.js` | Retry count per prompt (total attempts = retries + 1) |
 | `RETRY_DELAY` | 10,000 ms | `claude.js` | Delay between retry attempts |
 | `STDIN_THRESHOLD` | 8,000 chars | `claude.js` | Prompts above this use stdin pipe instead of `-p` flag |
-| `TIMEOUT_MESSAGE` | `'Claude Code timed out after 30 minutes'` | `claude.js` | Error message on timeout |
+| `TIMEOUT_MESSAGE` | `'Claude Code timed out after 45 minutes'` | `claude.js` | Error message on timeout |
 | `AUTH_TIMEOUT_MS` | 30,000 ms | `checks.js` | Timeout for Claude auth check |
 | `CRITICAL_DISK_MB` | 100 MB | `checks.js` | Disk space below this = fatal error |
 | `LOW_DISK_MB` | 1,024 MB | `checks.js` | Disk space below this = warning |
@@ -207,7 +208,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 
 ### Claude Code Integration
 
-- Timeout: 30 min per prompt (`DEFAULT_TIMEOUT`), retries: 3 (`DEFAULT_RETRIES`), 10s delay
+- Timeout: 45 min per prompt (`DEFAULT_TIMEOUT`, overridable via `--timeout <minutes>`), retries: 3 (`DEFAULT_RETRIES`), 10s delay
 - Prompts > 8000 chars → stdin pipe; shorter → `-p` flag (`STDIN_THRESHOLD`)
 - **Permissions**: All subprocess calls include `--dangerously-skip-permissions`. Required because non-interactive `claude -p` has no TTY to approve tool permissions (Bash, Edit, Write, etc.). NightyTidy is the permission layer — it controls prompts and operates on a safety branch.
 - Success = exit code 0 AND non-empty stdout (whitespace-only = failure)
