@@ -11,6 +11,7 @@ Automated overnight codebase improvement through Claude Code. NightyTidy is an o
 - **No TypeScript, no build step** — plain JavaScript ESM, runs directly
 - **Tests must pass before merging** — `npm test` (all must be green)
 - **Coverage thresholds enforced** — `npm run test:ci` fails if statements < 90%, branches < 80%, functions < 80%
+- **Documentation freshness enforced** — `npm run check:docs` verifies test counts, module map, and memory file index match code
 
 ## Tech Stack
 
@@ -66,6 +67,8 @@ test/
     cleanup.js             # Shared temp directory cleanup with EBUSY retry for Windows
     mocks.js               # Shared mock factories: createMockProcess, createErrorProcess, createMockGit
     testdata.js            # Shared test data factories: makeMetadata, makeResults
+scripts/
+  check-docs-freshness.js  # CI check: verifies doc counts match code reality
 vitest.config.js           # Coverage thresholds only (statements 90%, branches 80%, functions 80%)
 00_README.md .. 14_*.md    # PRD decomposition docs (reference only — not loaded by AI)
 ```
@@ -101,6 +104,7 @@ npx nightytidy --setup    # Add Claude Code integration to target project's CLAU
 npm test                  # Vitest — single pass
 npm run test:watch        # Vitest — watch mode
 npm run test:ci           # Vitest with coverage + threshold enforcement
+npm run check:docs        # Documentation freshness checker (catches doc drift)
 # No build step — plain JavaScript ESM
 ```
 

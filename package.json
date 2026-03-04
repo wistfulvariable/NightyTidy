@@ -24,7 +24,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ci": "vitest run --coverage"
+    "test:ci": "vitest run --coverage",
+    "check:docs": "node scripts/check-docs-freshness.js"
   },
   "engines": {
     "node": ">=18.0.0"

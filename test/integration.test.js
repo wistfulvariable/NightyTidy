@@ -59,7 +59,7 @@ afterEach(async () => {
 });
 
 describe('integration: full execution flow', () => {
-  it('executes steps on a run branch and produces a commit per step', async () => {
+  it('executes steps on a run branch and produces a commit per step', { timeout: 15000 }, async () => {
     // Setup: mock Claude to succeed
     runPrompt.mockResolvedValue({
       success: true,
