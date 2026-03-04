@@ -79,7 +79,7 @@ vitest.config.js           # Coverage thresholds only (statements 90%, branches 
 | `src/executor.js` | Core step loop — sequential execution | claude, git, notifications, prompts |
 | `src/claude.js` | Claude Code subprocess (spawn, retry, timeout) | logger |
 | `src/git.js` | Git operations via simple-git | logger |
-| `src/checks.js` | Pre-run validation (5 checks) | logger |
+| `src/checks.js` | Pre-run validation (6 checks) | logger |
 | `src/notifications.js` | Desktop notifications | logger |
 | `src/dashboard.js` | Progress file + TUI window spawner + HTTP fallback | logger |
 | `src/dashboard-tui.js` | Standalone TUI progress display (reads progress JSON, renders with chalk) | chalk (standalone script) |
@@ -258,7 +258,7 @@ bin/nightytidy.js
 ## Core Workflow
 
 1. **Init**: Logger initialized, welcome screen shown
-2. **Pre-checks**: git installed → git repo → Claude CLI installed → Claude authenticated → disk space
+2. **Pre-checks**: git installed → git repo → has commits → Claude CLI installed → Claude authenticated → disk space
 3. **Step selection**: `--all` runs everything; `--steps 1,5,12` picks by number; non-TTY requires `--all` or `--steps` (exits with error otherwise); interactive checkbox otherwise
 4. **Git setup**: Save branch → safety tag → run branch
 5. **Execution**: Run each step (improvement + doc update), with fallback commits
