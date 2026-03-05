@@ -1,6 +1,6 @@
 import { spawn } from 'child_process';
 import { platform } from 'os';
-import { info, warn, debug } from './logger.js';
+import { info, debug, warn } from './logger.js';
 
 const AUTH_TIMEOUT_MS = 30000;
 const CRITICAL_DISK_MB = 100;
