@@ -76,11 +76,17 @@ describe('getHeadHash', () => {
 });
 
 describe('createPreRunTag', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('appends counter when tag already exists', async () => {
-    // Pre-create a tag matching the current timestamp to guarantee collision
+    // Freeze Date to prevent minute-boundary race between test setup and SUT
+    const frozen = new Date(2026, 2, 5, 14, 30, 0);
+    vi.useFakeTimers({ now: frozen, shouldAdvanceTime: true });
+
     const git = getGitInstance();
-    const now = new Date();
-    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+    const timestamp = '2026-03-05-1430';
     const manualTag = `nightytidy-before-${timestamp}`;
     await git.tag([manualTag]);
 
@@ -89,10 +95,12 @@ describe('createPreRunTag', () => {
   });
 
   it('increments counter beyond -2 on repeated collisions', async () => {
-    // Pre-create tags for base and -2 to guarantee a -3 collision
+    // Freeze Date to prevent minute-boundary race between test setup and SUT
+    const frozen = new Date(2026, 2, 5, 14, 30, 0);
+    vi.useFakeTimers({ now: frozen, shouldAdvanceTime: true });
+
     const git = getGitInstance();
-    const now = new Date();
-    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+    const timestamp = '2026-03-05-1430';
     const baseName = `nightytidy-before-${timestamp}`;
     await git.tag([baseName]);
     await git.tag([`${baseName}-2`]);
@@ -103,11 +111,17 @@ describe('createPreRunTag', () => {
 });
 
 describe('createRunBranch', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('appends counter when branch already exists', async () => {
-    // Pre-create a branch matching the current timestamp to guarantee collision
+    // Freeze Date to prevent minute-boundary race between test setup and SUT
+    const frozen = new Date(2026, 2, 5, 14, 30, 0);
+    vi.useFakeTimers({ now: frozen, shouldAdvanceTime: true });
+
     const git = getGitInstance();
-    const now = new Date();
-    const timestamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+    const timestamp = '2026-03-05-1430';
     const manualBranch = `nightytidy/run-${timestamp}`;
     await git.checkoutLocalBranch(manualBranch);
     await git.checkout('master');

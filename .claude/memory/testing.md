@@ -1,6 +1,6 @@
 # Testing — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. 188 tests, 17 files, Vitest v2.
+Assumes CLAUDE.md loaded. 247 tests, 21 files, Vitest v2.
 
 ## Test File → Module Coverage
 
@@ -22,7 +22,11 @@ Assumes CLAUDE.md loaded. 188 tests, 17 files, Vitest v2.
 | `steps.test.js` | `prompts/steps.js` | 6 | Structural integrity |
 | `integration.test.js` | Multi-module | 5 | Integration (real git + fs) |
 | `setup.test.js` | `setup.js` | 7 | Unit (mock fs) |
-| `contracts.test.js` | All modules | 20 | Contract verification vs CLAUDE.md |
+| `cli-extended.test.js` | `cli.js` | 20 | Unit (dashboard state, abort paths) |
+| `dashboard-extended.test.js` | `dashboard.js` | 3 | Unit (TUI spawn, error paths) |
+| `dashboard-tui.test.js` | `dashboard-tui.js` | 18 | Unit (TUI rendering, chalk proxy) |
+| `integration-extended.test.js` | Multi-module | 6 | Integration (abort, ephemeral, report) |
+| `contracts.test.js` | All modules | 31 | Contract verification vs CLAUDE.md |
 
 ## Test Helpers (`test/helpers/`)
 

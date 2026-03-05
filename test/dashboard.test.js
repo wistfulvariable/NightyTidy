@@ -81,9 +81,30 @@ function connectSSE(url) {
         }
       });
 
-      // Give the initial event a moment to arrive
-      setTimeout(() => resolve({ res, events }), 50);
+      // Poll until the initial event arrives instead of fixed delay
+      const start = Date.now();
+      const poll = setInterval(() => {
+        if (events.length > 0 || Date.now() - start > 2000) {
+          clearInterval(poll);
+          resolve({ res, events });
+        }
+      }, 10);
     }).on('error', reject);
+  });
+}
+
+function waitForEvent(events, predicate, timeoutMs = 2000) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    const poll = setInterval(() => {
+      if (events.some(predicate)) {
+        clearInterval(poll);
+        resolve();
+      } else if (Date.now() - start > timeoutMs) {
+        clearInterval(poll);
+        reject(new Error('Timed out waiting for SSE event'));
+      }
+    }, 10);
   });
 }
 
@@ -217,17 +238,18 @@ describe('SSE events', () => {
 
     const { res, events } = await connectSSE(`${result.url}/events`);
 
-    // Wait for initial event
-    await new Promise(r => setTimeout(r, 30));
-
     // Push an update
     state.status = 'running';
     state.currentStepIndex = 0;
     state.currentStepName = 'Lint';
     mod.updateDashboard(state);
 
-    // Wait for SSE delivery
-    await new Promise(r => setTimeout(r, 50));
+    // Wait for the running event to arrive via polling
+    await waitForEvent(events, e => {
+      if (e.event !== 'state') return false;
+      const d = JSON.parse(e.data);
+      return d.status === 'running';
+    });
 
     const runningEvents = events.filter(e => {
       if (e.event !== 'state') return false;

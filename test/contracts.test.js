@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, writeFile } from 'fs/promises';
+import { existsSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import simpleGit from 'simple-git';
@@ -523,7 +524,296 @@ describe('contract: dashboard.js — swallows all errors', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 10. Init sequence — order matters
+// 10. setup.js — "Writes to filesystem → returns 'created'/'appended'/'updated'"
+// ---------------------------------------------------------------------------
+describe('contract: setup.js — returns documented status strings', () => {
+  let tempDir;
+
+  beforeEach(async () => {
+    vi.resetModules();
+
+    vi.doMock('../src/logger.js', () => ({
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }));
+
+    tempDir = await mkdtemp(path.join(tmpdir(), 'nightytidy-contract-setup-'));
+  });
+
+  afterEach(async () => {
+    vi.doUnmock('../src/logger.js');
+    vi.restoreAllMocks();
+    await robustCleanup(tempDir);
+  });
+
+  it('exports setupProject and generateIntegrationSnippet', async () => {
+    const mod = await import('../src/setup.js');
+    expect(mod.setupProject).toBeTypeOf('function');
+    expect(mod.generateIntegrationSnippet).toBeTypeOf('function');
+  });
+
+  it('returns only documented values: created, appended, or updated', async () => {
+    const { setupProject } = await import('../src/setup.js');
+
+    const validValues = ['created', 'appended', 'updated'];
+
+    // First call: creates CLAUDE.md
+    const r1 = setupProject(tempDir);
+    expect(validValues).toContain(r1);
+    expect(r1).toBe('created');
+
+    // Second call: should update existing section
+    const r2 = setupProject(tempDir);
+    expect(validValues).toContain(r2);
+    expect(r2).toBe('updated');
+  });
+
+  it('appends when CLAUDE.md exists without NightyTidy section', async () => {
+    const { setupProject } = await import('../src/setup.js');
+    writeFileSync(path.join(tempDir, 'CLAUDE.md'), '# Existing Project\n\nSome content.\n');
+
+    const result = setupProject(tempDir);
+    expect(result).toBe('appended');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 11. report.js — getVersion export and side effects
+// ---------------------------------------------------------------------------
+describe('contract: report.js — getVersion and side effects', () => {
+  let tempDir;
+
+  beforeEach(async () => {
+    vi.resetModules();
+
+    vi.doMock('../src/logger.js', () => ({
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }));
+
+    tempDir = await mkdtemp(path.join(tmpdir(), 'nightytidy-contract-report2-'));
+  });
+
+  afterEach(async () => {
+    vi.doUnmock('../src/logger.js');
+    vi.restoreAllMocks();
+    await robustCleanup(tempDir);
+  });
+
+  it('getVersion returns a non-empty string', async () => {
+    const { getVersion } = await import('../src/report.js');
+    const version = getVersion();
+    expect(typeof version).toBe('string');
+    expect(version.length).toBeGreaterThan(0);
+  });
+
+  it('generateReport writes NIGHTYTIDY-REPORT.md to disk', async () => {
+    const { generateReport } = await import('../src/report.js');
+
+    const results = {
+      results: [{ step: { number: 1, name: 'Lint' }, status: 'completed', output: 'ok', duration: 1000, attempts: 1, error: null }],
+      completedCount: 1,
+      failedCount: 0,
+    };
+    const metadata = {
+      projectDir: tempDir,
+      startTime: Date.now() - 5000,
+      endTime: Date.now(),
+      branchName: 'nightytidy/run-test',
+      tagName: 'nightytidy-before-test',
+      originalBranch: 'main',
+    };
+
+    generateReport(results, null, metadata);
+
+    expect(existsSync(path.join(tempDir, 'NIGHTYTIDY-REPORT.md'))).toBe(true);
+  });
+
+  it('generateReport also writes/updates CLAUDE.md', async () => {
+    const { generateReport } = await import('../src/report.js');
+
+    const results = {
+      results: [{ step: { number: 1, name: 'Lint' }, status: 'completed', output: 'ok', duration: 1000, attempts: 1, error: null }],
+      completedCount: 1,
+      failedCount: 0,
+    };
+    const metadata = {
+      projectDir: tempDir,
+      startTime: Date.now() - 5000,
+      endTime: Date.now(),
+      branchName: 'nightytidy/run-test',
+      tagName: 'nightytidy-before-test',
+      originalBranch: 'main',
+    };
+
+    generateReport(results, null, metadata);
+
+    expect(existsSync(path.join(tempDir, 'CLAUDE.md'))).toBe(true);
+    const { readFileSync } = await import('fs');
+    const content = readFileSync(path.join(tempDir, 'CLAUDE.md'), 'utf8');
+    expect(content).toContain('NightyTidy');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 12. executor.js — callback contracts
+// ---------------------------------------------------------------------------
+describe('contract: executor.js — callbacks are optional and receive correct args', () => {
+  beforeEach(() => {
+    vi.resetModules();
+
+    vi.doMock('../src/claude.js', () => ({
+      runPrompt: vi.fn().mockResolvedValue({
+        success: true, output: 'ok', error: null, exitCode: 0, attempts: 1,
+      }),
+    }));
+
+    vi.doMock('../src/git.js', () => ({
+      getHeadHash: vi.fn().mockResolvedValue('abc'),
+      hasNewCommit: vi.fn().mockResolvedValue(true),
+      fallbackCommit: vi.fn().mockResolvedValue(true),
+    }));
+
+    vi.doMock('../src/notifications.js', () => ({
+      notify: vi.fn(),
+    }));
+
+    vi.doMock('../src/logger.js', () => ({
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }));
+
+    vi.doMock('../src/prompts/steps.js', () => ({
+      DOC_UPDATE_PROMPT: 'mock doc update',
+    }));
+  });
+
+  afterEach(() => {
+    vi.doUnmock('../src/claude.js');
+    vi.doUnmock('../src/git.js');
+    vi.doUnmock('../src/notifications.js');
+    vi.doUnmock('../src/logger.js');
+    vi.doUnmock('../src/prompts/steps.js');
+    vi.restoreAllMocks();
+  });
+
+  it('does not throw when callbacks are omitted', async () => {
+    const { executeSteps } = await import('../src/executor.js');
+    const steps = [{ number: 1, name: 'Test', prompt: 'test' }];
+
+    // No callbacks passed — should not throw
+    const result = await executeSteps(steps, '/fake');
+    expect(result).toHaveProperty('results');
+  });
+
+  it('calls onStepStart with (step, index, totalSteps)', async () => {
+    const { executeSteps } = await import('../src/executor.js');
+    const onStepStart = vi.fn();
+    const steps = [{ number: 1, name: 'Lint', prompt: 'lint' }];
+
+    await executeSteps(steps, '/fake', { onStepStart });
+
+    expect(onStepStart).toHaveBeenCalledOnce();
+    const [step, index, total] = onStepStart.mock.calls[0];
+    expect(step).toEqual(steps[0]);
+    expect(typeof index).toBe('number');
+    expect(total).toBe(1);
+  });
+
+  it('calls onStepComplete on success with (step, index, totalSteps)', async () => {
+    const { executeSteps } = await import('../src/executor.js');
+    const onStepComplete = vi.fn();
+    const steps = [{ number: 1, name: 'Lint', prompt: 'lint' }];
+
+    await executeSteps(steps, '/fake', { onStepComplete });
+
+    expect(onStepComplete).toHaveBeenCalledOnce();
+    const [step, index, total] = onStepComplete.mock.calls[0];
+    expect(step).toEqual(steps[0]);
+    expect(typeof index).toBe('number');
+    expect(total).toBe(1);
+  });
+
+  it('calls onStepFail on failure with (step, index, totalSteps)', async () => {
+    const { runPrompt } = await import('../src/claude.js');
+    runPrompt.mockResolvedValue({
+      success: false, output: '', error: 'fail', exitCode: 1, attempts: 4,
+    });
+
+    const { executeSteps } = await import('../src/executor.js');
+    const onStepFail = vi.fn();
+    const steps = [{ number: 1, name: 'Lint', prompt: 'lint' }];
+
+    await executeSteps(steps, '/fake', { onStepFail });
+
+    expect(onStepFail).toHaveBeenCalledOnce();
+    const [step, index, total] = onStepFail.mock.calls[0];
+    expect(step).toEqual(steps[0]);
+    expect(typeof index).toBe('number');
+    expect(total).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 13. dashboard.js — startDashboard return shape
+// ---------------------------------------------------------------------------
+describe('contract: dashboard.js — startDashboard return shape', () => {
+  let tempDir;
+
+  beforeEach(async () => {
+    vi.resetModules();
+
+    vi.doMock('../src/logger.js', () => ({
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }));
+
+    vi.doMock('child_process', () => ({
+      spawn: vi.fn(() => ({ unref: vi.fn() })),
+    }));
+
+    tempDir = await mkdtemp(path.join(tmpdir(), 'nightytidy-contract-dash-'));
+  });
+
+  afterEach(async () => {
+    vi.doUnmock('../src/logger.js');
+    vi.doUnmock('child_process');
+    vi.restoreAllMocks();
+    try {
+      const mod = await import('../src/dashboard.js');
+      mod.stopDashboard();
+    } catch { /* ignore */ }
+    await robustCleanup(tempDir);
+  });
+
+  it('returns { url, port } with correct types when started', async () => {
+    const { startDashboard } = await import('../src/dashboard.js');
+    const state = {
+      status: 'starting', totalSteps: 1, currentStepIndex: -1,
+      currentStepName: '', steps: [], completedCount: 0, failedCount: 0,
+      startTime: null, error: null,
+    };
+
+    const result = await startDashboard(state, { onStop: vi.fn(), projectDir: tempDir });
+
+    expect(result).not.toBeNull();
+    expect(typeof result.port).toBe('number');
+    expect(result.port).toBeGreaterThan(0);
+    expect(typeof result.url).toBe('string');
+    expect(result.url).toContain('http://localhost');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 14. Init sequence — order matters
 // ---------------------------------------------------------------------------
 describe('contract: initialization sequence', () => {
   beforeEach(() => {

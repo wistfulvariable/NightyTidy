@@ -34,7 +34,7 @@ bin/
 src/
   cli.js                   # Full lifecycle orchestration (welcome → checks → select → execute → report → merge)
   executor.js              # Core step loop — runs prompts sequentially, handles failures
-  claude.js                # Claude Code subprocess wrapper (spawn, retry, timeout)
+  claude.js                # Claude Code subprocess wrapper (spawn, retry, timeout, session continue)
   git.js                   # Git operations — branches, tags, commits, merges
   checks.js                # Pre-run validation (git, Claude CLI, disk space)
   notifications.js         # Desktop notifications (silent on failure)
@@ -66,7 +66,7 @@ test/
   cli-extended.test.js     # 20 tests — --list, --steps, --setup, locks, callbacks, dashboard state
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
-  contracts.test.js        # 20 tests — module API contract verification against CLAUDE.md
+  contracts.test.js        # 31 tests — module API contract verification against CLAUDE.md
   helpers/
     cleanup.js             # Shared temp directory cleanup with EBUSY retry for Windows
     mocks.js               # Shared mock factories: createMockProcess, createErrorProcess, createMockGit
@@ -84,7 +84,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `bin/nightytidy.js` | Entry point — calls `run()` | cli |
 | `src/cli.js` | Commander + Inquirer + full lifecycle | all modules |
 | `src/executor.js` | Core step loop — sequential execution | claude, git, notifications, prompts |
-| `src/claude.js` | Claude Code subprocess (spawn, retry, timeout) | logger |
+| `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue) | logger |
 | `src/git.js` | Git operations via simple-git | logger |
 | `src/checks.js` | Pre-run validation (6 checks) | logger |
 | `src/notifications.js` | Desktop notifications | logger |
@@ -221,7 +221,7 @@ bin/nightytidy.js
 2. **Pre-checks**: git installed → git repo → has commits → Claude CLI installed → Claude authenticated → disk space
 3. **Step selection**: `--all` runs everything; `--steps 1,5,12` picks by number; non-TTY requires `--all` or `--steps` (exits with error otherwise); interactive checkbox otherwise
 4. **Git setup**: Save branch → safety tag → run branch
-5. **Execution**: Run each step (improvement + doc update), with fallback commits
+5. **Execution**: Run each step (improvement + doc update in same session via `--continue`), with fallback commits
 6. **Abort handling**: SIGINT generates partial report; second SIGINT force-exits
 7. **Reporting**: Changelog → NIGHTYTIDY-REPORT.md → commit → merge back to original branch
 8. **Notifications**: Desktop notifications at start, on step failure, and on completion
@@ -235,7 +235,7 @@ bin/nightytidy.js
 - **Universal mock**: All test files mock `../src/logger.js` to prevent file I/O during tests (exception: `logger.test.js` tests the real logger)
 - **Integration tests**: `git.test.js`, `git-extended.test.js`, `integration.test.js` use real temp git repos — run slower but catch real issues
 - **Smoke tests**: `smoke.test.js` — 6 fast structural checks for deploy verification (< 3s)
-- **Contract tests**: `contracts.test.js` — 20 tests verifying each module's error handling contract matches this document
+- **Contract tests**: `contracts.test.js` — 31 tests verifying each module's error handling contract matches this document
 - **Temp dir cleanup**: Always use `robustCleanup()` from `test/helpers/cleanup.js` instead of raw `rm()` — Windows EBUSY from git file handles causes flaky failures otherwise
 - **Shared test factories**: Use `test/helpers/mocks.js` for mock process/git factories and `test/helpers/testdata.js` for report test data — don't duplicate these in individual test files
 - See `.claude/memory/testing.md` for detailed mock patterns and pitfalls
