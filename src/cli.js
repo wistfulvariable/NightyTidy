@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, unlinkSync, openSync, closeSync } from 'fs';
+import { readFileSync, writeFileSync, unlinkSync, openSync, closeSync } from 'fs';
 import path from 'path';
 
 import { Command } from 'commander';

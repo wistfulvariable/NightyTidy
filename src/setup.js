@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import { STEPS } from './prompts/steps.js';
-import { info, warn } from './logger.js';
+import { info } from './logger.js';
 
 const MARKER_START = '## NightyTidy — Automated Codebase Improvement';
 const MARKER_END = '<!-- /nightytidy -->';
