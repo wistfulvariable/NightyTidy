@@ -49,16 +49,18 @@ export function progressBar(done, total, hasActive = false) {
   return `${bar}  ${label}`;
 }
 
+const STATUS_COLORS = {
+  starting: chalk.blue,
+  running: chalk.blue,
+  finishing: chalk.cyan,
+  completed: chalk.green,
+  stopped: chalk.yellow,
+  error: chalk.red,
+};
+
 function statusColor(status) {
-  const colors = {
-    starting: chalk.blue,
-    running: chalk.blue,
-    finishing: chalk.cyan,
-    completed: chalk.green,
-    stopped: chalk.yellow,
-    error: chalk.red,
-  };
-  return (colors[status] || chalk.white)(status.charAt(0).toUpperCase() + status.slice(1));
+  const colorFn = STATUS_COLORS[status] || chalk.white;
+  return colorFn(status.charAt(0).toUpperCase() + status.slice(1));
 }
 
 function stepIcon(status) {
