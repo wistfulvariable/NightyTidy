@@ -4,6 +4,12 @@ import { warn } from './logger.js';
 
 const LOCK_FILENAME = 'nightytidy.lock';
 
+function writeLockFile(lockPath, content) {
+  const fd = openSync(lockPath, 'wx');
+  writeFileSync(fd, content);
+  closeSync(fd);
+}
+
 function isProcessAlive(pid) {
   try {
     process.kill(pid, 0);
@@ -19,9 +25,7 @@ export function acquireLock(projectDir) {
 
   // Try atomic create — O_WRONLY | O_CREAT | O_EXCL ('wx') fails if file exists
   try {
-    const fd = openSync(lockPath, 'wx');
-    writeFileSync(fd, lockContent);
-    closeSync(fd);
+    writeLockFile(lockPath, lockContent);
   } catch (err) {
     if (err.code !== 'EEXIST') throw err;
 
@@ -43,9 +47,7 @@ export function acquireLock(projectDir) {
     unlinkSync(lockPath);
     warn('Removed stale lock file from a previous run');
     try {
-      const fd = openSync(lockPath, 'wx');
-      writeFileSync(fd, lockContent);
-      closeSync(fd);
+      writeLockFile(lockPath, lockContent);
     } catch (retryErr) {
       if (retryErr.code === 'EEXIST') {
         throw new Error(

@@ -5,6 +5,8 @@ import { info, debug, warn } from './logger.js';
 
 const EPHEMERAL_FILES = ['nightytidy-run.log', 'nightytidy-progress.json', 'nightytidy-dashboard.url'];
 
+const MAX_NAME_RETRIES = 10;
+
 let git = null;
 let projectRoot = null;
 
@@ -49,40 +51,39 @@ export async function getCurrentBranch() {
   return status.current;
 }
 
-export async function createPreRunTag() {
-  const timestamp = getTimestamp();
-  const baseName = `nightytidy-before-${timestamp}`;
-  let tagName = baseName;
-
-  for (let attempt = 0; attempt < 10; attempt++) {
+async function retryWithSuffix(baseName, operationFn, errorMessage) {
+  let name = baseName;
+  for (let attempt = 0; attempt < MAX_NAME_RETRIES; attempt++) {
     try {
-      await git.tag([tagName]);
-      info(`Created pre-run safety tag: ${tagName}`);
-      return tagName;
+      await operationFn(name);
+      return name;
     } catch {
-      tagName = `${baseName}-${attempt + 2}`;
+      name = `${baseName}-${attempt + 2}`;
     }
   }
+  throw new Error(errorMessage);
+}
 
-  throw new Error(`Could not create safety tag — too many runs within the same minute. Try again shortly.`);
+export async function createPreRunTag() {
+  const baseName = `nightytidy-before-${getTimestamp()}`;
+  const tagName = await retryWithSuffix(
+    baseName,
+    (name) => git.tag([name]),
+    'Could not create safety tag — too many runs within the same minute. Try again shortly.',
+  );
+  info(`Created pre-run safety tag: ${tagName}`);
+  return tagName;
 }
 
 export async function createRunBranch(sourceBranch) {
-  const timestamp = getTimestamp();
-  const baseName = `nightytidy/run-${timestamp}`;
-  let branchName = baseName;
-
-  for (let attempt = 0; attempt < 10; attempt++) {
-    try {
-      await git.checkoutLocalBranch(branchName);
-      info(`Created run branch: ${branchName} (from ${sourceBranch})`);
-      return branchName;
-    } catch {
-      branchName = `${baseName}-${attempt + 2}`;
-    }
-  }
-
-  throw new Error(`Could not create run branch — too many runs within the same minute. Try again shortly.`);
+  const baseName = `nightytidy/run-${getTimestamp()}`;
+  const branchName = await retryWithSuffix(
+    baseName,
+    (name) => git.checkoutLocalBranch(name),
+    'Could not create run branch — too many runs within the same minute. Try again shortly.',
+  );
+  info(`Created run branch: ${branchName} (from ${sourceBranch})`);
+  return branchName;
 }
 
 export async function getHeadHash() {

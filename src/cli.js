@@ -18,6 +18,21 @@ import { acquireLock } from './lock.js';
 function buildStepCallbacks(spinner, selected, dashState) {
   const stepStartTimes = new Map();
 
+  function updateStepDash(idx, status) {
+    if (!dashState) return;
+    dashState.steps[idx].status = status;
+    dashState.steps[idx].duration = Date.now() - (stepStartTimes.get(idx) || Date.now());
+    if (status === 'completed') dashState.completedCount++;
+    if (status === 'failed') dashState.failedCount++;
+    updateDashboard(dashState);
+  }
+
+  function startNextSpinner(idx, total) {
+    if (idx + 1 < total) {
+      spinner.start(`\u23f3 Step ${idx + 2}/${total}: ${selected[idx + 1].name}...`);
+    }
+  }
+
   return {
     onStepStart: (step, idx, total) => {
       spinner.text = `\u23f3 Step ${idx + 1}/${total}: ${step.name}...`;
@@ -34,28 +49,14 @@ function buildStepCallbacks(spinner, selected, dashState) {
     onStepComplete: (step, idx, total) => {
       spinner.stop();
       console.log(chalk.green(`\u2713 Step ${idx + 1}/${total}: ${step.name} \u2014 done`));
-      if (idx + 1 < total) {
-        spinner.start(`\u23f3 Step ${idx + 2}/${total}: ${selected[idx + 1].name}...`);
-      }
-      if (dashState) {
-        dashState.steps[idx].status = 'completed';
-        dashState.steps[idx].duration = Date.now() - (stepStartTimes.get(idx) || Date.now());
-        dashState.completedCount++;
-        updateDashboard(dashState);
-      }
+      startNextSpinner(idx, total);
+      updateStepDash(idx, 'completed');
     },
     onStepFail: (step, idx, total) => {
       spinner.stop();
       console.log(chalk.red(`\u2717 Step ${idx + 1}/${total}: ${step.name} \u2014 failed`));
-      if (idx + 1 < total) {
-        spinner.start(`\u23f3 Step ${idx + 2}/${total}: ${selected[idx + 1].name}...`);
-      }
-      if (dashState) {
-        dashState.steps[idx].status = 'failed';
-        dashState.steps[idx].duration = Date.now() - (stepStartTimes.get(idx) || Date.now());
-        dashState.failedCount++;
-        updateDashboard(dashState);
-      }
+      startNextSpinner(idx, total);
+      updateStepDash(idx, 'failed');
     },
   };
 }
@@ -125,6 +126,50 @@ function printCompletionSummary(executionResults, mergeResult, { runBranch, tagN
       `      and resolve any conflicts."\n`
     ));
   }
+}
+
+async function selectSteps(opts) {
+  if (opts.all) {
+    info(`Running all ${STEPS.length} steps (--all)`);
+    return STEPS;
+  }
+
+  if (opts.steps) {
+    const requestedNums = opts.steps.split(',').map(s => parseInt(s.trim(), 10));
+    const invalid = requestedNums.filter(n => isNaN(n) || n < 1 || n > STEPS.length);
+    if (invalid.length > 0) {
+      console.log(chalk.red(`Invalid step number(s): ${invalid.join(', ')}. Valid range: 1-${STEPS.length}.`));
+      process.exit(1);
+    }
+    const selected = STEPS.filter(step => requestedNums.includes(step.number));
+    info(`Running ${selected.length} selected step(s) (--steps ${opts.steps})`);
+    return selected;
+  }
+
+  if (!process.stdin.isTTY) {
+    console.log(chalk.red('Non-interactive mode requires --all or --steps <numbers>.'));
+    console.log(chalk.dim('  Example: npx nightytidy --all'));
+    console.log(chalk.dim('  Example: npx nightytidy --steps 1,5,12'));
+    console.log(chalk.dim('  Run npx nightytidy --list to see available steps.'));
+    process.exit(1);
+  }
+
+  const selected = await checkbox({
+    message: 'Select steps to run (Enter to run all):',
+    choices: STEPS.map(step => ({
+      name: `${step.number}. ${step.name}`,
+      value: step,
+      checked: true,
+    })),
+    pageSize: 15,
+  });
+
+  if (!selected || selected.length === 0) {
+    console.log(chalk.yellow('You need to select at least one step. Exiting.'));
+    process.exit(0);
+  }
+
+  return selected;
 }
 
 function showWelcome() {
@@ -229,41 +274,7 @@ export async function run() {
     await runPreChecks(projectDir, git);
 
     // 6. Step selector
-    let selected;
-    if (opts.all) {
-      selected = STEPS;
-      info(`Running all ${STEPS.length} steps (--all)`);
-    } else if (opts.steps) {
-      const requestedNums = opts.steps.split(',').map(s => parseInt(s.trim(), 10));
-      const invalid = requestedNums.filter(n => isNaN(n) || n < 1 || n > STEPS.length);
-      if (invalid.length > 0) {
-        console.log(chalk.red(`Invalid step number(s): ${invalid.join(', ')}. Valid range: 1-${STEPS.length}.`));
-        process.exit(1);
-      }
-      selected = STEPS.filter(step => requestedNums.includes(step.number));
-      info(`Running ${selected.length} selected step(s) (--steps ${opts.steps})`);
-    } else if (!process.stdin.isTTY) {
-      console.log(chalk.red('Non-interactive mode requires --all or --steps <numbers>.'));
-      console.log(chalk.dim('  Example: npx nightytidy --all'));
-      console.log(chalk.dim('  Example: npx nightytidy --steps 1,5,12'));
-      console.log(chalk.dim('  Run npx nightytidy --list to see available steps.'));
-      process.exit(1);
-    } else {
-      selected = await checkbox({
-        message: 'Select steps to run (Enter to run all):',
-        choices: STEPS.map(step => ({
-          name: `${step.number}. ${step.name}`,
-          value: step,
-          checked: true,
-        })),
-        pageSize: 15,
-      });
-
-      if (!selected || selected.length === 0) {
-        console.log(chalk.yellow('You need to select at least one step. Exiting.'));
-        process.exit(0);
-      }
-    }
+    const selected = await selectSteps(opts);
 
     // 7. Start live dashboard
     dashState = {

@@ -6,6 +6,15 @@ const DEFAULT_TIMEOUT = 45 * 60 * 1000; // 45 minutes
 const DEFAULT_RETRIES = 3;
 const RETRY_DELAY = 10000; // 10 seconds
 const STDIN_THRESHOLD = 8000; // chars
+const SIGKILL_DELAY = 5000; // grace period before SIGKILL after initial kill
+
+function forceKillChild(child) {
+  child.kill();
+  setTimeout(() => {
+    try { child.kill('SIGKILL'); } catch { /* already dead */ }
+  }, SIGKILL_DELAY);
+}
+
 function timeoutMessage(ms) {
   const minutes = Math.round(ms / 60000);
   return `Claude Code timed out after ${minutes} minutes`;
@@ -67,12 +76,7 @@ function waitForChild(child, timeoutMs, { verbose = true, signal } = {}) {
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      child.kill();
-      if (verbose) {
-        setTimeout(() => {
-          try { child.kill('SIGKILL'); } catch { /* already dead */ }
-        }, 5000);
-      }
+      if (verbose) forceKillChild(child); else child.kill();
       resolve({ success: false, output: stdout, error: timeoutMessage(timeoutMs), exitCode: -1 });
     }, timeoutMs);
 
@@ -81,10 +85,7 @@ function waitForChild(child, timeoutMs, { verbose = true, signal } = {}) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      child.kill();
-      setTimeout(() => {
-        try { child.kill('SIGKILL'); } catch { /* already dead */ }
-      }, 5000);
+      forceKillChild(child);
       resolve({ success: false, output: stdout, error: 'Aborted by user', exitCode: -1 });
     };
     if (signal?.aborted) { onAbort(); return; }
