@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { runPrompt } from './claude.js';
 import { getHeadHash, hasNewCommit, fallbackCommit } from './git.js';
-import { DOC_UPDATE_PROMPT } from './prompts/steps.js';
+import { STEPS, DOC_UPDATE_PROMPT } from './prompts/steps.js';
 import { notify } from './notifications.js';
 import { info, warn, error as logError } from './logger.js';
 
@@ -47,7 +47,7 @@ function makeStepResult(step, status, result, duration) {
 }
 
 export async function executeSteps(selectedSteps, projectDir, { signal, timeout, onStepStart, onStepComplete, onStepFail } = {}) {
-  verifyStepsIntegrity(selectedSteps);
+  verifyStepsIntegrity(STEPS);
 
   const results = [];
   const totalSteps = selectedSteps.length;

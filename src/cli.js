@@ -408,7 +408,7 @@ export async function run() {
       dashState.error = err.message;
       updateDashboard(dashState);
     }
-    scheduleShutdown();
+    stopDashboard();
 
     if (runStarted) {
       notify('NightyTidy Error', `Run stopped: ${err.message}. Check nightytidy-run.log.`);

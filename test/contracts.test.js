@@ -264,6 +264,7 @@ describe('contract: executor.js — never throws, returns result object', () => 
     }));
 
     vi.doMock('../src/prompts/steps.js', () => ({
+      STEPS: [],
       DOC_UPDATE_PROMPT: 'mock doc update',
     }));
   });
@@ -690,6 +691,7 @@ describe('contract: executor.js — callbacks are optional and receive correct a
     }));
 
     vi.doMock('../src/prompts/steps.js', () => ({
+      STEPS: [],
       DOC_UPDATE_PROMPT: 'mock doc update',
     }));
   });

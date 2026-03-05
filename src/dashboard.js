@@ -227,6 +227,5 @@ export function stopDashboard() {
 }
 
 export function scheduleShutdown() {
-  if (!server) return;
   shutdownTimer = setTimeout(() => stopDashboard(), SHUTDOWN_DELAY);
 }
