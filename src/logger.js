@@ -3,6 +3,7 @@ import path from 'path';
 import chalk from 'chalk';
 
 const LEVELS = { debug: 0, info: 1, warn: 2, error: 3 };
+const LEVEL_COLORS = { debug: 'dim', warn: 'yellow', error: 'red' };
 
 let logFilePath = null;
 let minLevel = LEVELS.info;
@@ -33,11 +34,7 @@ function log(level, message) {
     process.stderr.write(`[logger file error] ${line}`);
   }
 
-  const colorFn =
-    level === 'debug' ? chalk.dim :
-    level === 'warn'  ? chalk.yellow :
-    level === 'error' ? chalk.red :
-    chalk.white;
+  const colorFn = LEVEL_COLORS[level] ? chalk[LEVEL_COLORS[level]] : chalk.white;
 
   process.stdout.write(colorFn(line));
 }
