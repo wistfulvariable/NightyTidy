@@ -4,12 +4,12 @@
 
 | Metric | Value |
 |--------|-------|
-| Files modified | 5 |
-| Lines added | 24 |
-| Lines removed | 21 |
-| Net line change | +3 |
+| Files modified | 6 |
+| Lines added | 31 |
+| Lines removed | 24 |
+| Net line change | +7 |
 | Unused dependencies removed | 0 |
-| Commits made | 5 |
+| Commits made | 7 (6 changes + 1 report) |
 | Tests affected | 0 (all 248 pass) |
 
 ## 2. Dead Code Removed
@@ -36,6 +36,12 @@
 
 ## 3. Duplication Reduced
 
+### Consolidated
+
+| Duplication | Files | Action |
+|-------------|-------|--------|
+| Date string conversion `new Date(ts).toISOString().split('T')[0]` repeated 3 times | `src/report.js:40,98,127` | Extracted local `formatDate(timestamp)` helper — single source of truth within file |
+
 ### Documented But Not Changed
 
 | Duplication | Files | Risk | Decision |
@@ -43,6 +49,7 @@
 | `cleanEnv()` function — identical 4-line function | `src/claude.js:14`, `src/checks.js:11` | Low | **Not consolidated** — creating a shared utility module for a 4-line function conflicts with the project's anti-abstraction principle. Both files are leaf modules that don't import each other. The duplication is stable (hasn't diverged) and trivial. |
 | `formatMs()` vs `formatDuration()` — similar time formatting | `src/dashboard-tui.js:33`, `src/report.js:18` | Low | **Not consolidated** — slightly different output (formatMs: `45s`; formatDuration: `0m 45s`). Lives in very different contexts (standalone TUI vs report generation). |
 | Ephemeral filename strings | `src/git.js:6`, `src/dashboard.js:10-11`, `src/logger.js:11` | Low | **Not consolidated** — would require a new shared constants module. The filenames are stable and unlikely to change. |
+| Platform detection `platform() === 'win32'` repeated 4–5 times | `src/claude.js:130`, `src/checks.js:20,100`, `src/dashboard.js:100` | Low | **Not consolidated** — same rationale as `cleanEnv()`. Creating `src/platform.js` for a one-liner adds unnecessary abstraction. Also mixes `platform()` (os module) with `process.platform` — consistent within each file. |
 | Logger mock in 16 test files | All test files except `logger.test.js`, `smoke.test.js`, `steps.test.js`, `contracts.test.js`, `dashboard-tui.test.js` | Medium | **Not consolidated** — `vi.mock()` calls must be at module level (Vitest hoisting). Cannot be easily factored into a shared helper without restructuring the mock system. |
 
 ### Logger Mock Property Ordering Inconsistency
@@ -109,6 +116,7 @@ No feature flags found in the codebase. The project has no LaunchDarkly/Flagsmit
 | Config | Default | Concern | Recommendation |
 |--------|---------|---------|----------------|
 | `TIMEOUT_MESSAGE` (was hardcoded) | "45 minutes" | **Fixed**: Was hardcoded to say "45 minutes" even when user passed `--timeout 60`. Now dynamically uses actual timeout value. | Fixed in this cleanup |
+| `CRITICAL_DISK_MB` | 100 MB | Possibly too aggressive for large monorepos. NightyTidy itself uses minimal disk (git diffs), but large AI-generated changes could theoretically push past 100 MB. | Team judgment call — consider raising to 500 MB if false positives occur. Not changed. |
 
 ### Flag Coupling Map
 

@@ -26,6 +26,10 @@ export function formatDuration(ms) {
   return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`;
 }
 
+function formatDate(timestamp) {
+  return new Date(timestamp).toISOString().split('T')[0];
+}
+
 function fallbackNarration(results) {
   return (
     `NightyTidy ran ${results.completedCount + results.failedCount} improvement steps on your codebase. ` +
@@ -37,7 +41,7 @@ function fallbackNarration(results) {
 }
 
 function buildSummarySection(results, metadata) {
-  const date = new Date(metadata.startTime).toISOString().split('T')[0];
+  const date = formatDate(metadata.startTime);
   const duration = formatDuration(metadata.endTime - metadata.startTime);
   const total = results.completedCount + results.failedCount;
 
@@ -95,7 +99,7 @@ function buildUndoSection(metadata) {
 }
 
 export function generateReport(results, narration, metadata) {
-  const date = new Date(metadata.startTime).toISOString().split('T')[0];
+  const date = formatDate(metadata.startTime);
 
   let report = `# NightyTidy Report \u2014 ${date}\n\n`;
 
@@ -124,7 +128,7 @@ export function generateReport(results, narration, metadata) {
 
 function updateClaudeMd(metadata) {
   const claudePath = path.join(metadata.projectDir, 'CLAUDE.md');
-  const date = new Date(metadata.startTime).toISOString().split('T')[0];
+  const date = formatDate(metadata.startTime);
   const section =
     `\n## NightyTidy \u2014 Last Run\n\n` +
     `Last run: ${date}. To undo, reset to git tag \`${metadata.tagName}\`.\n`;
