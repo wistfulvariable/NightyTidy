@@ -67,11 +67,12 @@ export async function executeSteps(selectedSteps, projectDir, { signal, timeout,
       continue;
     }
 
-    // Run doc update prompt
+    // Run doc update in the same Claude session that made the changes
     const docResult = await runPrompt(SAFETY_PREAMBLE + DOC_UPDATE_PROMPT, projectDir, {
       label: `Step ${step.number} — doc update`,
       signal,
       timeout,
+      continueSession: true,
     });
 
     if (!docResult.success) {

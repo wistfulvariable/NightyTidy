@@ -34,7 +34,7 @@ bin/
 src/
   cli.js                   # Full lifecycle orchestration (welcome → checks → select → execute → report → merge)
   executor.js              # Core step loop — runs prompts sequentially, handles failures
-  claude.js                # Claude Code subprocess wrapper (spawn, retry, timeout)
+  claude.js                # Claude Code subprocess wrapper (spawn, retry, timeout, session continue)
   git.js                   # Git operations — branches, tags, commits, merges
   checks.js                # Pre-run validation (git, Claude CLI, disk space)
   notifications.js         # Desktop notifications (silent on failure)
@@ -84,7 +84,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `bin/nightytidy.js` | Entry point — calls `run()` | cli |
 | `src/cli.js` | Commander + Inquirer + full lifecycle | all modules |
 | `src/executor.js` | Core step loop — sequential execution | claude, git, notifications, prompts |
-| `src/claude.js` | Claude Code subprocess (spawn, retry, timeout) | logger |
+| `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue) | logger |
 | `src/git.js` | Git operations via simple-git | logger |
 | `src/checks.js` | Pre-run validation (6 checks) | logger |
 | `src/notifications.js` | Desktop notifications | logger |
@@ -221,7 +221,7 @@ bin/nightytidy.js
 2. **Pre-checks**: git installed → git repo → has commits → Claude CLI installed → Claude authenticated → disk space
 3. **Step selection**: `--all` runs everything; `--steps 1,5,12` picks by number; non-TTY requires `--all` or `--steps` (exits with error otherwise); interactive checkbox otherwise
 4. **Git setup**: Save branch → safety tag → run branch
-5. **Execution**: Run each step (improvement + doc update), with fallback commits
+5. **Execution**: Run each step (improvement + doc update in same session via `--continue`), with fallback commits
 6. **Abort handling**: SIGINT generates partial report; second SIGINT force-exits
 7. **Reporting**: Changelog → NIGHTYTIDY-REPORT.md → commit → merge back to original branch
 8. **Notifications**: Desktop notifications at start, on step failure, and on completion

@@ -26,7 +26,7 @@ function sleep(ms, signal) {
   });
 }
 
-function spawnClaude(prompt, cwd, useShell = false) {
+function spawnClaude(prompt, cwd, useShell = false, continueSession = false) {
   const useStdin = prompt.length > STDIN_THRESHOLD;
 
   // --dangerously-skip-permissions: required for non-interactive mode.
@@ -36,6 +36,7 @@ function spawnClaude(prompt, cwd, useShell = false) {
   const args = useStdin
     ? ['--dangerously-skip-permissions']
     : ['-p', prompt, '--dangerously-skip-permissions'];
+  if (continueSession) args.push('--continue');
   const stdinMode = useStdin ? 'pipe' : 'ignore';
 
   debug(`Spawn mode: ${useStdin ? 'stdin' : '-p flag'}, prompt length: ${prompt.length} chars`);
@@ -121,7 +122,7 @@ function waitForChild(child, timeoutMs, { verbose = true, signal } = {}) {
   });
 }
 
-async function runOnce(prompt, cwd, timeoutMs, signal) {
+async function runOnce(prompt, cwd, timeoutMs, signal, continueSession = false) {
   // On Windows, always use shell — 'claude' is a .cmd script that
   // requires shell interpretation. Spawning without shell always gets
   // ENOENT, and the failed-spawn + shell-retry pattern can exhaust
@@ -130,7 +131,7 @@ async function runOnce(prompt, cwd, timeoutMs, signal) {
 
   let child;
   try {
-    child = spawnClaude(prompt, cwd, useShell);
+    child = spawnClaude(prompt, cwd, useShell, continueSession);
   } catch (err) {
     return { success: false, output: '', error: err.message || 'Failed to start Claude Code', exitCode: -1 };
   }
@@ -146,6 +147,7 @@ export async function runPrompt(prompt, cwd, options = {}) {
   const maxRetries = options.retries ?? DEFAULT_RETRIES;
   const label = options.label ?? 'prompt';
   const signal = options.signal;
+  const continueSession = options.continueSession ?? false;
   const totalAttempts = maxRetries + 1;
 
   const startTime = Date.now();
@@ -158,7 +160,7 @@ export async function runPrompt(prompt, cwd, options = {}) {
 
     info(`Running Claude Code: ${label} (attempt ${attempt}/${totalAttempts})`);
 
-    const result = await runOnce(prompt, cwd, timeoutMs, signal);
+    const result = await runOnce(prompt, cwd, timeoutMs, signal, continueSession);
 
     // Abort detected — return immediately without retry
     if (signal?.aborted) {
