@@ -29,7 +29,9 @@ describe('smoke tests', () => {
       '../src/report.js',
       '../src/setup.js',
       '../src/dashboard.js',
+      '../src/dashboard-html.js',
       '../src/dashboard-tui.js',
+      '../src/lock.js',
       '../src/prompts/steps.js',
     ];
 
