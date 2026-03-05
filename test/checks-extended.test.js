@@ -193,6 +193,34 @@ describe('runPreChecks — extended coverage', () => {
       await expect(runPreChecks('/fake/project', mockGit)).resolves.toBeUndefined();
     });
 
+    it('warns but continues when disk space is low but not critical (100-1024 MB)', async () => {
+      const { warn } = await import('../src/logger.js');
+
+      spawn.mockImplementation((cmd, args) => {
+        if (cmd === 'git') return createMockProcess({ code: 0, stdout: 'git version 2.40.0' });
+        if (cmd === 'claude' && args?.includes('--version'))
+          return createMockProcess({ code: 0, stdout: 'claude 1.0.0' });
+        if (cmd === 'claude' && args?.includes('-p'))
+          return createMockProcess({ code: 0, stdout: 'OK' });
+        // 500 MB = 524288000 bytes (between CRITICAL 100MB and LOW 1024MB)
+        if (cmd === 'powershell')
+          return createMockProcess({ code: 0, stdout: '524288000' });
+        if (cmd === 'wmic')
+          return createMockProcess({ code: 0, stdout: 'FreeSpace\n524288000\n' });
+        if (cmd === 'df')
+          return createMockProcess({ code: 0, stdout: 'Filesystem 1K-blocks Used Available\n/dev/sda1 100000000 99488000 512000' });
+        return createMockProcess({ code: 0, stdout: 'ok' });
+      });
+
+      const mockGit = createMockGit({ isRepo: true });
+
+      // Should NOT throw — low disk is a warning, not a failure
+      await expect(runPreChecks('/fake/project', mockGit)).resolves.toBeUndefined();
+
+      // Should warn about low disk space
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Low disk space'));
+    });
+
     it('skips gracefully when disk space output cannot be parsed', async () => {
       spawn.mockImplementation((cmd, args) => {
         if (cmd === 'git') return createMockProcess({ code: 0, stdout: 'git version 2.40.0' });
