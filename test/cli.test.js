@@ -651,6 +651,6 @@ describe('cli.js run()', () => {
     expect(errorCall).toBeDefined();
     expect(errorCall[0].error).toBe('unexpected crash');
 
-    expect(scheduleShutdown).toHaveBeenCalled();
+    expect(stopDashboard).toHaveBeenCalled();
   });
 });

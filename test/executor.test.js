@@ -22,6 +22,7 @@ vi.mock('../src/logger.js', () => ({
 }));
 
 vi.mock('../src/prompts/steps.js', () => ({
+  STEPS: [],
   DOC_UPDATE_PROMPT: 'mock doc update prompt',
 }));
 
