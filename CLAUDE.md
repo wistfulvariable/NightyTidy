@@ -48,7 +48,7 @@ src/
 test/
   smoke.test.js            # 6 tests — structural integrity, module imports, deploy verification
   cli.test.js              # 27 tests — full lifecycle orchestration, SIGINT handling, --setup, dashboard
-  dashboard.test.js        # 14 tests — HTTP server start/stop, SSE events, stop callback
+  dashboard.test.js        # 15 tests — HTTP server start/stop, SSE events, CSRF, stop callback
   logger.test.js           # 10 tests — real file I/O, level filtering, stderr fallback
   checks.test.js           # 4 tests — mock subprocess, mock git
   checks-extended.test.js  # 13 tests — auth paths, disk space, branch warnings, empty repo

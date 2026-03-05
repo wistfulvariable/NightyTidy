@@ -3,7 +3,17 @@ coverage/
 nightytidy-run.log
 *.log
 .env
+.env.*
 .DS_Store
+
+# Secrets and credentials
+*.pem
+*.key
+*.p12
+*.pfx
+*.cert
+credentials.*
+secrets.*
 
 # Claude Code — ignore all except memory files
 .claude/*
