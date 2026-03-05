@@ -187,6 +187,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **Lock file is atomic**: `acquireLock()` uses `fs.openSync(path, 'wx')` (O_EXCL) to prevent TOCTOU races between concurrent processes.
 - **Prompt integrity check**: `executor.js` computes SHA-256 of all step prompts and compares against `STEPS_HASH`. If prompts are regenerated from `extracted-prompts.json`, update the hash in `executor.js`. Warns but does not block (user may have legitimate prompt changes).
 - **`--dangerously-skip-permissions`**: Required for non-interactive Claude Code subprocess calls. NightyTidy is the permission layer — it controls what prompts are sent and operates on a safety branch.
+- **Prompt delivery threshold**: Prompts longer than 8000 chars (`STDIN_THRESHOLD` in `claude.js`) are piped via stdin instead of passed as a `-p` argument. This avoids OS command-line length limits. If prompts fail with argument-too-long errors, check this threshold.
 - **`npm run check:security`**: Runs `npm audit --audit-level=high`. Use before releases.
 
 ## Architectural Rules

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, unlinkSync, openSync, closeSync } from 'fs';
+import { readFileSync, writeFileSync, unlinkSync, openSync, closeSync } from 'fs';
 import path from 'path';
 
 import { Command } from 'commander';
@@ -268,13 +268,13 @@ export async function run() {
     // 2. Prevent concurrent runs
     acquireLock(projectDir);
 
-    // 3. List steps and exit (no git or pre-checks needed)
+    // 3a. List steps and exit (no git or pre-checks needed)
     if (opts.list) {
       STEPS.forEach(step => console.log(`${step.number}. ${step.name}`));
       process.exit(0);
     }
 
-    // 3. Setup mode — add CLAUDE.md integration and exit
+    // 3b. Setup mode — add CLAUDE.md integration and exit
     if (opts.setup) {
       const result = setupProject(projectDir);
       const action = result === 'created' ? 'Created CLAUDE.md with' : 'Added';
@@ -286,12 +286,12 @@ export async function run() {
     // 4. Show first-run welcome
     showWelcome();
 
-    // 4. Initialize git and run pre-checks
+    // 5. Initialize git and run pre-checks
     const git = initGit(projectDir);
     excludeEphemeralFiles();
     await runPreChecks(projectDir, git);
 
-    // 4. Step selector
+    // 6. Step selector
     let selected;
     if (opts.all) {
       selected = STEPS;
@@ -328,7 +328,7 @@ export async function run() {
       }
     }
 
-    // 5. Start live dashboard
+    // 7. Start live dashboard
     dashState = {
       status: 'starting',
       totalSteps: selected.length,
@@ -352,28 +352,28 @@ export async function run() {
       }
     }
 
-    // 6. Sleep tip
+    // 8. Sleep tip
     console.log(chalk.dim(
       '\n\ud83d\udca1 Tip: Make sure your computer won\'t go to sleep during the run.\n' +
       '   This typically takes 4-8 hours. Disable sleep in your power settings.\n'
     ));
 
-    // 7. Git setup
+    // 9. Git setup
     originalBranch = await getCurrentBranch();
     tagName = await createPreRunTag();
     runBranch = await createRunBranch(originalBranch);
     runStarted = true;
 
-    // 7. Run started notification
+    // 10. Run started notification
     notify('NightyTidy Started', `Running ${selected.length} steps. Check nightytidy-run.log for progress.`);
 
-    // 8. Spinner
+    // 11. Spinner
     spinner = ora({
       text: `\u23f3 Step 1/${selected.length}: ${selected[0].name}...`,
       color: 'cyan',
     }).start();
 
-    // 9. Execute steps
+    // 12. Execute steps
     const executionResults = await executeSteps(selected, projectDir, {
       signal: abortController.signal,
       timeout: timeoutMs,
@@ -400,7 +400,7 @@ export async function run() {
       updateDashboard(dashState);
     }
 
-    // 10. Narrated changelog
+    // 13. Narrated changelog
     info('Generating narrated changelog...');
     spinner = ora({ text: 'Generating changelog...', color: 'cyan' }).start();
 
@@ -413,7 +413,7 @@ export async function run() {
 
     spinner.stop();
 
-    // 11. Generate report
+    // 14. Generate report
     const startTime = Date.now() - executionResults.totalDuration;
     await generateReport(executionResults, narration, {
       projectDir,
@@ -424,7 +424,7 @@ export async function run() {
       endTime: Date.now(),
     });
 
-    // 12. Commit report on run branch
+    // 15. Commit report on run branch
     const gitInstance = getGitInstance();
     try {
       await gitInstance.add(['NIGHTYTIDY-REPORT.md', 'CLAUDE.md']);
@@ -433,10 +433,10 @@ export async function run() {
       warn(`Failed to commit report: ${err.message}`);
     }
 
-    // 13. Merge run branch
+    // 16. Merge run branch
     const mergeResult = await mergeRunBranch(originalBranch, runBranch);
 
-    // 14. Completion notification + terminal summary
+    // 17. Completion notification + terminal summary
     printCompletionSummary(executionResults, mergeResult, { runBranch, tagName });
 
     // Update dashboard to completed and schedule shutdown

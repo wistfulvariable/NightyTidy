@@ -10,7 +10,7 @@ import { info, warn, error as logError } from './logger.js';
 // Claude Code with --dangerously-skip-permissions.
 const STEPS_HASH = '0248c8747785d71a8d26929c32eb70b6cef28a0e3c2422e32005dd30894a1422';
 
-export function verifyStepsIntegrity(steps) {
+function verifyStepsIntegrity(steps) {
   const content = steps.map(s => s.prompt).join('');
   const hash = createHash('sha256').update(content).digest('hex');
   if (hash !== STEPS_HASH) {
