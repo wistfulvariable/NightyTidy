@@ -147,9 +147,15 @@ describe('logger', () => {
     const { initLogger, debug, info } = await import('../src/logger.js');
 
     const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
       process.env.NIGHTYTIDY_LOG_LEVEL = 'nonsense';
       initLogger(tempDir);
+
+      // Should warn on stderr about the invalid value
+      expect(stderrSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Unknown NIGHTYTIDY_LOG_LEVEL="nonsense"'),
+      );
 
       debug('debug-hidden');
       info('info-visible');
@@ -161,6 +167,7 @@ describe('logger', () => {
       expect(content).toContain('info-visible');
     } finally {
       stdoutSpy.mockRestore();
+      stderrSpy.mockRestore();
       delete process.env.NIGHTYTIDY_LOG_LEVEL;
     }
   });

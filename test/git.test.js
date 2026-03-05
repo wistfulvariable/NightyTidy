@@ -261,6 +261,7 @@ describe('excludeEphemeralFiles', () => {
 
 describe('fallbackCommit — ephemeral file exclusion', () => {
   it('excludes nightytidy-run.log from commits', async () => {
+    excludeEphemeralFiles();
     await writeFile(path.join(tempDir, 'code.js'), 'console.log("hello")');
     await writeFile(path.join(tempDir, 'nightytidy-run.log'), 'log content');
 
@@ -273,6 +274,7 @@ describe('fallbackCommit — ephemeral file exclusion', () => {
   });
 
   it('skips commit when only ephemeral files changed', async () => {
+    excludeEphemeralFiles();
     await writeFile(path.join(tempDir, 'nightytidy-run.log'), 'log content');
     await writeFile(path.join(tempDir, 'nightytidy-progress.json'), '{}');
 

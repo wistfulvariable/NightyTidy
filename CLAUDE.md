@@ -78,6 +78,9 @@ scripts/
   run-flaky-check.js       # Runs test suite N times (default 3) to detect flaky tests
 vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Windows CRLF fix)
 00_README.md .. 14_*.md    # PRD decomposition docs (reference only — not loaded by AI)
+.github/
+  workflows/
+    ci.yml                   # GitHub Actions: test matrix, coverage, docs check, security audit
 ```
 
 ## Module Map
@@ -124,7 +127,7 @@ npm run check:security    # npm audit — fails on high+ severity vulnerabilitie
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NIGHTYTIDY_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
+| `NIGHTYTIDY_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error`. Warns on invalid values. |
 
 No secrets or API keys — Claude Code handles its own authentication.
 

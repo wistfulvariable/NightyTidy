@@ -1,6 +1,9 @@
 node_modules/
 coverage/
 nightytidy-run.log
+nightytidy-progress.json
+nightytidy-dashboard.url
+nightytidy.lock
 *.log
 .env
 .env.*

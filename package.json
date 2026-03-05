@@ -18,6 +18,12 @@
     "code-quality"
   ],
   "type": "module",
+  "files": [
+    "bin/",
+    "src/",
+    "LICENSE",
+    "README.md"
+  ],
   "bin": {
     "nightytidy": "./bin/nightytidy.js"
   },

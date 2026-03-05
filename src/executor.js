@@ -107,7 +107,11 @@ export async function executeSteps(selectedSteps, projectDir, { signal, timeout,
     if (committed) {
       info(`${stepLabel}: committed by Claude Code \u2713`);
     } else {
-      await fallbackCommit(step.number, step.name);
+      try {
+        await fallbackCommit(step.number, step.name);
+      } catch (err) {
+        warn(`${stepLabel}: fallback commit failed — ${err.message}`);
+      }
     }
 
     const duration = Date.now() - stepStart;

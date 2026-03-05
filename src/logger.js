@@ -13,6 +13,12 @@ export function initLogger(projectDir) {
   writeFileSync(logFilePath, '', 'utf8');
 
   const envLevel = (process.env.NIGHTYTIDY_LOG_LEVEL || 'info').toLowerCase();
+  if (process.env.NIGHTYTIDY_LOG_LEVEL && !(envLevel in LEVELS)) {
+    process.stderr.write(
+      `[warn] Unknown NIGHTYTIDY_LOG_LEVEL="${process.env.NIGHTYTIDY_LOG_LEVEL}" — ` +
+      `valid values: ${Object.keys(LEVELS).join(', ')}. Defaulting to "info".\n`
+    );
+  }
   minLevel = LEVELS[envLevel] ?? LEVELS.info;
 }
 

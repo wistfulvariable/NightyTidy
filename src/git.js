@@ -102,11 +102,11 @@ export async function hasNewCommit(sinceHash) {
 }
 
 export async function fallbackCommit(stepNumber, stepName) {
-  // Exclude NightyTidy's ephemeral files — staging them causes the log file
-  // to be tracked by git, and subsequent Claude Code subprocess git operations
-  // can reset tracked files, losing log entries for later steps.
-  const excludes = EPHEMERAL_FILES.map(f => `:!${f}`);
-  await git.raw(['add', '-A', '--', '.', ...excludes]);
+  // Ephemeral files are already excluded via .git/info/exclude
+  // (set up by excludeEphemeralFiles). Plain `git add -A` respects that.
+  // Do NOT use `:!` pathspec exclusions — git 2.53+ errors when the
+  // excluded file also matches a .gitignore pattern in the target project.
+  await git.raw(['add', '-A']);
 
   const status = await git.status();
   if (status.staged.length === 0) {
