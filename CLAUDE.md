@@ -41,7 +41,7 @@ src/
   dashboard.js             # Progress file writer + TUI window spawner + HTTP server (~230 LOC)
   dashboard-html.js        # Dashboard HTML template with CSS + JS (~410 LOC, used by dashboard.js)
   dashboard-tui.js         # Standalone TUI progress display (spawned in separate terminal window)
-  lock.js                  # Atomic lock file to prevent concurrent runs (~65 LOC)
+  lock.js                  # Atomic lock file to prevent concurrent runs (~100 LOC, async with TTY prompt)
   logger.js                # File + stdout logger with chalk coloring (~50 LOC)
   report.js                # NIGHTYTIDY-REPORT.md generation + CLAUDE.md update
   setup.js                 # --setup command: generates CLAUDE.md integration snippet for target projects
@@ -65,7 +65,7 @@ test/
   integration.test.js      # 5 tests — multi-module integration with real git repos
   setup.test.js            # 7 tests — integration snippet generation, idempotent setup
   dashboard-tui.test.js    # 18 tests — formatMs, progressBar, render with chalk proxy mock
-  cli-extended.test.js     # 20 tests — --list, --steps, --setup, locks, callbacks, dashboard state
+  cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
   contracts.test.js        # 31 tests — module API contract verification against CLAUDE.md
@@ -94,7 +94,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/dashboard.js` | Progress file + TUI window spawner + HTTP server (CSRF, security headers) | crypto, logger, dashboard-html |
 | `src/dashboard-html.js` | Dashboard HTML template (CSS + client-side JS) | none (data only) |
 | `src/dashboard-tui.js` | Standalone TUI progress display (reads progress JSON, renders with chalk) | chalk (standalone script) |
-| `src/lock.js` | Atomic lock file — prevents concurrent runs | logger |
+| `src/lock.js` | Atomic lock file — prevents concurrent runs (async, TTY override prompt) | readline, logger |
 | `src/logger.js` | File + stdout logger (universal dep) | none |
 | `src/report.js` | Report generation + CLAUDE.md update + `getVersion()` | logger |
 | `src/setup.js` | `--setup` command: CLAUDE.md integration for target projects | logger, prompts/steps |
@@ -107,8 +107,9 @@ npm install               # Install dependencies
 npx nightytidy            # Run (interactive step selection)
 npx nightytidy --all      # Run all 28 steps (non-interactive)
 npx nightytidy --steps 1,5,12  # Run specific steps by number
-npx nightytidy --list     # List all available steps
+npx nightytidy --list     # List all available steps with descriptions
 npx nightytidy --timeout 60  # Set per-step timeout to 60 minutes (default: 45)
+npx nightytidy --dry-run  # Run pre-checks + step selection, show plan, exit without running
 npx nightytidy --setup    # Add Claude Code integration to target project's CLAUDE.md
 npm test                  # Vitest — single pass
 npm run test:watch        # Vitest — watch mode
@@ -145,7 +146,7 @@ No secrets or API keys — Claude Code handles its own authentication.
 
 ```
 1. initLogger(projectDir)        ← MUST be first — everything logs
-2. acquireLock(projectDir)       ← Prevents concurrent runs (atomic O_EXCL lock file)
+2. await acquireLock(projectDir)  ← Prevents concurrent runs (async — may prompt for override)
 3. initGit(projectDir)           ← Returns git instance + stores projectRoot
 4. excludeEphemeralFiles()       ← Adds log/progress/url files to .git/info/exclude
 5. runPreChecks(projectDir, git) ← Validates environment before any work
@@ -203,7 +204,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | Module | Contract |
 |--------|----------|
 | `checks.js` | **Throws** with user-friendly messages → caught by cli.js |
-| `lock.js` | **Throws** with user-friendly messages → caught by cli.js |
+| `lock.js` | **Async, throws** with user-friendly messages → awaited + caught by cli.js. Prompts for override in TTY when lock appears active. |
 | `claude.js` | **Never throws** → returns `{ success, output, error, exitCode, duration, attempts }` |
 | `executor.js` | **Never throws** → failed steps recorded, run continues |
 | `git.js` `mergeRunBranch` | **Never throws** → returns `{ success: false, conflict: true }` on conflict |
@@ -224,7 +225,7 @@ bin/nightytidy.js
         ├── src/claude.js            → logger
         ├── src/executor.js          → crypto, claude, git, notifications, logger, prompts/steps
         ├── src/prompts/steps.js     (no deps — data only)
-        ├── src/lock.js              → logger
+        ├── src/lock.js              → readline, logger
         ├── src/notifications.js     → logger
         ├── src/dashboard.js         → crypto, logger, child_process, dashboard-html
         │     └── src/dashboard-html.js  (no deps — HTML template only)

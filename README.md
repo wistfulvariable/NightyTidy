@@ -41,8 +41,12 @@ npx nightytidy --all
 # Run specific steps by number
 npx nightytidy --steps 1,5,12
 
-# List all available steps
+# List all available steps with descriptions
 npx nightytidy --list
+
+# Preview what would run without actually running
+npx nightytidy --dry-run
+npx nightytidy --all --dry-run
 
 # Set per-step timeout (default: 45 minutes)
 npx nightytidy --timeout 60

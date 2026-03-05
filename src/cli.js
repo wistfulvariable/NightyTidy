@@ -15,8 +15,26 @@ import { setupProject } from './setup.js';
 import { startDashboard, updateDashboard, stopDashboard, scheduleShutdown } from './dashboard.js';
 import { acquireLock } from './lock.js';
 
+const PROGRESS_SUMMARY_INTERVAL = 5; // Print a summary every N completed steps
+const DESC_MAX_LENGTH = 72;
+
+function extractStepDescription(prompt) {
+  // Grab the first two sentences from the prompt to use as a brief description.
+  // Strip markdown heading prefixes and common prompt preambles.
+  const cleaned = prompt.replace(/^#+\s*/m, '').replace(/^You are running an overnight\s+/i, '');
+  const sentences = cleaned.match(/[^.!?\n]+[.!?]/g);
+  if (!sentences || sentences.length === 0) return '';
+  let desc = sentences[0].trim();
+  if (desc.length > DESC_MAX_LENGTH) desc = desc.slice(0, DESC_MAX_LENGTH - 1) + '\u2026';
+  return desc;
+}
+
 function buildStepCallbacks(spinner, selected, dashState) {
   const stepStartTimes = new Map();
+  let runStartTime = null;
+  let doneCount = 0;
+  let passCount = 0;
+  let failCountLocal = 0;
 
   function updateStepDash(idx, status) {
     if (!dashState) return;
@@ -33,10 +51,21 @@ function buildStepCallbacks(spinner, selected, dashState) {
     }
   }
 
+  function maybePrintProgressSummary(total) {
+    if (total <= PROGRESS_SUMMARY_INTERVAL) return;
+    if (doneCount % PROGRESS_SUMMARY_INTERVAL !== 0) return;
+    const elapsed = formatDuration(Date.now() - runStartTime);
+    const remaining = total - doneCount;
+    console.log(chalk.dim(
+      `\n   Progress: ${doneCount}/${total} done (${passCount} passed, ${failCountLocal} failed) \u2014 ${elapsed} elapsed, ${remaining} remaining\n`
+    ));
+  }
+
   return {
     onStepStart: (step, idx, total) => {
       spinner.text = `\u23f3 Step ${idx + 1}/${total}: ${step.name}...`;
       stepStartTimes.set(idx, Date.now());
+      if (!runStartTime) runStartTime = Date.now();
       if (dashState) {
         dashState.status = 'running';
         dashState.currentStepIndex = idx;
@@ -49,12 +78,18 @@ function buildStepCallbacks(spinner, selected, dashState) {
     onStepComplete: (step, idx, total) => {
       spinner.stop();
       console.log(chalk.green(`\u2713 Step ${idx + 1}/${total}: ${step.name} \u2014 done`));
+      doneCount++;
+      passCount++;
+      maybePrintProgressSummary(total);
       startNextSpinner(idx, total);
       updateStepDash(idx, 'completed');
     },
     onStepFail: (step, idx, total) => {
       spinner.stop();
       console.log(chalk.red(`\u2717 Step ${idx + 1}/${total}: ${step.name} \u2014 failed`));
+      doneCount++;
+      failCountLocal++;
+      maybePrintProgressSummary(total);
       startNextSpinner(idx, total);
       updateStepDash(idx, 'failed');
     },
@@ -111,6 +146,14 @@ function printCompletionSummary(executionResults, mergeResult, { runBranch, tagN
     }
     console.log(chalk.dim(`\ud83d\udcc4 Report: NIGHTYTIDY-REPORT.md`));
     console.log(chalk.dim(`\ud83c\udff7\ufe0f  Safety tag: ${tagName}`));
+
+    if (executionResults.failedCount > 0) {
+      const failedNames = executionResults.results
+        .filter(r => r.status === 'failed')
+        .map(r => r.step.name);
+      console.log(chalk.yellow(`\n   Failed steps: ${failedNames.join(', ')}`));
+      console.log(chalk.dim('   See NIGHTYTIDY-REPORT.md for details and retry suggestions.'));
+    }
   } else {
     console.log(chalk.yellow(`\n\u26a0\ufe0f  NightyTidy complete \u2014 ${executionResults.completedCount}/${totalSteps} steps succeeded, but merge needs attention.`));
     console.log(chalk.dim(`\ud83d\udcc4 Changes on branch: ${runBranch}`));
@@ -193,6 +236,22 @@ function showWelcome() {
   ));
 }
 
+function printStepList() {
+  console.log(chalk.cyan(`\nAvailable steps (${STEPS.length} total):\n`));
+  const numWidth = String(STEPS.length).length;
+  for (const step of STEPS) {
+    const num = String(step.number).padStart(numWidth);
+    const desc = extractStepDescription(step.prompt);
+    if (desc) {
+      console.log(`  ${num}. ${step.name}`);
+      console.log(chalk.dim(`      ${desc}`));
+    } else {
+      console.log(`  ${num}. ${step.name}`);
+    }
+  }
+  console.log(chalk.dim(`\nUse --steps 1,5,12 to run specific steps, or --all to run everything.`));
+}
+
 export async function run() {
   const program = new Command();
   program
@@ -203,7 +262,8 @@ export async function run() {
     .option('--steps <numbers>', 'Run specific steps by number (comma-separated, e.g. --steps 1,5,12)')
     .option('--list', 'List all available steps and exit')
     .option('--setup', 'Add NightyTidy integration to this project\u2019s CLAUDE.md so Claude Code knows how to use it')
-    .option('--timeout <minutes>', 'Timeout per step in minutes (default: 45)', parseInt);
+    .option('--timeout <minutes>', 'Timeout per step in minutes (default: 45)', parseInt)
+    .option('--dry-run', 'Run pre-checks and show selected steps without executing');
 
   program.parse();
   const opts = program.opts();
@@ -211,7 +271,7 @@ export async function run() {
   const projectDir = process.cwd();
   const timeoutMs = opts.timeout ? opts.timeout * 60 * 1000 : undefined;
   if (opts.timeout !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
-    console.error(chalk.red('--timeout must be a positive number of minutes'));
+    console.error(chalk.red(`--timeout must be a positive number of minutes (got "${opts.timeout}")`));
     process.exit(1);
   }
   let spinner;
@@ -248,11 +308,11 @@ export async function run() {
     info('NightyTidy starting');
 
     // 2. Prevent concurrent runs
-    acquireLock(projectDir);
+    await acquireLock(projectDir);
 
     // 3a. List steps and exit (no git or pre-checks needed)
     if (opts.list) {
-      STEPS.forEach(step => console.log(`${step.number}. ${step.name}`));
+      printStepList();
       process.exit(0);
     }
 
@@ -275,6 +335,20 @@ export async function run() {
 
     // 6. Step selector
     const selected = await selectSteps(opts);
+
+    // 6b. Dry run — show plan and exit
+    if (opts.dryRun) {
+      console.log(chalk.cyan(`\n--- Dry Run ---\n`));
+      console.log(`Pre-checks: ${chalk.green('passed')}`);
+      console.log(`Steps selected: ${selected.length}`);
+      console.log(`Estimated time: ${Math.ceil(selected.length * 15)}\u2013${selected.length * 30} minutes`);
+      console.log(`Timeout per step: ${opts.timeout ? `${opts.timeout} min` : '45 min (default)'}\n`);
+      for (const step of selected) {
+        console.log(`  ${step.number}. ${step.name}`);
+      }
+      console.log(chalk.dim(`\nRemove --dry-run to start the actual run.`));
+      process.exit(0);
+    }
 
     // 7. Start live dashboard
     dashState = {

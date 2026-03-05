@@ -475,5 +475,171 @@ describe('cli.js extended coverage', () => {
 
       expect(processExitSpy).toHaveBeenCalledWith(1);
     });
+
+    it('includes the invalid value in the error message', async () => {
+      const program = new Command();
+      program.opts.mockReturnValueOnce({ timeout: -5 });
+
+      await expect(run()).rejects.toThrow('process.exit called');
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(expect.stringContaining('"-5"'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // --list flag shows descriptions and total count
+  // -------------------------------------------------------------------------
+  describe('--list with descriptions', () => {
+    it('prints total step count header', async () => {
+      const program = new Command();
+      program.opts.mockReturnValueOnce({ list: true });
+
+      await expect(run()).rejects.toThrow('process.exit called');
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('3 total'));
+    });
+
+    it('prints usage hint at the bottom', async () => {
+      const program = new Command();
+      program.opts.mockReturnValueOnce({ list: true });
+
+      await expect(run()).rejects.toThrow('process.exit called');
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('--steps'));
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('--all'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // --dry-run flag
+  // -------------------------------------------------------------------------
+  describe('--dry-run flag', () => {
+    it('shows plan and exits without executing', async () => {
+      const program = new Command();
+      program.opts.mockReturnValueOnce({ all: true, dryRun: true });
+
+      await expect(run()).rejects.toThrow('process.exit called');
+
+      expect(processExitSpy).toHaveBeenCalledWith(0);
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Dry Run'));
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('passed'));
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Steps selected'));
+      // Should NOT execute any steps
+      expect(executeSteps).not.toHaveBeenCalled();
+    });
+
+    it('runs pre-checks before showing dry-run plan', async () => {
+      const program = new Command();
+      program.opts.mockReturnValueOnce({ all: true, dryRun: true });
+
+      await expect(run()).rejects.toThrow('process.exit called');
+
+      expect(runPreChecks).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows selected step names in the plan', async () => {
+      const program = new Command();
+      program.opts.mockReturnValueOnce({ steps: '1', dryRun: true });
+
+      await expect(run()).rejects.toThrow('process.exit called');
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Lint'));
+    });
+
+    it('shows custom timeout in the plan', async () => {
+      const program = new Command();
+      program.opts.mockReturnValueOnce({ all: true, dryRun: true, timeout: 60 });
+
+      await expect(run()).rejects.toThrow('process.exit called');
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('60 min'));
+    });
+
+    it('exits with error if pre-checks fail during dry-run', async () => {
+      const program = new Command();
+      program.opts.mockReturnValueOnce({ all: true, dryRun: true });
+      runPreChecks.mockRejectedValueOnce(new Error('Git not found'));
+
+      await expect(run()).rejects.toThrow('process.exit called');
+
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+      expect(executeSteps).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Progress summary during execution
+  // -------------------------------------------------------------------------
+  describe('progress summary', () => {
+    it('prints progress summary every 5 steps for large runs', async () => {
+      // Mock 6 steps so the summary triggers at step 5
+      const sixSteps = Array.from({ length: 6 }, (_, i) => ({
+        number: i + 1, name: `Step${i + 1}`, prompt: `do step ${i + 1}`,
+      }));
+
+      // Override STEPS mock for this test by selecting from --steps
+      checkbox.mockResolvedValue(sixSteps);
+
+      executeSteps.mockImplementation(async (steps, dir, opts) => {
+        // Simulate 5 completed steps + 1 failed
+        for (let i = 0; i < 5; i++) {
+          opts.onStepStart(steps[i], i, 6);
+          opts.onStepComplete(steps[i], i, 6);
+        }
+        opts.onStepStart(steps[5], 5, 6);
+        opts.onStepFail(steps[5], 5, 6);
+        return {
+          results: steps.map((s, i) => ({
+            step: { number: s.number, name: s.name },
+            status: i < 5 ? 'completed' : 'failed',
+            output: 'ok', duration: 30000, attempts: 1, error: null,
+          })),
+          completedCount: 5, failedCount: 1, totalDuration: 180000,
+        };
+      });
+
+      await run();
+
+      // Should have printed a progress summary after 5 steps
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Progress:'));
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('5/6 done'));
+    });
+
+    it('does not print progress summary for small runs', async () => {
+      executeSteps.mockImplementation(async (steps, dir, opts) => {
+        opts.onStepStart(steps[0], 0, 1);
+        opts.onStepComplete(steps[0], 0, 1);
+        return { results: [], completedCount: 1, failedCount: 0, totalDuration: 30000 };
+      });
+
+      await run();
+
+      const progressCalls = consoleLogSpy.mock.calls.filter(
+        c => typeof c[0] === 'string' && c[0].includes('Progress:')
+      );
+      expect(progressCalls).toHaveLength(0);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Failed step summary at completion
+  // -------------------------------------------------------------------------
+  describe('failed step summary', () => {
+    it('prints failed step names at the end of a run with failures', async () => {
+      executeSteps.mockResolvedValue({
+        results: [
+          { step: { number: 1, name: 'Lint' }, status: 'completed', output: 'ok', duration: 30000, attempts: 1, error: null },
+          { step: { number: 2, name: 'Format' }, status: 'failed', output: '', duration: 10000, attempts: 4, error: 'timeout' },
+        ],
+        completedCount: 1,
+        failedCount: 1,
+        totalDuration: 40000,
+      });
+
+      await run();
+
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Failed steps:'));
+      expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Format'));
+    });
   });
 });
