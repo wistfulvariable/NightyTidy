@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, unlinkSync, openSync, closeSync } from 'fs';
 import path from 'path';
-import { warn } from './logger.js';
+import { debug, warn } from './logger.js';
 
 const LOCK_FILENAME = 'nightytidy.lock';
 
@@ -58,6 +58,8 @@ export function acquireLock(projectDir) {
       throw retryErr;
     }
   }
+
+  debug(`Lock acquired (PID ${process.pid})`);
 
   // Auto-remove on any exit
   process.on('exit', () => {

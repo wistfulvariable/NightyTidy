@@ -76,7 +76,7 @@ async function handleAbortedRun(executionResults, { projectDir, runBranch, tagNa
   try {
     await gitInstance.add(['NIGHTYTIDY-REPORT.md']);
     await gitInstance.commit('NightyTidy: Add partial run report');
-  } catch { /* ignore */ }
+  } catch (err) { debug(`Could not commit partial report: ${err.message}`); }
 
   notify('NightyTidy Stopped', `${executionResults.completedCount} steps completed. Changes on branch ${runBranch}.`);
 
@@ -165,7 +165,7 @@ async function selectSteps(opts) {
   });
 
   if (!selected || selected.length === 0) {
-    console.log(chalk.yellow('You need to select at least one step. Exiting.'));
+    console.log(chalk.yellow('No steps selected. Select at least one step to continue.'));
     process.exit(0);
   }
 

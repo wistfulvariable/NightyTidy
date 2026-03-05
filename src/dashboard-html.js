@@ -355,7 +355,7 @@ function render(s) {
       s.completedCount + ' passed, ' + s.failedCount + ' failed out of ' + s.totalSteps + ' steps';
     document.getElementById('summary-outcome').textContent =
       s.status === 'completed' && s.failedCount === 0 ? 'All steps succeeded!'
-      : s.status === 'error' ? 'Error: ' + (s.error || 'Unknown')
+      : s.status === 'error' ? 'Error: ' + (s.error || 'No error details available')
       : '';
 
     if (elapsedInterval) {

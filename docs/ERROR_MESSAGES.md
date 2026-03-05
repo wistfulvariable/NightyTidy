@@ -52,6 +52,7 @@ Every error message should follow this pattern:
 |---------|---------|-----------|
 | Git not installed | `Git is not installed or not on your PATH.` | `Install it from https://git-scm.com and try again.` |
 | Not a git repo | `This folder isn't a git project. Navigate to your project folder and try again.` | `If you need to set one up, run: git init` |
+| No commits yet | `Your project has no commits yet. NightyTidy needs at least one commit to create a safety tag.` | `Make an initial commit and try again: git add -A && git commit -m "Initial commit"` |
 | Claude Code not installed | `Claude Code not detected.` | `Install it from https://docs.anthropic.com/en/docs/claude-code and sign in before running NightyTidy.` |
 | Claude Code timeout (auth check) | `Claude Code didn't respond within 30 seconds. It may be experiencing an outage.` | `Check https://status.anthropic.com and try again later.` |
 | Claude Code sign-in failed | `Claude Code sign-in did not complete successfully.` | `If this keeps happening, check https://status.anthropic.com for outages.` |
@@ -71,12 +72,19 @@ Every error message should follow this pattern:
 
 | Trigger | Message | Type |
 |---------|---------|------|
-| No steps selected | `You need to select at least one step. Exiting.` | Validation (yellow) |
+| No steps selected | `No steps selected. Select at least one step to continue.` | Validation (yellow) |
 | Invalid --steps numbers | `Invalid step number(s): [N, ...]. Valid range: 1-28.` | Validation (red) |
 | First SIGINT | `Stopping NightyTidy... finishing current step.` | Feedback (yellow) |
 | Second SIGINT | `Force stopping.` | Confirmation (plain) |
 | Unexpected error | `An unexpected error occurred. Check nightytidy-run.log for details.` | Error (red) |
 | Fatal error (after run started) | `Your code is safe. Reset to tag [tag] to undo any changes.` | Reassurance (yellow) |
+
+## Lock File (`src/lock.js`)
+
+| Trigger | Message | Next Step |
+|---------|---------|-----------|
+| Another run active | `Another NightyTidy run is already in progress (PID [N], started [time]).` | `If this is wrong, delete nightytidy.lock and try again.` |
+| Race condition on stale lock | `Another NightyTidy run acquired the lock while cleaning up a stale lock file.` | `If this is wrong, delete nightytidy.lock and try again.` |
 
 ## Notifications (`src/notifications.js` via callers)
 
