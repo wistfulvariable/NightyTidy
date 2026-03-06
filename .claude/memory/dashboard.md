@@ -14,11 +14,14 @@ Assumes CLAUDE.md loaded. Progress display in `src/dashboard.js` (612 lines) + `
 
 ## Architecture
 
-Two parallel display systems:
+Three display systems (context-dependent):
 1. **TUI window**: Standalone `dashboard-tui.js` spawned in separate terminal, reads `nightytidy-progress.json`
-2. **HTTP server**: Serves HTML dashboard + SSE real-time events at random port
+2. **HTTP server (interactive)**: In-process server in `dashboard.js` — serves HTML + SSE, push-based via `updateDashboard()`
+3. **HTTP server (orchestrator)**: Detached `dashboard-standalone.js` process — serves same HTML + SSE, poll-based (reads progress JSON every 500ms)
 
-Both are fire-and-forget — failure of either must not crash the run.
+Interactive mode uses #1 + #2. Orchestrator mode uses #3 only (spawned by `--init-run`, killed by `--finish-run`).
+
+All are fire-and-forget — failure of any must not crash the run.
 
 ## Exports (dashboard.js)
 
@@ -69,6 +72,23 @@ Updated by `cli.js` callbacks → passed to `updateDashboard()` → written to J
 - Called directly on abort (not `scheduleShutdown()` — `process.exit` kills timers)
 - Ephemeral file cleanup happens even without HTTP server (TUI-only mode)
 
+## Orchestrator Mode Dashboard
+
+`dashboard-standalone.js` — standalone detached HTTP server for orchestrator mode.
+
+| Constant | Value | File |
+|----------|-------|------|
+| `POLL_INTERVAL` | 500 ms | dashboard-standalone.js |
+
+- Spawned by `orchestrator.js` `initRun()` via `spawnDashboardServer(projectDir)`
+- Detached process, PID + URL stored in `nightytidy-run-state.json`
+- Polls `nightytidy-progress.json` for state changes (written by `runStep()`)
+- Serves same HTML via `getHTML()` from `dashboard-html.js`
+- CSRF token generated per session, `/stop` endpoint is no-op (abort handled externally)
+- Killed via `SIGTERM` by `finishRun()` → `stopDashboardServer(pid)`
+- `initRun` returns `dashboardUrl` in JSON output so outer Claude Code can share it
+
 ## Error Handling
 
 All errors swallowed. Server fail → TUI-only. TUI fail → HTTP-only. Both fail → run continues.
+Orchestrator mode: spawn fail → `dashboardUrl: null` in output, run continues without dashboard.

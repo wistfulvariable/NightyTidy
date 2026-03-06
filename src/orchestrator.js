@@ -1,4 +1,6 @@
 import { readFileSync, writeFileSync, unlinkSync, existsSync } from 'fs';
+import { spawn } from 'child_process';
+import { fileURLToPath } from 'url';
 import path from 'path';
 
 import { initLogger, info, warn, error as logError } from './logger.js';
@@ -10,6 +12,9 @@ import { executeSingleStep, SAFETY_PREAMBLE } from './executor.js';
 import { notify } from './notifications.js';
 import { generateReport, formatDuration } from './report.js';
 import { acquireLock, releaseLock } from './lock.js';
+
+const PROGRESS_FILENAME = 'nightytidy-progress.json';
+const URL_FILENAME = 'nightytidy-dashboard.url';
 
 const STATE_FILENAME = 'nightytidy-run-state.json';
 const STATE_VERSION = 1;
@@ -55,6 +60,100 @@ function validateStepNumbers(numbers) {
   return null;
 }
 
+function buildProgressState(state) {
+  const doneNums = new Set([
+    ...state.completedSteps.map(s => s.number),
+    ...state.failedSteps.map(s => s.number),
+  ]);
+  return {
+    status: 'running',
+    totalSteps: state.selectedSteps.length,
+    currentStepIndex: -1,
+    currentStepName: '',
+    steps: state.selectedSteps.map(num => {
+      const step = STEPS.find(s => s.number === num);
+      const completed = state.completedSteps.find(s => s.number === num);
+      const failed = state.failedSteps.find(s => s.number === num);
+      return {
+        number: num,
+        name: step?.name || `Step ${num}`,
+        status: completed ? 'completed' : failed ? 'failed' : 'pending',
+        duration: completed?.duration || failed?.duration || null,
+      };
+    }),
+    completedCount: state.completedSteps.length,
+    failedCount: state.failedSteps.length,
+    startTime: state.startTime,
+    error: null,
+  };
+}
+
+function writeProgress(projectDir, progressState) {
+  try {
+    writeFileSync(path.join(projectDir, PROGRESS_FILENAME), JSON.stringify(progressState), 'utf8');
+  } catch { /* non-critical */ }
+}
+
+function cleanupDashboard(projectDir) {
+  for (const f of [PROGRESS_FILENAME, URL_FILENAME]) {
+    try { unlinkSync(path.join(projectDir, f)); } catch { /* already gone */ }
+  }
+}
+
+function spawnDashboardServer(projectDir) {
+  try {
+    const serverScript = fileURLToPath(new URL('./dashboard-standalone.js', import.meta.url));
+    const useShell = process.platform === 'win32';
+
+    const child = spawn('node', [serverScript, projectDir], {
+      detached: true,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      shell: useShell,
+      windowsHide: true,
+    });
+
+    return new Promise((resolve) => {
+      let output = '';
+      const timer = setTimeout(() => {
+        child.stdout.removeAllListeners();
+        child.unref();
+        warn('Dashboard server did not respond in time — continuing without dashboard');
+        resolve(null);
+      }, 5000);
+
+      child.stdout.on('data', (chunk) => {
+        output += chunk.toString();
+        if (output.includes('\n')) {
+          clearTimeout(timer);
+          child.stdout.removeAllListeners();
+          child.unref();
+          try {
+            const info = JSON.parse(output.trim());
+            return resolve({ url: info.url, pid: info.pid });
+          } catch {
+            resolve(null);
+          }
+        }
+      });
+
+      child.on('error', () => {
+        clearTimeout(timer);
+        resolve(null);
+      });
+    });
+  } catch (err) {
+    warn(`Could not start dashboard server: ${err.message}`);
+    return Promise.resolve(null);
+  }
+}
+
+function stopDashboardServer(pid) {
+  if (!pid) return;
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch { /* already dead */ }
+}
+
 export async function initRun(projectDir, { steps, timeout } = {}) {
   try {
     initLogger(projectDir, { quiet: true });
@@ -96,8 +195,20 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
       failedSteps: [],
       startTime: Date.now(),
       timeout: timeout || null,
+      dashboardPid: null,
+      dashboardUrl: null,
     };
     writeState(projectDir, state);
+
+    // Write initial progress JSON and spawn dashboard server
+    writeProgress(projectDir, buildProgressState(state));
+    const dashboard = await spawnDashboardServer(projectDir);
+    if (dashboard) {
+      state.dashboardPid = dashboard.pid;
+      state.dashboardUrl = dashboard.url;
+      writeState(projectDir, state);
+      info(`Dashboard server at ${dashboard.url} (PID ${dashboard.pid})`);
+    }
 
     notify('NightyTidy Started', `Orchestrator run initialized with ${selectedNums.length} steps.`);
     info(`Orchestrator init complete: branch=${runBranch}, tag=${tagName}, steps=${selectedNums.join(',')}`);
@@ -107,6 +218,7 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
       tagName,
       originalBranch,
       selectedSteps: selectedNums,
+      dashboardUrl: state.dashboardUrl,
     });
   } catch (err) {
     return fail(err.message);
@@ -143,6 +255,17 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
     const stepTimeout = timeout || state.timeout || undefined;
 
     info(`Orchestrator: running step ${stepNumber} — ${step.name}`);
+
+    // Update progress: mark step as running
+    const stepIdx = state.selectedSteps.indexOf(stepNumber);
+    const progress = buildProgressState(state);
+    progress.currentStepIndex = stepIdx;
+    progress.currentStepName = step.name;
+    if (stepIdx >= 0 && progress.steps[stepIdx]) {
+      progress.steps[stepIdx].status = 'running';
+    }
+    writeProgress(projectDir, progress);
+
     const result = await executeSingleStep(step, projectDir, { timeout: stepTimeout });
 
     // Update state
@@ -153,6 +276,9 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
       state.failedSteps.push(entry);
     }
     writeState(projectDir, state);
+
+    // Update progress after step completes
+    writeProgress(projectDir, buildProgressState(state));
 
     // Compute remaining
     const doneNums = new Set([...state.completedSteps.map(s => s.number), ...state.failedSteps.map(s => s.number)]);
@@ -237,7 +363,16 @@ export async function finishRun(projectDir) {
     // Merge
     const mergeResult = await mergeRunBranch(state.originalBranch, state.runBranch);
 
-    // Cleanup
+    // Update progress to completed status before cleanup
+    const finalProgress = buildProgressState(state);
+    finalProgress.status = 'completed';
+    writeProgress(projectDir, finalProgress);
+
+    // Stop dashboard server and clean up
+    stopDashboardServer(state.dashboardPid);
+    // Brief delay to let last SSE event reach clients
+    await new Promise(resolve => setTimeout(resolve, 500));
+    cleanupDashboard(projectDir);
     releaseLock(projectDir);
     deleteState(projectDir);
 

@@ -34,13 +34,14 @@ bin/
 src/
   cli.js                   # Full lifecycle orchestration (welcome → checks → select → execute → report → merge)
   executor.js              # Core step loop — runs prompts sequentially, handles failures + executeSingleStep
-  orchestrator.js          # Claude Code orchestrator mode — initRun, runStep, finishRun (~200 LOC)
+  orchestrator.js          # Claude Code orchestrator mode — initRun, runStep, finishRun + dashboard (~400 LOC)
   claude.js                # Claude Code subprocess wrapper (spawn, retry, timeout, session continue)
   git.js                   # Git operations — branches, tags, commits, merges
   checks.js                # Pre-run validation (git, Claude CLI, disk space)
   notifications.js         # Desktop notifications (silent on failure)
   dashboard.js             # Progress file writer + TUI window spawner + HTTP server (~230 LOC)
   dashboard-html.js        # Dashboard HTML template with CSS + JS (~410 LOC, used by dashboard.js)
+  dashboard-standalone.js  # Standalone dashboard HTTP server for orchestrator mode (~100 LOC, detached process)
   dashboard-tui.js         # Standalone TUI progress display (spawned in separate terminal window)
   lock.js                  # Atomic lock file to prevent concurrent runs (~100 LOC, async with TTY prompt)
   logger.js                # File + stdout logger with chalk coloring (~50 LOC)
@@ -69,7 +70,7 @@ test/
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
-  orchestrator.test.js     # 24 tests — initRun, runStep, finishRun with mocked modules
+  orchestrator.test.js     # 31 tests — initRun, runStep, finishRun, dashboard integration with mocked modules
   contracts.test.js        # 31 tests — module API contract verification against CLAUDE.md
   helpers/
     cleanup.js             # Shared temp directory cleanup with EBUSY retry for Windows
@@ -92,13 +93,14 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `bin/nightytidy.js` | Entry point — calls `run()` | cli |
 | `src/cli.js` | Commander + Inquirer + full lifecycle | all modules |
 | `src/executor.js` | Core step loop + single-step execution, prompt integrity check | crypto, claude, git, notifications, prompts |
-| `src/orchestrator.js` | Claude Code orchestrator mode (JSON API for step-by-step runs) | logger, checks, git, claude, executor, lock, report, notifications, prompts |
+| `src/orchestrator.js` | Claude Code orchestrator mode (JSON API for step-by-step runs) + dashboard | logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone |
 | `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue) | logger |
 | `src/git.js` | Git operations via simple-git | logger |
 | `src/checks.js` | Pre-run validation (6 checks) | logger |
 | `src/notifications.js` | Desktop notifications | logger |
 | `src/dashboard.js` | Progress file + TUI window spawner + HTTP server (CSRF, security headers) | crypto, logger, dashboard-html |
 | `src/dashboard-html.js` | Dashboard HTML template (CSS + client-side JS) | none (data only) |
+| `src/dashboard-standalone.js` | Standalone dashboard server for orchestrator mode (polls progress JSON, serves HTML+SSE) | dashboard-html (standalone script) |
 | `src/dashboard-tui.js` | Standalone TUI progress display (reads progress JSON, renders with chalk) | chalk (standalone script) |
 | `src/lock.js` | Atomic lock file — prevents concurrent runs (async, TTY override prompt) | readline, logger |
 | `src/logger.js` | File + stdout logger (universal dep) | none |
@@ -243,7 +245,8 @@ bin/nightytidy.js
         │     └── src/dashboard-html.js  (no deps — HTML template only)
         ├── src/dashboard-tui.js     (standalone — chalk only, spawned by dashboard.js)
         ├── src/setup.js             → logger, prompts/steps
-        ├── src/orchestrator.js      → logger, checks, git, claude, executor, lock, report, notifications, prompts
+        ├── src/orchestrator.js      → logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone
+        │     └── src/dashboard-standalone.js → dashboard-html (standalone detached process)
         └── src/report.js            → logger  (cli.js imports formatDuration + getVersion)
 ```
 
@@ -267,11 +270,13 @@ bin/nightytidy.js
 For non-TTY environments where Claude Code drives the workflow conversationally:
 
 1. `--list --json` → Claude Code presents steps, user picks
-2. `--init-run --steps 1,5,12` → pre-checks, git setup, state file created
-3. `--run-step N` (repeated) → one step at a time, Claude Code reports progress between steps
-4. `--finish-run` → changelog, report, merge, cleanup
+2. `--init-run --steps 1,5,12` → pre-checks, git setup, state file created, dashboard server spawned
+3. `--run-step N` (repeated) → one step at a time, progress JSON updated, Claude Code reports between steps
+4. `--finish-run` → changelog, report, merge, dashboard shutdown, cleanup
 
 Each command is a separate process invocation. State persists via `nightytidy-run-state.json`. Lock file persists across invocations (persistent mode). Logger runs in quiet mode (no stdout, JSON output only).
+
+**Dashboard in orchestrator mode**: `--init-run` spawns a detached `dashboard-standalone.js` process (HTTP server polling `nightytidy-progress.json`). The `dashboardUrl` is returned in the JSON output so the outer Claude Code can share it with the user. `--run-step` writes progress JSON before/after each step. `--finish-run` sends SIGTERM to the dashboard PID and cleans up ephemeral files. Dashboard PID and URL are stored in the state file.
 
 ## Testing
 
