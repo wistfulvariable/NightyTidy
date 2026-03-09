@@ -476,7 +476,7 @@ function updateStepItemStatus(stepNum, status, duration) {
       if (tokensEl && r) {
         const total = (r.inputTokens || 0) + (r.outputTokens || 0);
         const tokStr = NtLogic.formatTokens(total);
-        if (tokStr) tokensEl.textContent = tokStr + ' tok';
+        if (tokStr) tokensEl.textContent = tokStr + ' tokens';
       }
       el.classList.add('step-clickable');
       el.onclick = () => viewStepOutput(stepNum);
@@ -981,7 +981,7 @@ function renderSummary(finishData) {
     const cost = NtLogic.formatCost(r.costUSD) || '';
     const stepTotalTokens = (r.inputTokens || 0) + (r.outputTokens || 0);
     const tokens = NtLogic.formatTokens(stepTotalTokens);
-    const tokensStr = tokens ? tokens + ' tok' : '';
+    const tokensStr = tokens ? tokens + ' tokens' : '';
     return `
       <div class="step-item step-${status} step-clickable" data-step="${r.step}">
         <span class="step-icon">${icon}</span>

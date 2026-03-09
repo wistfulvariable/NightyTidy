@@ -383,6 +383,11 @@ body {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+  position: sticky;
+  top: 0;
+  background: #0a0a14;
+  z-index: 1;
+  padding-bottom: 4px;
 }
 .output-panel-header h2 {
   margin-bottom: 0;
@@ -586,25 +591,25 @@ body {
 
 .summary-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
   margin-bottom: 16px;
 }
 .stat-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 14px;
+  padding: 10px 6px;
   text-align: center;
 }
 .stat-card .value {
-  font-size: 1.4rem;
+  font-size: 1.2rem;
   font-weight: 600;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
 }
 .stat-card .label {
   color: var(--text-dim);
-  font-size: 0.8rem;
+  font-size: 0.75rem;
 }
 .stat-card .value.green  { color: var(--green); }
 .stat-card .value.red    { color: var(--red); }
