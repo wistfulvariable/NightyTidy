@@ -76,7 +76,7 @@ vi.mock('../src/claude.js', () => ({
   runPrompt: vi.fn(),
 }));
 
-vi.mock('../src/prompts/steps.js', () => ({
+vi.mock('../src/prompts/loader.js', () => ({
   STEPS: [
     { number: 1, name: 'Lint', prompt: 'lint the code' },
     { number: 2, name: 'Format', prompt: 'format the code' },
@@ -108,6 +108,8 @@ vi.mock('../src/dashboard.js', () => ({
   updateDashboard: vi.fn(),
   stopDashboard: vi.fn(),
   scheduleShutdown: vi.fn(),
+  broadcastOutput: vi.fn(),
+  clearOutputBuffer: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------

@@ -13,6 +13,18 @@ vi.mock('../src/logger.js', () => ({
   error: vi.fn(),
 }));
 
+vi.mock('../src/prompts/loader.js', () => {
+  const names = [
+    'Documentation', 'Test Coverage', 'Security Sweep', 'Performance',
+    ...Array.from({ length: 29 }, (_, i) => `Step ${i + 5}`),
+  ];
+  return {
+    STEPS: names.map((name, i) => ({ number: i + 1, name, prompt: `prompt ${i + 1}` })),
+    DOC_UPDATE_PROMPT: 'mock doc update',
+    CHANGELOG_PROMPT: 'mock changelog',
+  };
+});
+
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { generateIntegrationSnippet, setupProject } from '../src/setup.js';
 
@@ -21,7 +33,7 @@ beforeEach(() => {
 });
 
 describe('generateIntegrationSnippet', () => {
-  it('returns a string containing the marker and all 28 steps', () => {
+  it('returns a string containing the marker and all 33 steps', () => {
     const snippet = generateIntegrationSnippet();
 
     expect(snippet).toContain('## NightyTidy');
@@ -32,8 +44,8 @@ describe('generateIntegrationSnippet', () => {
     expect(snippet).toContain('nightytidy --finish-run');
     expect(snippet).toContain('nightytidy --list');
 
-    // All 28 steps present
-    for (let i = 1; i <= 28; i++) {
+    // All 33 steps present
+    for (let i = 1; i <= 33; i++) {
       expect(snippet).toContain(`${i}. **`);
     }
   });
@@ -43,7 +55,7 @@ describe('generateIntegrationSnippet', () => {
 
     expect(snippet).toContain('Documentation');
     expect(snippet).toContain('Test Coverage');
-    expect(snippet).toContain('Security Audit');
+    expect(snippet).toContain('Security Sweep');
     expect(snippet).toContain('Performance');
   });
 });

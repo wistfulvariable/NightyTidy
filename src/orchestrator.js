@@ -7,7 +7,7 @@ import { initLogger, info, warn, error as logError } from './logger.js';
 import { runPreChecks } from './checks.js';
 import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from './git.js';
 import { runPrompt } from './claude.js';
-import { STEPS, CHANGELOG_PROMPT } from './prompts/steps.js';
+import { STEPS, CHANGELOG_PROMPT } from './prompts/loader.js';
 import { executeSingleStep, SAFETY_PREAMBLE } from './executor.js';
 import { notify } from './notifications.js';
 import { generateReport, formatDuration } from './report.js';
@@ -266,7 +266,28 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
     }
     writeProgress(projectDir, progress);
 
-    const result = await executeSingleStep(step, projectDir, { timeout: stepTimeout });
+    // Stream Claude output to progress file for dashboard consumption
+    const OUTPUT_BUFFER_SIZE = 100 * 1024;
+    const OUTPUT_WRITE_INTERVAL = 500;
+    let outputBuffer = '';
+    let outputWritePending = false;
+
+    const onOutput = (chunk) => {
+      outputBuffer += chunk;
+      if (outputBuffer.length > OUTPUT_BUFFER_SIZE) {
+        outputBuffer = outputBuffer.slice(outputBuffer.length - OUTPUT_BUFFER_SIZE);
+      }
+      if (!outputWritePending) {
+        outputWritePending = true;
+        setTimeout(() => {
+          outputWritePending = false;
+          progress.currentStepOutput = outputBuffer;
+          writeProgress(projectDir, progress);
+        }, OUTPUT_WRITE_INTERVAL);
+      }
+    };
+
+    const result = await executeSingleStep(step, projectDir, { timeout: stepTimeout, onOutput });
 
     // Update state
     const entry = { number: step.number, name: step.name, status: result.status, duration: result.duration, attempts: result.attempts };
@@ -277,8 +298,10 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
     }
     writeState(projectDir, state);
 
-    // Update progress after step completes
-    writeProgress(projectDir, buildProgressState(state));
+    // Update progress after step completes (clear output)
+    const finalProgress = buildProgressState(state);
+    delete finalProgress.currentStepOutput;
+    writeProgress(projectDir, finalProgress);
 
     // Compute remaining
     const doneNums = new Set([...state.completedSteps.map(s => s.number), ...state.failedSteps.map(s => s.number)]);

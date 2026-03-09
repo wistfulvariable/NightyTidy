@@ -23,6 +23,8 @@ const urlFilePath = `${projectDir}/nightytidy-dashboard.url`;
 const csrfToken = randomBytes(16).toString('hex');
 
 let currentState = null;
+let lastOutputLength = 0;
+let lastStepName = '';
 const sseClients = new Set();
 
 const SECURITY_HEADERS = {
@@ -42,6 +44,23 @@ function pollProgress() {
     if (stateJson === JSON.stringify(currentState)) return;
 
     currentState = state;
+
+    // Reset output tracking when step changes
+    if (state.currentStepName !== lastStepName) {
+      lastOutputLength = 0;
+      lastStepName = state.currentStepName || '';
+    }
+
+    // Send only new output as SSE output event
+    if (state.currentStepOutput && state.currentStepOutput.length > lastOutputLength) {
+      const newChunk = state.currentStepOutput.slice(lastOutputLength);
+      lastOutputLength = state.currentStepOutput.length;
+      const outputPayload = `event: output\ndata: ${JSON.stringify(newChunk)}\n\n`;
+      for (const client of sseClients) {
+        try { client.write(outputPayload); } catch { sseClients.delete(client); }
+      }
+    }
+
     const payload = `event: state\ndata: ${stateJson}\n\n`;
     for (const client of sseClients) {
       try { client.write(payload); } catch { sseClients.delete(client); }

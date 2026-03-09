@@ -10,6 +10,8 @@ import { getHTML } from './dashboard-html.js';
 const SHUTDOWN_DELAY = 3000;
 const URL_FILENAME = 'nightytidy-dashboard.url';
 const PROGRESS_FILENAME = 'nightytidy-progress.json';
+const OUTPUT_BUFFER_SIZE = 100 * 1024; // 100KB rolling buffer per step
+const OUTPUT_WRITE_INTERVAL = 500; // ms — throttle disk writes for output
 
 let server = null;
 let sseClients = new Set();
@@ -19,6 +21,8 @@ let progressFilePath = null;
 let shutdownTimer = null;
 let tuiProcess = null;
 let csrfToken = null;
+let outputBuffer = '';
+let outputWritePending = false;
 
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -41,6 +45,11 @@ function handleSSE(res) {
   // Send current state immediately
   if (currentState) {
     res.write(`event: state\ndata: ${JSON.stringify(currentState)}\n\n`);
+  }
+
+  // Send current output buffer so late-joining clients see existing output
+  if (outputBuffer) {
+    res.write(`event: output\ndata: ${JSON.stringify(outputBuffer)}\n\n`);
   }
 
   sseClients.add(res);
@@ -189,6 +198,8 @@ export function updateDashboard(state) {
 }
 
 export function stopDashboard() {
+  clearOutputBuffer();
+
   if (shutdownTimer) {
     clearTimeout(shutdownTimer);
     shutdownTimer = null;
@@ -224,6 +235,47 @@ export function stopDashboard() {
   server = null;
 
   currentState = null;
+}
+
+export function broadcastOutput(chunk) {
+  // Append to rolling buffer, trim from front if over limit
+  outputBuffer += chunk;
+  if (outputBuffer.length > OUTPUT_BUFFER_SIZE) {
+    outputBuffer = outputBuffer.slice(outputBuffer.length - OUTPUT_BUFFER_SIZE);
+  }
+
+  // Throttled write to progress JSON (avoid thrashing disk on every chunk)
+  if (!outputWritePending && progressFilePath && currentState) {
+    outputWritePending = true;
+    setTimeout(() => {
+      outputWritePending = false;
+      if (progressFilePath && currentState) {
+        currentState.currentStepOutput = outputBuffer;
+        try {
+          writeFileSync(progressFilePath, JSON.stringify(currentState), 'utf8');
+        } catch { /* non-critical */ }
+      }
+    }, OUTPUT_WRITE_INTERVAL);
+  }
+
+  if (!server) return;
+
+  // Stream raw chunk to all SSE clients (JSON-encoded to handle newlines)
+  const ssePayload = `event: output\ndata: ${JSON.stringify(chunk)}\n\n`;
+  for (const client of sseClients) {
+    try {
+      client.write(ssePayload);
+    } catch {
+      sseClients.delete(client);
+    }
+  }
+}
+
+export function clearOutputBuffer() {
+  outputBuffer = '';
+  if (currentState) {
+    delete currentState.currentStepOutput;
+  }
 }
 
 export function scheduleShutdown() {

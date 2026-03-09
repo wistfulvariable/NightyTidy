@@ -263,7 +263,7 @@ describe('contract: executor.js — never throws, returns result object', () => 
       error: vi.fn(),
     }));
 
-    vi.doMock('../src/prompts/steps.js', () => ({
+    vi.doMock('../src/prompts/loader.js', () => ({
       STEPS: [],
       DOC_UPDATE_PROMPT: 'mock doc update',
     }));
@@ -274,7 +274,7 @@ describe('contract: executor.js — never throws, returns result object', () => 
     vi.doUnmock('../src/git.js');
     vi.doUnmock('../src/notifications.js');
     vi.doUnmock('../src/logger.js');
-    vi.doUnmock('../src/prompts/steps.js');
+    vi.doUnmock('../src/prompts/loader.js');
     vi.restoreAllMocks();
   });
 
@@ -456,13 +456,13 @@ describe('contract: steps.js — data shape', () => {
   beforeEach(() => {
     vi.resetModules();
     // Explicitly unmock steps so we get the REAL data
-    vi.doUnmock('../src/prompts/steps.js');
+    vi.doUnmock('../src/prompts/loader.js');
   });
 
-  it('STEPS is an array of exactly 28 objects with { number, name, prompt }', async () => {
-    const { STEPS } = await import('../src/prompts/steps.js');
+  it('STEPS is an array of exactly 33 objects with { number, name, prompt }', async () => {
+    const { STEPS } = await import('../src/prompts/loader.js');
 
-    expect(STEPS).toHaveLength(28);
+    expect(STEPS).toHaveLength(33);
 
     for (let i = 0; i < STEPS.length; i++) {
       const step = STEPS[i];
@@ -475,7 +475,7 @@ describe('contract: steps.js — data shape', () => {
   });
 
   it('exports DOC_UPDATE_PROMPT and CHANGELOG_PROMPT as non-empty strings', async () => {
-    const { DOC_UPDATE_PROMPT, CHANGELOG_PROMPT } = await import('../src/prompts/steps.js');
+    const { DOC_UPDATE_PROMPT, CHANGELOG_PROMPT } = await import('../src/prompts/loader.js');
 
     expect(typeof DOC_UPDATE_PROMPT).toBe('string');
     expect(DOC_UPDATE_PROMPT.length).toBeGreaterThan(50);
@@ -690,7 +690,7 @@ describe('contract: executor.js — callbacks are optional and receive correct a
       error: vi.fn(),
     }));
 
-    vi.doMock('../src/prompts/steps.js', () => ({
+    vi.doMock('../src/prompts/loader.js', () => ({
       STEPS: [],
       DOC_UPDATE_PROMPT: 'mock doc update',
     }));
@@ -701,7 +701,7 @@ describe('contract: executor.js — callbacks are optional and receive correct a
     vi.doUnmock('../src/git.js');
     vi.doUnmock('../src/notifications.js');
     vi.doUnmock('../src/logger.js');
-    vi.doUnmock('../src/prompts/steps.js');
+    vi.doUnmock('../src/prompts/loader.js');
     vi.restoreAllMocks();
   });
 

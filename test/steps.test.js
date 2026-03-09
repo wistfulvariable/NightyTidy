@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { STEPS, DOC_UPDATE_PROMPT, CHANGELOG_PROMPT } from '../src/prompts/steps.js';
+import { readFileSync, existsSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { STEPS, DOC_UPDATE_PROMPT, CHANGELOG_PROMPT } from '../src/prompts/loader.js';
 
 describe('STEPS', () => {
-  it('has exactly 28 entries', () => {
-    expect(STEPS).toHaveLength(28);
+  it('has exactly 33 entries', () => {
+    expect(STEPS).toHaveLength(33);
   });
 
   it('each entry has number, name, and prompt fields', () => {
@@ -17,15 +19,35 @@ describe('STEPS', () => {
     }
   });
 
-  it('numbers are sequential from 1 to 28', () => {
+  it('numbers are sequential from 1 to 33', () => {
     const numbers = STEPS.map((s) => s.number);
-    const expected = Array.from({ length: 28 }, (_, i) => i + 1);
+    const expected = Array.from({ length: 33 }, (_, i) => i + 1);
     expect(numbers).toEqual(expected);
   });
 
   it('no prompt is empty', () => {
     for (const step of STEPS) {
       expect(step.prompt.trim().length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('manifest.json', () => {
+  it('has version 1 and 33 step entries', () => {
+    const manifest = JSON.parse(readFileSync(
+      fileURLToPath(new URL('../src/prompts/manifest.json', import.meta.url)), 'utf8'
+    ));
+    expect(manifest.version).toBe(1);
+    expect(manifest.steps).toHaveLength(33);
+  });
+
+  it('every manifest ID has a corresponding .md file in steps/', () => {
+    const manifest = JSON.parse(readFileSync(
+      fileURLToPath(new URL('../src/prompts/manifest.json', import.meta.url)), 'utf8'
+    ));
+    for (const entry of manifest.steps) {
+      const filePath = fileURLToPath(new URL(`../src/prompts/steps/${entry.id}.md`, import.meta.url));
+      expect(existsSync(filePath), `Missing file: ${entry.id}.md`).toBe(true);
     }
   });
 });

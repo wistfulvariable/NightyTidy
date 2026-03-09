@@ -32,7 +32,7 @@ describe('smoke tests', () => {
       '../src/dashboard-html.js',
       '../src/dashboard-tui.js',
       '../src/lock.js',
-      '../src/prompts/steps.js',
+      '../src/prompts/loader.js',
     ];
 
     for (const mod of modules) {
@@ -94,11 +94,11 @@ describe('smoke tests', () => {
   // -------------------------------------------------------------------------
   // 4. Steps data is structurally valid (critical path for execution)
   // -------------------------------------------------------------------------
-  it('steps data exports 28 valid steps and special prompts', async () => {
-    const { STEPS, DOC_UPDATE_PROMPT, CHANGELOG_PROMPT } = await import('../src/prompts/steps.js');
+  it('steps data exports 33 valid steps and special prompts', async () => {
+    const { STEPS, DOC_UPDATE_PROMPT, CHANGELOG_PROMPT } = await import('../src/prompts/loader.js');
 
-    // Must have exactly 28 steps
-    expect(STEPS).toHaveLength(28);
+    // Must have exactly 33 steps
+    expect(STEPS).toHaveLength(33);
 
     // First and last steps have required shape
     expect(STEPS[0]).toMatchObject({
@@ -106,8 +106,8 @@ describe('smoke tests', () => {
       name: expect.any(String),
       prompt: expect.any(String),
     });
-    expect(STEPS[27]).toMatchObject({
-      number: 28,
+    expect(STEPS[32]).toMatchObject({
+      number: 33,
       name: expect.any(String),
       prompt: expect.any(String),
     });

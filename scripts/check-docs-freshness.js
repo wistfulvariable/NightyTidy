@@ -112,7 +112,7 @@ check(
 // ── 5. Step count in prompts.md ──────────────────────────────────────────────
 
 const { STEPS } = await import(
-  'file://' + path.join(ROOT, 'src', 'prompts', 'steps.js').replace(/\\/g, '/')
+  'file://' + path.join(ROOT, 'src', 'prompts', 'loader.js').replace(/\\/g, '/')
 );
 const promptsMd = readText(path.join(MEMORY_DIR, 'prompts.md'));
 const promptCountMatch = promptsMd.match(/Exactly (\d+) entries/);

@@ -1,14 +1,14 @@
 import { createHash } from 'crypto';
 import { runPrompt } from './claude.js';
 import { getHeadHash, hasNewCommit, fallbackCommit } from './git.js';
-import { STEPS, DOC_UPDATE_PROMPT } from './prompts/steps.js';
+import { STEPS, DOC_UPDATE_PROMPT } from './prompts/loader.js';
 import { notify } from './notifications.js';
 import { info, warn, error as logError } from './logger.js';
 
 // SHA-256 of all STEPS[].prompt content — update when prompts change.
 // Detects unexpected modification of prompt data before passing to
 // Claude Code with --dangerously-skip-permissions.
-const STEPS_HASH = '0248c8747785d71a8d26929c32eb70b6cef28a0e3c2422e32005dd30894a1422';
+const STEPS_HASH = 'dbe885767dbfcffac944d142dcc4fd82af0cef33bca162ecacf8a304d6a2cbff';
 
 function verifyStepsIntegrity(steps) {
   const content = steps.map(s => s.prompt).join('');
@@ -46,7 +46,7 @@ function makeStepResult(step, status, result, duration) {
   };
 }
 
-export async function executeSingleStep(step, projectDir, { signal, timeout } = {}) {
+export async function executeSingleStep(step, projectDir, { signal, timeout, onOutput } = {}) {
   const stepLabel = `Step ${step.number}: ${step.name}`;
   info(`${stepLabel} — starting`);
 
@@ -58,6 +58,7 @@ export async function executeSingleStep(step, projectDir, { signal, timeout } = 
     label: `Step ${step.number} — ${step.name}`,
     signal,
     timeout,
+    onOutput,
   });
 
   if (!result.success) {
@@ -76,6 +77,7 @@ export async function executeSingleStep(step, projectDir, { signal, timeout } = 
     signal,
     timeout,
     continueSession: true,
+    onOutput,
   });
 
   if (!docResult.success) {
@@ -100,7 +102,7 @@ export async function executeSingleStep(step, projectDir, { signal, timeout } = 
   return makeStepResult(step, 'completed', result, duration);
 }
 
-export async function executeSteps(selectedSteps, projectDir, { signal, timeout, onStepStart, onStepComplete, onStepFail } = {}) {
+export async function executeSteps(selectedSteps, projectDir, { signal, timeout, onStepStart, onStepComplete, onStepFail, onOutput } = {}) {
   verifyStepsIntegrity(STEPS);
 
   const results = [];
@@ -118,7 +120,7 @@ export async function executeSteps(selectedSteps, projectDir, { signal, timeout,
     const step = selectedSteps[i];
     onStepStart?.(step, i, totalSteps);
 
-    const stepResult = await executeSingleStep(step, projectDir, { signal, timeout });
+    const stepResult = await executeSingleStep(step, projectDir, { signal, timeout, onOutput });
     results.push(stepResult);
 
     if (stepResult.status === 'failed') {

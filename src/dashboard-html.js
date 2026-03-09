@@ -199,6 +199,31 @@ export function getHTML(csrfToken) {
   }
   .error-msg.visible { display: block; }
 
+  .output-panel {
+    background: #0a0a14;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 16px;
+    max-height: 400px;
+    overflow-y: auto;
+    display: none;
+  }
+  .output-panel.visible { display: block; }
+  .output-panel h3 {
+    color: var(--cyan);
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+  }
+  .output-content {
+    color: #b0b0c0;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
   .reconnecting {
     position: fixed;
     top: 12px;
@@ -251,6 +276,11 @@ export function getHTML(csrfToken) {
 
 <div class="step-list" id="step-list"></div>
 
+<div class="output-panel" id="output-panel">
+  <h3>Claude Code Output</h3>
+  <div class="output-content" id="output-content"></div>
+</div>
+
 <div class="actions" id="actions">
   <button class="stop-btn" id="stop-btn" onclick="stopRun()">Stop Run</button>
 </div>
@@ -265,12 +295,49 @@ export function getHTML(csrfToken) {
 <script>
 let state = null;
 let elapsedInterval = null;
+let outputText = '';
+let lastStepName = '';
+const MAX_OUTPUT_CHARS = 100 * 1024;
 
 const evtSource = new EventSource('/events');
 
 evtSource.addEventListener('state', (e) => {
   state = JSON.parse(e.data);
+
+  // Clear output when step changes
+  if (state.currentStepName && state.currentStepName !== lastStepName) {
+    outputText = '';
+    document.getElementById('output-content').textContent = '';
+    lastStepName = state.currentStepName;
+  }
+
+  // On initial connect, populate from state if available
+  if (state.currentStepOutput && !outputText) {
+    outputText = state.currentStepOutput;
+    const panel = document.getElementById('output-panel');
+    const content = document.getElementById('output-content');
+    panel.classList.add('visible');
+    content.textContent = outputText;
+    panel.scrollTop = panel.scrollHeight;
+  }
+
   render(state);
+});
+
+evtSource.addEventListener('output', (e) => {
+  const chunk = JSON.parse(e.data);
+  outputText += chunk;
+  if (outputText.length > MAX_OUTPUT_CHARS) {
+    outputText = outputText.slice(outputText.length - MAX_OUTPUT_CHARS);
+  }
+
+  const panel = document.getElementById('output-panel');
+  const content = document.getElementById('output-content');
+  panel.classList.add('visible');
+  content.textContent = outputText;
+
+  // Auto-scroll to bottom
+  panel.scrollTop = panel.scrollHeight;
 });
 
 evtSource.onerror = () => {
@@ -344,6 +411,11 @@ function render(s) {
   // Actions
   const finished = ['completed', 'stopped', 'error'].includes(s.status);
   document.getElementById('actions').style.display = finished ? 'none' : 'block';
+
+  // Hide output panel when finished
+  if (finished) {
+    document.getElementById('output-panel').classList.remove('visible');
+  }
 
   // Summary
   const sumEl = document.getElementById('summary');

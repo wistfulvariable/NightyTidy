@@ -68,7 +68,7 @@ function spawnClaude(prompt, cwd, useShell = false, continueSession = false) {
   return child;
 }
 
-function waitForChild(child, timeoutMs, { verbose = true, signal } = {}) {
+function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {}) {
   return new Promise((resolve) => {
     let stdout = '';
     let settled = false;
@@ -96,6 +96,9 @@ function waitForChild(child, timeoutMs, { verbose = true, signal } = {}) {
       const text = chunk.toString();
       stdout += text;
       if (verbose) debug(text.trimEnd());
+      if (onOutput) {
+        try { onOutput(text); } catch { /* callback failure must not crash subprocess */ }
+      }
     });
 
     child.stderr.on('data', (chunk) => {
@@ -127,7 +130,7 @@ function waitForChild(child, timeoutMs, { verbose = true, signal } = {}) {
   });
 }
 
-async function runOnce(prompt, cwd, timeoutMs, signal, continueSession = false) {
+async function runOnce(prompt, cwd, timeoutMs, signal, continueSession = false, onOutput) {
   // On Windows, always use shell — 'claude' is a .cmd script that
   // requires shell interpretation. Spawning without shell always gets
   // ENOENT, and the failed-spawn + shell-retry pattern can exhaust
@@ -141,7 +144,7 @@ async function runOnce(prompt, cwd, timeoutMs, signal, continueSession = false) 
     return { success: false, output: '', error: err.message || 'Failed to start Claude Code', exitCode: -1 };
   }
 
-  const result = await waitForChild(child, timeoutMs, { signal });
+  const result = await waitForChild(child, timeoutMs, { signal, onOutput });
 
   delete result._errorCode;
   return result;
@@ -153,6 +156,7 @@ export async function runPrompt(prompt, cwd, options = {}) {
   const label = options.label ?? 'prompt';
   const signal = options.signal;
   const continueSession = options.continueSession ?? false;
+  const onOutput = options.onOutput;
   const totalAttempts = maxRetries + 1;
 
   const startTime = Date.now();
@@ -165,7 +169,7 @@ export async function runPrompt(prompt, cwd, options = {}) {
 
     info(`Running Claude Code: ${label} (attempt ${attempt}/${totalAttempts})`);
 
-    const result = await runOnce(prompt, cwd, timeoutMs, signal, continueSession);
+    const result = await runOnce(prompt, cwd, timeoutMs, signal, continueSession, onOutput);
 
     // Abort detected — return immediately without retry
     if (signal?.aborted) {

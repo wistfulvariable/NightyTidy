@@ -199,5 +199,47 @@ describe('dashboard-tui.js', () => {
       const output = stdoutSpy.mock.calls.map(c => c[0]).join('');
       expect(output).not.toContain('Ctrl+C');
     });
+
+    it('shows Claude output section when currentStepOutput is present and running', () => {
+      render(makeState({
+        currentStepOutput: 'Reading file src/index.js\nEditing function foo\nDone.',
+      }));
+      const output = stdoutSpy.mock.calls.map(c => c[0]).join('');
+      expect(output).toContain('Claude Code Output');
+      expect(output).toContain('Reading file src/index.js');
+      expect(output).toContain('Editing function foo');
+    });
+
+    it('truncates output to MAX_OUTPUT_LINES showing last lines', () => {
+      const lines = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`);
+      render(makeState({
+        currentStepOutput: lines.join('\n'),
+      }));
+      const output = stdoutSpy.mock.calls.map(c => c[0]).join('');
+      expect(output).toContain('Claude Code Output');
+      // Should show "lines above" indicator
+      expect(output).toContain('lines above');
+      // Should show the last lines
+      expect(output).toContain('line 30');
+      expect(output).toContain('line 29');
+    });
+
+    it('hides output section when not running', () => {
+      render(makeState({
+        status: 'completed',
+        currentStepOutput: 'some output',
+        steps: [
+          { number: 1, name: 'Lint', status: 'completed', duration: 60000 },
+        ],
+      }));
+      const output = stdoutSpy.mock.calls.map(c => c[0]).join('');
+      expect(output).not.toContain('Claude Code Output');
+    });
+
+    it('hides output section when currentStepOutput is absent', () => {
+      render(makeState());
+      const output = stdoutSpy.mock.calls.map(c => c[0]).join('');
+      expect(output).not.toContain('Claude Code Output');
+    });
   });
 });

@@ -13,6 +13,7 @@ const POLL_INTERVAL = 1000;
 const EXIT_DELAY = 5000;
 const BAR_WIDTH = 30;
 const MAX_VISIBLE_STEPS = 16;
+const MAX_OUTPUT_LINES = 20;
 
 // Module-level state
 let progressFilePath = null;
@@ -106,6 +107,24 @@ export function render(state) {
   }
 
   lines.push('');
+
+  // Claude output panel
+  if (state.currentStepOutput && state.status === 'running') {
+    lines.push(chalk.cyan.bold('  Claude Code Output'));
+    lines.push(chalk.dim('  ' + '\u2500'.repeat(50)));
+
+    const outputLines = state.currentStepOutput.split('\n');
+    const visible = outputLines.slice(-MAX_OUTPUT_LINES);
+
+    if (outputLines.length > MAX_OUTPUT_LINES) {
+      lines.push(chalk.dim(`  ... (${outputLines.length - MAX_OUTPUT_LINES} lines above)`));
+    }
+
+    for (const line of visible) {
+      lines.push('  ' + chalk.dim(line));
+    }
+    lines.push('');
+  }
 
   // Counts
   const parts = [];

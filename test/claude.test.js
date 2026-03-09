@@ -588,4 +588,80 @@ describe('runPrompt', () => {
       expect(spawn).toHaveBeenCalledTimes(2);
     });
   });
+
+  // -----------------------------------------------------------------------
+  // onOutput callback
+  // -----------------------------------------------------------------------
+  describe('onOutput callback', () => {
+    it('receives stdout chunks in real time', async () => {
+      const chunks = [];
+      setupSpawnSequence((child) => {
+        child.emitStdout('chunk1');
+        child.emitStdout('chunk2');
+        child.emitClose(0);
+      });
+
+      const result = await runPrompt('test', '/tmp', {
+        ...FAST_OPTIONS,
+        onOutput: (text) => chunks.push(text),
+      });
+
+      expect(result.success).toBe(true);
+      expect(chunks).toEqual(['chunk1', 'chunk2']);
+    });
+
+    it('is not called when not provided', async () => {
+      setupSpawnSequence((child) => {
+        child.emitStdout('output');
+        child.emitClose(0);
+      });
+
+      // Should not throw — no callback provided
+      const result = await runPrompt('test', '/tmp', FAST_OPTIONS);
+      expect(result.success).toBe(true);
+    });
+
+    it('swallows callback errors without crashing subprocess', async () => {
+      setupSpawnSequence((child) => {
+        child.emitStdout('output');
+        child.emitClose(0);
+      });
+
+      const result = await runPrompt('test', '/tmp', {
+        ...FAST_OPTIONS,
+        onOutput: () => { throw new Error('callback exploded'); },
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.output).toBe('output');
+    });
+
+    it('is called on each retry attempt', async () => {
+      const chunks = [];
+      setupSpawnSequence(
+        // Attempt 1: fails
+        (child) => {
+          child.emitStdout('attempt1');
+          child.emitClose(1);
+        },
+        // Attempt 2: succeeds
+        (child) => {
+          child.emitStdout('attempt2');
+          child.emitClose(0);
+        },
+      );
+
+      const promise = runPrompt('test', '/tmp', {
+        ...FAST_OPTIONS,
+        retries: 1,
+        onOutput: (text) => chunks.push(text),
+      });
+      await vi.advanceTimersByTimeAsync(15_000);
+      const result = await promise;
+
+      expect(result.success).toBe(true);
+      expect(chunks).toContain('attempt1');
+      expect(chunks).toContain('attempt2');
+    });
+  });
 });

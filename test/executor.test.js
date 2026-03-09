@@ -21,7 +21,7 @@ vi.mock('../src/logger.js', () => ({
   debug: vi.fn(),
 }));
 
-vi.mock('../src/prompts/steps.js', () => ({
+vi.mock('../src/prompts/loader.js', () => ({
   STEPS: [],
   DOC_UPDATE_PROMPT: 'mock doc update prompt',
 }));
@@ -216,5 +216,32 @@ describe('executeSteps', () => {
     expect(result.results).toHaveLength(1);
     expect(result.results[0].step.number).toBe(1);
     expect(result.completedCount).toBe(1);
+  });
+
+  it('passes onOutput callback to runPrompt options', async () => {
+    const steps = [makeStep(1, 'Lint')];
+    const onOutput = vi.fn();
+    runPrompt.mockResolvedValue({ success: true, output: 'ok', error: null, exitCode: 0, attempts: 1 });
+
+    await executeSteps(steps, '/fake/project', { onOutput });
+
+    // Both improvement and doc update calls should include onOutput
+    expect(runPrompt).toHaveBeenCalledTimes(2);
+    for (const call of runPrompt.mock.calls) {
+      expect(call[2]).toHaveProperty('onOutput', onOutput);
+    }
+  });
+
+  it('works correctly without onOutput callback', async () => {
+    const steps = [makeStep(1, 'Lint')];
+    runPrompt.mockResolvedValue({ success: true, output: 'ok', error: null, exitCode: 0, attempts: 1 });
+
+    const result = await executeSteps(steps, '/fake/project');
+
+    expect(result.completedCount).toBe(1);
+    // onOutput should be undefined in options
+    for (const call of runPrompt.mock.calls) {
+      expect(call[2].onOutput).toBeUndefined();
+    }
   });
 });

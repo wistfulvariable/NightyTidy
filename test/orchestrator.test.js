@@ -68,7 +68,7 @@ vi.mock('../src/lock.js', () => ({
   releaseLock: vi.fn(),
 }));
 
-vi.mock('../src/prompts/steps.js', () => ({
+vi.mock('../src/prompts/loader.js', () => ({
   STEPS: [
     { number: 1, name: 'Documentation', prompt: 'Fix docs' },
     { number: 2, name: 'Test Coverage', prompt: 'Add tests' },

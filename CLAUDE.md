@@ -1,10 +1,10 @@
 # NightyTidy — AI Codebase Guide
 
-Automated overnight codebase improvement through Claude Code. NightyTidy is an orchestration layer — it sequences 28 AI-driven improvement prompts against a target codebase, handling git branching, retries, notifications, and reporting. Claude Code (spawned as a subprocess) does the actual code changes. Targets vibe coders at small companies.
+Automated overnight codebase improvement through Claude Code. NightyTidy is an orchestration layer — it sequences 33 AI-driven improvement prompts against a target codebase, handling git branching, retries, notifications, and reporting. Claude Code (spawned as a subprocess) does the actual code changes. Targets vibe coders at small companies.
 
 ## Workflow Rules
 
-- **Never edit `src/prompts/steps.js` manually** — auto-generated from external `extracted-prompts.json`
+- **Prompt files are the source of truth** — edit markdown files in `src/prompts/steps/` and `src/prompts/specials/`. Update `manifest.json` for ordering/naming. Update `STEPS_HASH` in `executor.js` after any prompt change.
 - **Logger must be initialized first** — `initLogger(projectDir)` before any other module
 - **All steps run on a dedicated branch** — `nightytidy/run-*` branches with pre-run safety tag
 - **No bare `console.log`** in production code — use logger (exception: `cli.js` terminal UX output)
@@ -48,25 +48,28 @@ src/
   report.js                # NIGHTYTIDY-REPORT.md generation + CLAUDE.md update
   setup.js                 # --setup command: generates CLAUDE.md integration snippet for target projects
   prompts/
-    steps.js               # 28 improvement prompts + DOC_UPDATE_PROMPT + CHANGELOG_PROMPT (5400+ lines, auto-generated)
+    manifest.json          # Step ordering + display names (33 entries)
+    loader.js              # Reads manifest + markdown files, exports STEPS/DOC_UPDATE_PROMPT/CHANGELOG_PROMPT
+    steps/                 # 33 individual markdown prompt files (01-documentation.md .. 33-strategic-opportunities.md)
+    specials/              # Non-step prompts (doc-update.md, changelog.md)
 test/
   smoke.test.js            # 6 tests — structural integrity, module imports, deploy verification
   cli.test.js              # 27 tests — full lifecycle orchestration, SIGINT handling, --setup, dashboard
-  dashboard.test.js        # 15 tests — HTTP server start/stop, SSE events, CSRF, stop callback
+  dashboard.test.js        # 20 tests — HTTP server start/stop, SSE events, CSRF, stop callback
   logger.test.js           # 10 tests — real file I/O, level filtering, stderr fallback
   checks.test.js           # 4 tests — mock subprocess, mock git
   checks-extended.test.js  # 13 tests — auth paths, disk space, branch warnings, empty repo
-  claude.test.js           # 21 tests — fake child process, fake timers, abort signal, Windows shell mode
-  executor.test.js         # 9 tests — mocks claude, git, notifications, signal propagation
+  claude.test.js           # 25 tests — fake child process, fake timers, abort signal, Windows shell mode
+  executor.test.js         # 11 tests — mocks claude, git, notifications, signal propagation
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 7 tests — getGitInstance, getHeadHash, tag/branch collision
   notifications.test.js    # 2 tests — mock node-notifier
   report.test.js           # 7 tests — mock fs, verify report format
   report-extended.test.js  # 15 tests — updateClaudeMd, formatDuration edge cases
-  steps.test.js            # 6 tests — structural integrity of prompt data
+  steps.test.js            # 8 tests — structural integrity of prompt data + manifest validation
   integration.test.js      # 5 tests — multi-module integration with real git repos
   setup.test.js            # 7 tests — integration snippet generation, idempotent setup
-  dashboard-tui.test.js    # 18 tests — formatMs, progressBar, render with chalk proxy mock
+  dashboard-tui.test.js    # 22 tests — formatMs, progressBar, render with chalk proxy mock
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
@@ -105,15 +108,15 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/lock.js` | Atomic lock file — prevents concurrent runs (async, TTY override prompt) | readline, logger |
 | `src/logger.js` | File + stdout logger (universal dep) | none |
 | `src/report.js` | Report generation + CLAUDE.md update + `getVersion()` | logger |
-| `src/setup.js` | `--setup` command: CLAUDE.md integration for target projects | logger, prompts/steps |
-| `src/prompts/steps.js` | 28 prompts + doc update + changelog | none (data only) |
+| `src/setup.js` | `--setup` command: CLAUDE.md integration for target projects | logger, prompts/loader |
+| `src/prompts/loader.js` | Loads 33 prompts from markdown files via manifest.json | fs (data loader) |
 
 ## Build & Run Commands
 
 ```bash
 npm install               # Install dependencies
 npx nightytidy            # Run (interactive step selection)
-npx nightytidy --all      # Run all 28 steps (non-interactive)
+npx nightytidy --all      # Run all 33 steps (non-interactive)
 npx nightytidy --steps 1,5,12  # Run specific steps by number
 npx nightytidy --list     # List all available steps with descriptions
 npx nightytidy --timeout 60  # Set per-step timeout to 60 minutes (default: 45)
@@ -190,7 +193,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 
 - **Don't add `require()`** — ESM only, no CommonJS
 - **Don't throw from `claude.js`, `executor.js`, or `orchestrator.js`** — they must return result objects
-- **Don't change `steps.js` shape** — 28 steps with `{ number, name, prompt }` validated by tests
+- **Don't change loader.js export shape** — 33 steps with `{ number, name, prompt }` validated by tests. Edit prompt content in `src/prompts/steps/*.md`, not in loader.js
 - **Don't remove the logger mock** from any test — it will crash trying to write log files
 - **Don't make notifications blocking** — they must be fire-and-forget
 - **Don't make the dashboard blocking** — it must be fire-and-forget like notifications
@@ -203,7 +206,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **Dashboard CSRF**: POST `/stop` requires a CSRF token (generated per session via `crypto.randomBytes`). Token is embedded in served HTML and verified server-side. Tests in `dashboard.test.js`.
 - **Dashboard security headers**: HTML responses include CSP, X-Frame-Options, X-Content-Type-Options.
 - **Lock file is atomic**: `acquireLock()` uses `fs.openSync(path, 'wx')` (O_EXCL) to prevent TOCTOU races between concurrent processes.
-- **Prompt integrity check**: `executor.js` computes SHA-256 of all step prompts and compares against `STEPS_HASH`. If prompts are regenerated from `extracted-prompts.json`, update the hash in `executor.js`. Warns but does not block (user may have legitimate prompt changes).
+- **Prompt integrity check**: `executor.js` computes SHA-256 of all step prompts and compares against `STEPS_HASH`. After editing any markdown file in `src/prompts/steps/` or `src/prompts/specials/`, recompute and update the hash in `executor.js`. Warns but does not block (user may have legitimate prompt changes).
 - **`--dangerously-skip-permissions`**: Required for non-interactive Claude Code subprocess calls. NightyTidy is the permission layer — it controls what prompts are sent and operates on a safety branch.
 - **Prompt delivery threshold**: Prompts longer than 8000 chars (`STDIN_THRESHOLD` in `claude.js`) are piped via stdin instead of passed as a `-p` argument. This avoids OS command-line length limits. If prompts fail with argument-too-long errors, check this threshold.
 - **`npm run check:security`**: Runs `npm audit --audit-level=high`. Use before releases.
@@ -237,14 +240,14 @@ bin/nightytidy.js
         ├── src/checks.js            → logger
         ├── src/git.js               → logger
         ├── src/claude.js            → logger
-        ├── src/executor.js          → crypto, claude, git, notifications, logger, prompts/steps
-        ├── src/prompts/steps.js     (no deps — data only)
+        ├── src/executor.js          → crypto, claude, git, notifications, logger, prompts/loader
+        ├── src/prompts/loader.js    → fs (reads manifest.json + markdown files at load time)
         ├── src/lock.js              → readline, logger
         ├── src/notifications.js     → logger
         ├── src/dashboard.js         → crypto, logger, child_process, dashboard-html
         │     └── src/dashboard-html.js  (no deps — HTML template only)
         ├── src/dashboard-tui.js     (standalone — chalk only, spawned by dashboard.js)
-        ├── src/setup.js             → logger, prompts/steps
+        ├── src/setup.js             → logger, prompts/loader
         ├── src/orchestrator.js      → logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone
         │     └── src/dashboard-standalone.js → dashboard-html (standalone detached process)
         └── src/report.js            → logger  (cli.js imports formatDuration + getVersion)
@@ -295,7 +298,7 @@ Each command is a separate process invocation. State persists via `nightytidy-ru
 ## Known Technical Debt
 
 - No `.nightytidyrc` config file — only `NIGHTYTIDY_LOG_LEVEL` env var exists
-- `extracted-prompts.json` not committed — `steps.js` was generated externally
+- Prompt source of truth is the [Google Doc](https://docs.google.com/document/d/1Kg8MTNOzWSXd_sCEcenjX_8_DPDItH8wgp3oW2loV5A) — markdown files were extracted from it
 
 ## Documentation Hierarchy
 

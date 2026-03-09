@@ -37,9 +37,13 @@ function makeInitialState(overrides = {}) {
   };
 }
 
+function ipv4Url(url) {
+  return url.replace('localhost', '127.0.0.1');
+}
+
 function httpGet(url) {
   return new Promise((resolve, reject) => {
-    http.get(url, (res) => {
+    http.get(ipv4Url(url), (res) => {
       let data = '';
       res.on('data', chunk => { data += chunk; });
       res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data }));
@@ -49,7 +53,7 @@ function httpGet(url) {
 
 function httpPost(url, body = '') {
   return new Promise((resolve, reject) => {
-    const req = http.request(url, {
+    const req = http.request(ipv4Url(url), {
       method: 'POST',
       headers: body ? { 'Content-Type': 'application/json' } : {},
     }, (res) => {
@@ -70,7 +74,7 @@ function extractCsrfToken(html) {
 
 function connectSSE(url) {
   return new Promise((resolve, reject) => {
-    http.get(url, (res) => {
+    http.get(ipv4Url(url), (res) => {
       const events = [];
       let buffer = '';
 
@@ -397,5 +401,109 @@ describe('updateDashboard', () => {
     const content = JSON.parse(await readFile(progressFile, 'utf8'));
     expect(content.status).toBe('running');
     expect(content.currentStepIndex).toBe(0);
+  });
+});
+
+describe('broadcastOutput', () => {
+  let tempDir;
+  let mod;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    tempDir = await mkdtemp(path.join(tmpdir(), 'nightytidy-dash-'));
+    mod = await import('../src/dashboard.js');
+  });
+
+  afterEach(async () => {
+    try { mod.stopDashboard(); } catch { /* ignore */ }
+    await robustCleanup(tempDir);
+  });
+
+  it('sends SSE output events to connected clients', async () => {
+    const state = makeInitialState();
+    const result = await mod.startDashboard(state, {
+      onStop: vi.fn(),
+      projectDir: tempDir,
+    });
+
+    const { res, events } = await connectSSE(`${result.url}/events`);
+
+    mod.broadcastOutput('hello world');
+
+    await waitForEvent(events, e => e.event === 'output');
+
+    const outputEvents = events.filter(e => e.event === 'output');
+    expect(outputEvents.length).toBeGreaterThanOrEqual(1);
+    expect(JSON.parse(outputEvents[0].data)).toBe('hello world');
+    res.destroy();
+  });
+
+  it('is a no-op when server is not started', () => {
+    expect(() => mod.broadcastOutput('test')).not.toThrow();
+  });
+
+  it('sends current output buffer on new SSE connection', async () => {
+    const state = makeInitialState();
+    const result = await mod.startDashboard(state, {
+      onStop: vi.fn(),
+      projectDir: tempDir,
+    });
+
+    // Broadcast output before connecting SSE
+    mod.broadcastOutput('existing output');
+
+    const { res, events } = await connectSSE(`${result.url}/events`);
+
+    // Should receive both the state event and the output buffer
+    await waitForEvent(events, e => e.event === 'output');
+
+    const outputEvents = events.filter(e => e.event === 'output');
+    expect(outputEvents.length).toBeGreaterThanOrEqual(1);
+    expect(JSON.parse(outputEvents[0].data)).toBe('existing output');
+    res.destroy();
+  });
+});
+
+describe('clearOutputBuffer', () => {
+  let mod;
+
+  beforeEach(async () => {
+    vi.resetModules();
+    mod = await import('../src/dashboard.js');
+  });
+
+  afterEach(() => {
+    try { mod.stopDashboard(); } catch { /* ignore */ }
+  });
+
+  it('does not throw when called without starting dashboard', () => {
+    expect(() => mod.clearOutputBuffer()).not.toThrow();
+  });
+
+  it('resets the output buffer', async () => {
+    const tempDir = await mkdtemp(path.join(tmpdir(), 'nightytidy-dash-'));
+    try {
+      const state = makeInitialState();
+      const result = await mod.startDashboard(state, {
+        onStop: vi.fn(),
+        projectDir: tempDir,
+      });
+
+      mod.broadcastOutput('some output');
+      mod.clearOutputBuffer();
+
+      // Connect and check — should not receive old output
+      const { res, events } = await connectSSE(`${result.url}/events`);
+
+      // Wait a bit for events to arrive
+      await new Promise(r => setTimeout(r, 100));
+
+      const outputEvents = events.filter(e => e.event === 'output');
+      expect(outputEvents.length).toBe(0);
+      res.destroy();
+    } finally {
+      mod.stopDashboard();
+      await robustCleanup(tempDir);
+    }
   });
 });

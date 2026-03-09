@@ -7,12 +7,12 @@ import { initLogger, info, error as logError, debug, warn } from './logger.js';
 import { runPreChecks } from './checks.js';
 import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from './git.js';
 import { runPrompt } from './claude.js';
-import { STEPS, CHANGELOG_PROMPT } from './prompts/steps.js';
+import { STEPS, CHANGELOG_PROMPT } from './prompts/loader.js';
 import { executeSteps, SAFETY_PREAMBLE } from './executor.js';
 import { notify } from './notifications.js';
 import { generateReport, formatDuration, getVersion } from './report.js';
 import { setupProject } from './setup.js';
-import { startDashboard, updateDashboard, stopDashboard, scheduleShutdown } from './dashboard.js';
+import { startDashboard, updateDashboard, stopDashboard, scheduleShutdown, broadcastOutput, clearOutputBuffer } from './dashboard.js';
 import { acquireLock } from './lock.js';
 import { initRun, runStep, finishRun } from './orchestrator.js';
 
@@ -63,7 +63,14 @@ function buildStepCallbacks(spinner, selected, dashState) {
   }
 
   return {
+    onOutput: (chunk) => {
+      broadcastOutput(chunk);
+      // Stream raw Claude output to the main terminal
+      if (spinner.isSpinning) spinner.stop();
+      process.stdout.write(chunk);
+    },
     onStepStart: (step, idx, total) => {
+      clearOutputBuffer();
       spinner.text = `\u23f3 Step ${idx + 1}/${total}: ${step.name}...`;
       stepStartTimes.set(idx, Date.now());
       if (!runStartTime) runStartTime = Date.now();
@@ -223,7 +230,7 @@ function showWelcome() {
     '\u2502                                                              \u2502\n' +
     '\u2502  Welcome to NightyTidy!                                      \u2502\n' +
     '\u2502                                                              \u2502\n' +
-    '\u2502  NightyTidy will run 28 codebase improvement steps through   \u2502\n' +
+    '\u2502  NightyTidy will run 33 codebase improvement steps through   \u2502\n' +
     '\u2502  Claude Code. This typically takes 4-8 hours.                \u2502\n' +
     '\u2502                                                              \u2502\n' +
     '\u2502  All changes happen on a dedicated branch and are            \u2502\n' +
