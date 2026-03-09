@@ -144,36 +144,46 @@ async function checkClaudeAuthenticated() {
   }
 }
 
+async function getFreeBytesWindows(projectDir) {
+  const driveLetter = projectDir.charAt(0).toUpperCase();
+  // Try PowerShell first (wmic is deprecated on newer Windows)
+  const psResult = await runCommand('powershell', [
+    '-NoProfile', '-Command',
+    `(Get-PSDrive ${driveLetter}).Free`,
+  ]);
+  const psMatch = psResult.stdout.trim().match(/^(\d+)$/);
+  if (psResult.code === 0 && psMatch) {
+    return parseInt(psMatch[1], 10);
+  }
+  // Fallback to wmic for older Windows
+  const result = await runCommand('wmic', [
+    'logicaldisk', 'where', `DeviceID='${driveLetter}:'`, 'get', 'FreeSpace',
+  ]);
+  const match = result.stdout.match(/(\d+)/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+async function getFreeBytesUnix(projectDir) {
+  const result = await runCommand('df', ['-k', projectDir]);
+  const lines = result.stdout.trim().split('\n');
+  if (lines.length >= 2) {
+    const parts = lines[1].split(/\s+/);
+    if (parts.length >= 4) return parseInt(parts[3], 10) * 1024;
+  }
+  return null;
+}
+
+async function getFreeBytes(projectDir) {
+  return platform() === 'win32'
+    ? getFreeBytesWindows(projectDir)
+    : getFreeBytesUnix(projectDir);
+}
+
 async function checkDiskSpace(projectDir) {
   let freeBytes = null;
 
   try {
-    if (platform() === 'win32') {
-      const driveLetter = projectDir.charAt(0).toUpperCase();
-      // Try PowerShell first (wmic is deprecated on newer Windows)
-      const psResult = await runCommand('powershell', [
-        '-NoProfile', '-Command',
-        `(Get-PSDrive ${driveLetter}).Free`,
-      ]);
-      const psMatch = psResult.stdout.trim().match(/^(\d+)$/);
-      if (psResult.code === 0 && psMatch) {
-        freeBytes = parseInt(psMatch[1], 10);
-      } else {
-        // Fallback to wmic for older Windows
-        const result = await runCommand('wmic', [
-          'logicaldisk', 'where', `DeviceID='${driveLetter}:'`, 'get', 'FreeSpace',
-        ]);
-        const match = result.stdout.match(/(\d+)/);
-        if (match) freeBytes = parseInt(match[1], 10);
-      }
-    } else {
-      const result = await runCommand('df', ['-k', projectDir]);
-      const lines = result.stdout.trim().split('\n');
-      if (lines.length >= 2) {
-        const parts = lines[1].split(/\s+/);
-        if (parts.length >= 4) freeBytes = parseInt(parts[3], 10) * 1024;
-      }
-    }
+    freeBytes = await getFreeBytes(projectDir);
   } catch {
     debug('Disk space check failed — skipping');
     info('Pre-check: disk space (skipped) \u2713');
