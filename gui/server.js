@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const RESOURCES_DIR = join(__dirname, 'resources');
+const NIGHTYTIDY_BIN = join(__dirname, '..', 'bin', 'nightytidy.js');
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -78,6 +79,12 @@ async function serveStatic(res, urlPath) {
     res.writeHead(404, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
     res.end('Not found');
   }
+}
+
+// ── API: Config ─────────────────────────────────────────────────────
+
+function handleConfig(res) {
+  sendJson(res, { ok: true, bin: NIGHTYTIDY_BIN });
 }
 
 // ── API: Folder Dialog ─────────────────────────────────────────────
@@ -259,6 +266,9 @@ function handleRequest(req, res) {
   const url = new URL(req.url, `http://localhost`);
 
   // API routes
+  if (url.pathname === '/api/config' && req.method === 'POST') {
+    return handleConfig(res);
+  }
   if (url.pathname === '/api/select-folder' && req.method === 'POST') {
     return handleSelectFolder(res);
   }

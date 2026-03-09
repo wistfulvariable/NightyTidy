@@ -6,12 +6,9 @@ vi.mock('fs', () => ({
   writeFileSync: vi.fn(),
 }));
 
-vi.mock('../src/logger.js', () => ({
-  info: vi.fn(),
-  warn: vi.fn(),
-  debug: vi.fn(),
-  error: vi.fn(),
-}));
+import { createLoggerMock } from './helpers/mocks.js';
+
+vi.mock('../src/logger.js', () => createLoggerMock());
 
 vi.mock('../src/prompts/loader.js', () => {
   const names = [

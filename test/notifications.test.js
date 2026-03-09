@@ -6,12 +6,9 @@ vi.mock('node-notifier', () => ({
   },
 }));
 
-vi.mock('../src/logger.js', () => ({
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-}));
+import { createLoggerMock } from './helpers/mocks.js';
+
+vi.mock('../src/logger.js', () => createLoggerMock());
 
 import notifier from 'node-notifier';
 import { notify } from '../src/notifications.js';

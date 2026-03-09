@@ -4,16 +4,17 @@ vi.mock('child_process', () => ({
   spawn: vi.fn(),
 }));
 
-vi.mock('../src/logger.js', () => ({
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
+vi.mock('os', () => ({
+  platform: vi.fn(() => 'win32'),
 }));
 
+import { createLoggerMock, createMockProcess, createErrorProcess, createTimeoutProcess, createMockGit } from './helpers/mocks.js';
+
+vi.mock('../src/logger.js', () => createLoggerMock());
+
 import { spawn } from 'child_process';
+import { platform } from 'os';
 import { runPreChecks } from '../src/checks.js';
-import { createMockProcess, createErrorProcess, createTimeoutProcess, createMockGit } from './helpers/mocks.js';
 
 // A helper that creates a spawn sequence handler based on command matching
 function mockSpawnForChecks({
@@ -336,6 +337,197 @@ describe('runPreChecks — extended coverage', () => {
       const mockGit = createMockGit({ isRepo: true });
 
       await expect(runPreChecks('/fake/project', mockGit)).rejects.toThrow('Claude Code not detected');
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Characterization tests for checkDiskSpace() — exercises platform paths
+  // -----------------------------------------------------------------------
+  describe('checkDiskSpace — Windows paths', () => {
+    beforeEach(() => {
+      platform.mockReturnValue('win32');
+    });
+
+    it('parses PowerShell output with leading/trailing whitespace', async () => {
+      const { info } = await import('../src/logger.js');
+
+      spawn.mockImplementation((cmd, args) => {
+        if (cmd === 'git') return createMockProcess({ code: 0, stdout: 'git version 2.40.0' });
+        if (cmd === 'claude' && args?.includes('--version'))
+          return createMockProcess({ code: 0, stdout: 'claude 1.0.0' });
+        if (cmd === 'claude' && args?.includes('-p'))
+          return createMockProcess({ code: 0, stdout: 'OK' });
+        // PowerShell output with whitespace around the number
+        if (cmd === 'powershell')
+          return createMockProcess({ code: 0, stdout: '  \n50000000000\n  ' });
+        return createMockProcess({ code: 0, stdout: 'ok' });
+      });
+
+      const mockGit = createMockGit({ isRepo: true });
+      await runPreChecks('C:\\project', mockGit);
+
+      expect(info).toHaveBeenCalledWith(expect.stringContaining('disk space OK'));
+    });
+
+    it('falls back to wmic when PowerShell returns non-zero exit code', async () => {
+      const { info } = await import('../src/logger.js');
+
+      spawn.mockImplementation((cmd, args) => {
+        if (cmd === 'git') return createMockProcess({ code: 0, stdout: 'git version 2.40.0' });
+        if (cmd === 'claude' && args?.includes('--version'))
+          return createMockProcess({ code: 0, stdout: 'claude 1.0.0' });
+        if (cmd === 'claude' && args?.includes('-p'))
+          return createMockProcess({ code: 0, stdout: 'OK' });
+        // PowerShell fails
+        if (cmd === 'powershell')
+          return createMockProcess({ code: 1, stdout: '' });
+        // wmic provides the data
+        if (cmd === 'wmic')
+          return createMockProcess({ code: 0, stdout: 'FreeSpace\n50000000000\n' });
+        return createMockProcess({ code: 0, stdout: 'ok' });
+      });
+
+      const mockGit = createMockGit({ isRepo: true });
+      await runPreChecks('C:\\project', mockGit);
+
+      expect(info).toHaveBeenCalledWith(expect.stringContaining('disk space OK'));
+    });
+
+    it('returns null when both PowerShell and wmic output are unparseable', async () => {
+      const { info } = await import('../src/logger.js');
+
+      spawn.mockImplementation((cmd, args) => {
+        if (cmd === 'git') return createMockProcess({ code: 0, stdout: 'git version 2.40.0' });
+        if (cmd === 'claude' && args?.includes('--version'))
+          return createMockProcess({ code: 0, stdout: 'claude 1.0.0' });
+        if (cmd === 'claude' && args?.includes('-p'))
+          return createMockProcess({ code: 0, stdout: 'OK' });
+        // Both Windows commands return garbage
+        if (cmd === 'powershell')
+          return createMockProcess({ code: 1, stdout: 'error text' });
+        if (cmd === 'wmic')
+          return createMockProcess({ code: 0, stdout: 'No instances available.' });
+        return createMockProcess({ code: 0, stdout: 'ok' });
+      });
+
+      const mockGit = createMockGit({ isRepo: true });
+      // Should not throw — null bytes => skip
+      await expect(runPreChecks('C:\\project', mockGit)).resolves.toBeUndefined();
+      expect(info).toHaveBeenCalledWith(expect.stringContaining('disk space (skipped)'));
+    });
+
+    it('throws when zero bytes free on Windows', async () => {
+      spawn.mockImplementation((cmd, args) => {
+        if (cmd === 'git') return createMockProcess({ code: 0, stdout: 'git version 2.40.0' });
+        if (cmd === 'claude' && args?.includes('--version'))
+          return createMockProcess({ code: 0, stdout: 'claude 1.0.0' });
+        if (cmd === 'claude' && args?.includes('-p'))
+          return createMockProcess({ code: 0, stdout: 'OK' });
+        if (cmd === 'powershell')
+          return createMockProcess({ code: 0, stdout: '0' });
+        return createMockProcess({ code: 0, stdout: 'ok' });
+      });
+
+      const mockGit = createMockGit({ isRepo: true });
+      await expect(runPreChecks('C:\\project', mockGit)).rejects.toThrow('Very low disk space');
+    });
+  });
+
+  describe('checkDiskSpace — Unix paths', () => {
+    beforeEach(() => {
+      platform.mockReturnValue('linux');
+    });
+
+    it('parses df output with standard columns', async () => {
+      const { info } = await import('../src/logger.js');
+
+      spawn.mockImplementation((cmd, args) => {
+        if (cmd === 'git') return createMockProcess({ code: 0, stdout: 'git version 2.40.0' });
+        if (cmd === 'claude' && args?.includes('--version'))
+          return createMockProcess({ code: 0, stdout: 'claude 1.0.0' });
+        if (cmd === 'claude' && args?.includes('-p'))
+          return createMockProcess({ code: 0, stdout: 'OK' });
+        // df -k output: Available column (4th) is in 1K-blocks
+        if (cmd === 'df')
+          return createMockProcess({ code: 0, stdout: 'Filesystem 1K-blocks Used Available Use%\n/dev/sda1 100000000 50000000 50000000 50%' });
+        return createMockProcess({ code: 0, stdout: 'ok' });
+      });
+
+      const mockGit = createMockGit({ isRepo: true });
+      await runPreChecks('/project', mockGit);
+
+      expect(info).toHaveBeenCalledWith(expect.stringContaining('disk space OK'));
+    });
+
+    it('skips when df output has fewer than 2 lines', async () => {
+      const { info } = await import('../src/logger.js');
+
+      spawn.mockImplementation((cmd, args) => {
+        if (cmd === 'git') return createMockProcess({ code: 0, stdout: 'git version 2.40.0' });
+        if (cmd === 'claude' && args?.includes('--version'))
+          return createMockProcess({ code: 0, stdout: 'claude 1.0.0' });
+        if (cmd === 'claude' && args?.includes('-p'))
+          return createMockProcess({ code: 0, stdout: 'OK' });
+        // df returns only a header, no data line
+        if (cmd === 'df')
+          return createMockProcess({ code: 0, stdout: 'Filesystem 1K-blocks Used Available' });
+        return createMockProcess({ code: 0, stdout: 'ok' });
+      });
+
+      const mockGit = createMockGit({ isRepo: true });
+      await expect(runPreChecks('/project', mockGit)).resolves.toBeUndefined();
+      expect(info).toHaveBeenCalledWith(expect.stringContaining('disk space (skipped)'));
+    });
+  });
+
+  describe('checkDiskSpace — boundary values', () => {
+    beforeEach(() => {
+      platform.mockReturnValue('win32');
+    });
+
+    it('does not throw at exactly 100MB (boundary of CRITICAL_DISK_MB)', async () => {
+      const { warn } = await import('../src/logger.js');
+
+      // 100 MB = 104857600 bytes. freeMB = Math.round(104857600 / 1048576) = 100
+      // 100 is NOT < 100, so no critical error. But 100 < 1024, so low disk warning.
+      spawn.mockImplementation((cmd, args) => {
+        if (cmd === 'git') return createMockProcess({ code: 0, stdout: 'git version 2.40.0' });
+        if (cmd === 'claude' && args?.includes('--version'))
+          return createMockProcess({ code: 0, stdout: 'claude 1.0.0' });
+        if (cmd === 'claude' && args?.includes('-p'))
+          return createMockProcess({ code: 0, stdout: 'OK' });
+        if (cmd === 'powershell')
+          return createMockProcess({ code: 0, stdout: '104857600' });
+        return createMockProcess({ code: 0, stdout: 'ok' });
+      });
+
+      const mockGit = createMockGit({ isRepo: true });
+      // Should NOT throw — exactly at boundary
+      await expect(runPreChecks('C:\\project', mockGit)).resolves.toBeUndefined();
+      // But should warn (100 < 1024)
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('Low disk space'));
+    });
+
+    it('does not warn at exactly 1024MB (boundary of LOW_DISK_MB)', async () => {
+      const { warn, info } = await import('../src/logger.js');
+
+      // 1024 MB = 1073741824 bytes. freeMB = 1024. 1024 is NOT < 1024. No warning.
+      spawn.mockImplementation((cmd, args) => {
+        if (cmd === 'git') return createMockProcess({ code: 0, stdout: 'git version 2.40.0' });
+        if (cmd === 'claude' && args?.includes('--version'))
+          return createMockProcess({ code: 0, stdout: 'claude 1.0.0' });
+        if (cmd === 'claude' && args?.includes('-p'))
+          return createMockProcess({ code: 0, stdout: 'OK' });
+        if (cmd === 'powershell')
+          return createMockProcess({ code: 0, stdout: '1073741824' });
+        return createMockProcess({ code: 0, stdout: 'ok' });
+      });
+
+      const mockGit = createMockGit({ isRepo: true });
+      await runPreChecks('C:\\project', mockGit);
+
+      expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Low disk space'));
+      expect(info).toHaveBeenCalledWith(expect.stringContaining('disk space OK'));
     });
   });
 });

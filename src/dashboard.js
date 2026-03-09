@@ -14,17 +14,35 @@ const OUTPUT_BUFFER_SIZE = 100 * 1024; // 100KB rolling buffer per step
 const OUTPUT_WRITE_INTERVAL = 500; // ms — throttle disk writes for output
 const MAX_BODY_BYTES = 1024; // 1 KB — stop endpoint only needs a small JSON body
 
-let server = null;
-let sseClients = new Set();
-let currentState = null;
-let urlFilePath = null;
-let progressFilePath = null;
-let shutdownTimer = null;
-let tuiProcess = null;
-let csrfToken = null;
-let outputBuffer = '';
-let outputWritePending = false;
-let outputWriteTimer = null;
+let ds = {
+  server: null,
+  sseClients: new Set(),
+  currentState: null,
+  urlFilePath: null,
+  progressFilePath: null,
+  shutdownTimer: null,
+  tuiProcess: null,
+  csrfToken: null,
+  outputBuffer: '',
+  outputWritePending: false,
+  outputWriteTimer: null,
+};
+
+export function resetDashboardState() {
+  ds = {
+    server: null,
+    sseClients: new Set(),
+    currentState: null,
+    urlFilePath: null,
+    progressFilePath: null,
+    shutdownTimer: null,
+    tuiProcess: null,
+    csrfToken: null,
+    outputBuffer: '',
+    outputWritePending: false,
+    outputWriteTimer: null,
+  };
+}
 
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -34,7 +52,7 @@ const SECURITY_HEADERS = {
 
 function serveHTML(res) {
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', ...SECURITY_HEADERS });
-  res.end(getHTML(csrfToken));
+  res.end(getHTML(ds.csrfToken));
 }
 
 function handleSSE(res) {
@@ -45,19 +63,19 @@ function handleSSE(res) {
   });
 
   // Send current state immediately
-  if (currentState) {
-    res.write(`event: state\ndata: ${JSON.stringify(currentState)}\n\n`);
+  if (ds.currentState) {
+    res.write(`event: state\ndata: ${JSON.stringify(ds.currentState)}\n\n`);
   }
 
   // Send current output buffer so late-joining clients see existing output
-  if (outputBuffer) {
-    res.write(`event: output\ndata: ${JSON.stringify(outputBuffer)}\n\n`);
+  if (ds.outputBuffer) {
+    res.write(`event: output\ndata: ${JSON.stringify(ds.outputBuffer)}\n\n`);
   }
 
-  sseClients.add(res);
+  ds.sseClients.add(res);
 
   res.on('close', () => {
-    sseClients.delete(res);
+    ds.sseClients.delete(res);
   });
 }
 
@@ -76,7 +94,7 @@ function handleStop(req, res, onStop) {
     // Verify CSRF token to prevent cross-origin stop requests
     try {
       const parsed = JSON.parse(body || '{}');
-      if (parsed.token !== csrfToken) {
+      if (parsed.token !== ds.csrfToken) {
         res.writeHead(403, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: 'Invalid token' }));
         return;
@@ -106,7 +124,7 @@ function handleRequest(req, res, onStop) {
 }
 
 function spawnTuiWindow() {
-  if (!progressFilePath) return;
+  if (!ds.progressFilePath) return;
   try {
     const tuiScript = fileURLToPath(new URL('./dashboard-tui.js', import.meta.url));
 
@@ -116,51 +134,51 @@ function spawnTuiWindow() {
       //   /s — reliably strips only the outer wrapper quotes
       // This avoids Node.js argument-escaping edge cases with cmd.exe
       // that can misparse paths containing spaces.
-      tuiProcess = spawn(
-        `start "NightyTidy Progress" node "${tuiScript}" "${progressFilePath}"`,
+      ds.tuiProcess = spawn(
+        `start "NightyTidy Progress" node "${tuiScript}" "${ds.progressFilePath}"`,
         [],
         { shell: true, stdio: 'ignore', windowsHide: true },
       );
     } else if (process.platform === 'darwin') {
-      tuiProcess = spawn('open', ['-a', 'Terminal', tuiScript, '--args', progressFilePath], {
+      ds.tuiProcess = spawn('open', ['-a', 'Terminal', tuiScript, '--args', ds.progressFilePath], {
         detached: true,
         stdio: 'ignore',
       });
     } else {
       // Linux — try common terminal emulators
-      tuiProcess = spawn('x-terminal-emulator', ['-e', 'node', tuiScript, progressFilePath], {
+      ds.tuiProcess = spawn('x-terminal-emulator', ['-e', 'node', tuiScript, ds.progressFilePath], {
         detached: true,
         stdio: 'ignore',
       });
     }
 
-    tuiProcess.unref();
+    ds.tuiProcess.unref();
     info('Dashboard window opened');
   } catch (err) {
     warn(`Could not open dashboard window: ${err.message}`);
-    tuiProcess = null;
+    ds.tuiProcess = null;
   }
 }
 
 export async function startDashboard(initialState, { onStop, projectDir }) {
   try {
-    csrfToken = randomBytes(16).toString('hex');
-    currentState = initialState;
-    urlFilePath = path.join(projectDir, URL_FILENAME);
-    progressFilePath = path.join(projectDir, PROGRESS_FILENAME);
+    ds.csrfToken = randomBytes(16).toString('hex');
+    ds.currentState = initialState;
+    ds.urlFilePath = path.join(projectDir, URL_FILENAME);
+    ds.progressFilePath = path.join(projectDir, PROGRESS_FILENAME);
 
     // Write initial progress file and spawn TUI window
     try {
-      writeFileSync(progressFilePath, JSON.stringify(initialState), 'utf8');
+      writeFileSync(ds.progressFilePath, JSON.stringify(initialState), 'utf8');
     } catch { /* non-critical */ }
     spawnTuiWindow();
 
     return await new Promise((resolve, reject) => {
-      server = createServer((req, res) => handleRequest(req, res, onStop));
+      ds.server = createServer((req, res) => handleRequest(req, res, onStop));
 
-      server.on('error', (err) => {
+      ds.server.on('error', (err) => {
         info(`Dashboard server could not start: ${err.message} — continuing with TUI fallback`);
-        server = null;
+        ds.server = null;
         // TUI still works via file — return success
         resolve({ url: null, port: null });
       });
@@ -168,15 +186,15 @@ export async function startDashboard(initialState, { onStop, projectDir }) {
       // Prevent slow/malicious clients from holding connections indefinitely.
       // SSE connections are excluded by design (they write headers immediately
       // and remain open). These timeouts only affect regular HTTP requests.
-      server.requestTimeout = 30_000;  // 30s — max time for entire request
-      server.headersTimeout = 15_000;  // 15s — max time to receive headers
+      ds.server.requestTimeout = 30_000;  // 30s — max time for entire request
+      ds.server.headersTimeout = 15_000;  // 15s — max time to receive headers
 
-      server.listen(0, '127.0.0.1', () => {
-        const port = server.address().port;
+      ds.server.listen(0, '127.0.0.1', () => {
+        const port = ds.server.address().port;
         const url = `http://localhost:${port}`;
 
         try {
-          writeFileSync(urlFilePath, url + '\n', 'utf8');
+          writeFileSync(ds.urlFilePath, url + '\n', 'utf8');
         } catch { /* non-critical */ }
 
         info(`Dashboard server at ${url}`);
@@ -185,30 +203,30 @@ export async function startDashboard(initialState, { onStop, projectDir }) {
     });
   } catch (err) {
     warn(`Dashboard could not start: ${err.message}`);
-    server = null;
+    ds.server = null;
     return null;
   }
 }
 
 export function updateDashboard(state) {
-  currentState = state;
+  ds.currentState = state;
 
   const json = JSON.stringify(state);
 
-  if (progressFilePath) {
+  if (ds.progressFilePath) {
     try {
-      writeFileSync(progressFilePath, json, 'utf8');
+      writeFileSync(ds.progressFilePath, json, 'utf8');
     } catch { /* non-critical */ }
   }
 
-  if (!server) return;
+  if (!ds.server) return;
 
   const ssePayload = `event: state\ndata: ${json}\n\n`;
-  for (const client of sseClients) {
+  for (const client of ds.sseClients) {
     try {
       client.write(ssePayload);
     } catch {
-      sseClients.delete(client);
+      ds.sseClients.delete(client);
     }
   }
 }
@@ -217,92 +235,92 @@ export function stopDashboard() {
   clearOutputBuffer();
 
   // Clear any pending broadcastOutput throttle timer (FINDING-07, audit #21)
-  if (outputWriteTimer) {
-    clearTimeout(outputWriteTimer);
-    outputWriteTimer = null;
-    outputWritePending = false;
+  if (ds.outputWriteTimer) {
+    clearTimeout(ds.outputWriteTimer);
+    ds.outputWriteTimer = null;
+    ds.outputWritePending = false;
   }
 
-  if (shutdownTimer) {
-    clearTimeout(shutdownTimer);
-    shutdownTimer = null;
+  if (ds.shutdownTimer) {
+    clearTimeout(ds.shutdownTimer);
+    ds.shutdownTimer = null;
   }
 
   // Always clean up ephemeral files, even if no HTTP server was started (TUI-only mode)
-  if (urlFilePath) {
-    try { unlinkSync(urlFilePath); } catch { /* already gone */ }
-    urlFilePath = null;
+  if (ds.urlFilePath) {
+    try { unlinkSync(ds.urlFilePath); } catch { /* already gone */ }
+    ds.urlFilePath = null;
   }
 
-  if (progressFilePath) {
-    try { unlinkSync(progressFilePath); } catch { /* already gone */ }
-    progressFilePath = null;
+  if (ds.progressFilePath) {
+    try { unlinkSync(ds.progressFilePath); } catch { /* already gone */ }
+    ds.progressFilePath = null;
   }
 
-  csrfToken = null;
-  tuiProcess = null;
+  ds.csrfToken = null;
+  ds.tuiProcess = null;
 
-  if (!server) {
-    currentState = null;
+  if (!ds.server) {
+    ds.currentState = null;
     return;
   }
 
   // Close all SSE connections
-  for (const client of sseClients) {
+  for (const client of ds.sseClients) {
     try { client.end(); } catch { /* ignore */ }
   }
-  sseClients.clear();
+  ds.sseClients.clear();
 
   try {
-    server.close();
+    ds.server.close();
   } catch { /* ignore */ }
-  server = null;
+  ds.server = null;
 
-  currentState = null;
+  ds.currentState = null;
 }
 
 export function broadcastOutput(chunk) {
   // Append to rolling buffer, trim from front if over limit
-  outputBuffer += chunk;
-  if (outputBuffer.length > OUTPUT_BUFFER_SIZE) {
-    outputBuffer = outputBuffer.slice(outputBuffer.length - OUTPUT_BUFFER_SIZE);
+  ds.outputBuffer += chunk;
+  if (ds.outputBuffer.length > OUTPUT_BUFFER_SIZE) {
+    ds.outputBuffer = ds.outputBuffer.slice(ds.outputBuffer.length - OUTPUT_BUFFER_SIZE);
   }
 
   // Throttled write to progress JSON (avoid thrashing disk on every chunk)
-  if (!outputWritePending && progressFilePath && currentState) {
-    outputWritePending = true;
-    outputWriteTimer = setTimeout(() => {
-      outputWritePending = false;
-      outputWriteTimer = null;
-      if (progressFilePath && currentState) {
-        currentState.currentStepOutput = outputBuffer;
+  if (!ds.outputWritePending && ds.progressFilePath && ds.currentState) {
+    ds.outputWritePending = true;
+    ds.outputWriteTimer = setTimeout(() => {
+      ds.outputWritePending = false;
+      ds.outputWriteTimer = null;
+      if (ds.progressFilePath && ds.currentState) {
+        ds.currentState.currentStepOutput = ds.outputBuffer;
         try {
-          writeFileSync(progressFilePath, JSON.stringify(currentState), 'utf8');
+          writeFileSync(ds.progressFilePath, JSON.stringify(ds.currentState), 'utf8');
         } catch { /* non-critical */ }
       }
     }, OUTPUT_WRITE_INTERVAL);
   }
 
-  if (!server) return;
+  if (!ds.server) return;
 
   // Stream raw chunk to all SSE clients (JSON-encoded to handle newlines)
   const ssePayload = `event: output\ndata: ${JSON.stringify(chunk)}\n\n`;
-  for (const client of sseClients) {
+  for (const client of ds.sseClients) {
     try {
       client.write(ssePayload);
     } catch {
-      sseClients.delete(client);
+      ds.sseClients.delete(client);
     }
   }
 }
 
 export function clearOutputBuffer() {
-  outputBuffer = '';
-  if (currentState) {
-    delete currentState.currentStepOutput;
+  ds.outputBuffer = '';
+  if (ds.currentState) {
+    delete ds.currentState.currentStepOutput;
   }
 }
 
 export function scheduleShutdown() {
-  shutdownTimer = setTimeout(() => stopDashboard(), SHUTDOWN_DELAY);
+  ds.shutdownTimer = setTimeout(() => stopDashboard(), SHUTDOWN_DELAY);
 }

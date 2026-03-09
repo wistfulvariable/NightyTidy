@@ -61,29 +61,40 @@ function spawnClaude(prompt, cwd, useShell = false, continueSession = false) {
   return child;
 }
 
+function setupTimeout(child, timeoutMs, verbose, settle) {
+  return setTimeout(() => {
+    if (verbose) forceKillChild(child); else child.kill();
+    settle({ success: false, error: timeoutMessage(timeoutMs), exitCode: -1 });
+  }, timeoutMs);
+}
+
+function setupAbortHandler(child, signal, settle) {
+  if (!signal) return null;
+  const onAbort = () => {
+    forceKillChild(child);
+    settle({ success: false, error: 'Aborted by user', exitCode: -1 });
+  };
+  if (signal.aborted) { onAbort(); return onAbort; }
+  signal.addEventListener('abort', onAbort, { once: true });
+  return onAbort;
+}
+
 function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {}) {
   return new Promise((resolve) => {
     let stdout = '';
     let settled = false;
 
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      signal?.removeEventListener('abort', onAbort);
-      if (verbose) forceKillChild(child); else child.kill();
-      resolve({ success: false, output: stdout, error: timeoutMessage(timeoutMs), exitCode: -1 });
-    }, timeoutMs);
-
-    // Kill child when abort signal fires
-    const onAbort = () => {
+    // Central settle function — guards against double-resolve and cleans up
+    const settle = (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      forceKillChild(child);
-      resolve({ success: false, output: stdout, error: 'Aborted by user', exitCode: -1 });
+      if (onAbort) signal?.removeEventListener('abort', onAbort);
+      resolve({ ...result, output: result.output ?? stdout });
     };
-    if (signal?.aborted) { onAbort(); return; }
-    signal?.addEventListener('abort', onAbort, { once: true });
+
+    const timer = setupTimeout(child, timeoutMs, verbose, settle);
+    const onAbort = setupAbortHandler(child, signal, settle);
 
     child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
@@ -100,22 +111,13 @@ function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {
     });
 
     child.on('error', (err) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
-      resolve({ success: false, output: '', error: err.message, exitCode: -1, _errorCode: err.code });
+      settle({ success: false, output: '', error: err.message, exitCode: -1, _errorCode: err.code });
     });
 
     child.on('close', (code) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
       const ok = code === 0 && stdout.trim().length > 0;
-      resolve({
+      settle({
         success: ok,
-        output: stdout,
         error: ok ? null : (code === 0 ? 'Claude Code returned empty output' : `Claude Code exited with error code ${code}`),
         exitCode: code,
       });
@@ -153,6 +155,7 @@ export async function runPrompt(prompt, cwd, options = {}) {
   const totalAttempts = maxRetries + 1;
 
   const startTime = Date.now();
+  let lastResult = null;
 
   for (let attempt = 1; attempt <= totalAttempts; attempt++) {
     if (signal?.aborted) {
@@ -163,6 +166,7 @@ export async function runPrompt(prompt, cwd, options = {}) {
     info(`Running Claude Code: ${label} (attempt ${attempt}/${totalAttempts})`);
 
     const result = await runOnce(prompt, cwd, timeoutMs, signal, continueSession, onOutput);
+    lastResult = result;
 
     // Abort detected — return immediately without retry
     if (signal?.aborted) {
@@ -188,7 +192,7 @@ export async function runPrompt(prompt, cwd, options = {}) {
   logError(`Claude Code failed: ${label} — all ${totalAttempts} attempts exhausted`);
   return {
     success: false,
-    output: '',
+    output: lastResult?.output || '',
     error: `Failed after ${totalAttempts} attempts`,
     exitCode: -1,
     duration,

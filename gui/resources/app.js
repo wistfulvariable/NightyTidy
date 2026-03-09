@@ -29,6 +29,7 @@ const SCREENS = {
 const state = {
   screen: SCREENS.SETUP,
   projectDir: null,
+  bin: null,              // absolute path to bin/nightytidy.js (from /api/config)
   steps: [],              // from --list --json: [{ number, name, description }]
   selectedSteps: [],      // step numbers user checked
   timeout: 45,            // minutes
@@ -76,7 +77,7 @@ let processCounter = 0;
  * Returns the parsed JSON result or an error.
  */
 async function runCli(args) {
-  const cmd = NtLogic.buildCommand(state.projectDir, args, 'Windows');
+  const cmd = NtLogic.buildCommand(state.projectDir, args, 'Windows', state.bin);
   const id = `proc-${++processCounter}`;
   state.currentProcessId = id;
 
@@ -588,7 +589,13 @@ function bindEvents() {
 
 // ── Init ───────────────────────────────────────────────────────────
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   bindEvents();
   showScreen(SCREENS.SETUP);
+
+  // Load server config (nightytidy binary path)
+  try {
+    const config = await api('config');
+    if (config.ok && config.bin) state.bin = config.bin;
+  } catch { /* fallback to npx */ }
 });

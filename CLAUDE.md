@@ -24,7 +24,7 @@ Automated overnight codebase improvement through Claude Code. NightyTidy is an o
 | Git | simple-git | v3 |
 | AI Engine | Claude Code CLI (subprocess) | latest |
 | Notifications | node-notifier | v10 |
-| Testing | Vitest | v2 |
+| Testing | Vitest | v3 |
 
 ## Project Structure
 
@@ -59,8 +59,8 @@ test/
   dashboard.test.js        # 20 tests — HTTP server start/stop, SSE events, CSRF, stop callback
   logger.test.js           # 10 tests — real file I/O, level filtering, stderr fallback
   checks.test.js           # 4 tests — mock subprocess, mock git
-  checks-extended.test.js  # 15 tests — auth paths, disk space, branch warnings, empty repo, dirty working tree
-  claude.test.js           # 25 tests — fake child process, fake timers, abort signal, Windows shell mode
+  checks-extended.test.js  # 23 tests — auth paths, disk space characterization, branch warnings, empty repo, dirty working tree
+  claude.test.js           # 26 tests — fake child process, fake timers, abort signal, Windows shell mode
   executor.test.js         # 11 tests — mocks claude, git, notifications, signal propagation
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 7 tests — getGitInstance, getHeadHash, tag/branch collision
@@ -76,14 +76,15 @@ test/
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
   orchestrator.test.js     # 31 tests — initRun, runStep, finishRun, dashboard integration with mocked modules
   contracts.test.js        # 38 tests — module API contract verification against CLAUDE.md
-  gui-logic.test.js        # 43 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, etc.)
-  gui-server.test.js       # 28 tests — HTTP server, static files, run-command, kill-process, security headers, traversal
+  gui-logic.test.js        # 46 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, etc.)
+  gui-server.test.js       # 29 tests — HTTP server, static files, config, run-command, kill-process, security headers, traversal
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks
   dashboard-broadcastoutput.test.js # 5 tests — buffer overflow, throttled writes, clearOutputBuffer with state
+  env.test.js              # 15 tests — allowlist filtering, prefix matching, CLAUDECODE blocking, debug logging
   helpers/
     cleanup.js             # Shared temp directory cleanup with EBUSY retry for Windows
-    mocks.js               # Shared mock factories: createMockProcess, createErrorProcess, createMockGit
+    mocks.js               # Shared mock factories: createLoggerMock, createMockProcess, createErrorProcess, createMockGit
     testdata.js            # Shared test data factories: makeMetadata, makeResults
 gui/
   server.js                  # Node.js HTTP server + Chrome app-mode launcher
@@ -99,7 +100,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 00_README.md .. 14_*.md    # PRD decomposition docs (reference only — not loaded by AI)
 .github/
   workflows/
-    ci.yml                   # GitHub Actions: test matrix, coverage, docs check, security audit
+    ci.yml                   # GitHub Actions: test matrix, coverage, docs check, Gitleaks secrets scan, security audit
 ```
 
 ## Module Map
@@ -113,7 +114,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue) | logger, env |
 | `src/git.js` | Git operations via simple-git | logger |
 | `src/checks.js` | Pre-run validation (8 checks) | logger, env |
-| `src/env.js` | Shared environment helpers (cleanEnv for CLAUDECODE stripping) | none |
+| `src/env.js` | Shared environment helpers (cleanEnv with allowlist filtering) | logger |
 | `src/notifications.js` | Desktop notifications | logger |
 | `src/dashboard.js` | Progress file + TUI window spawner + HTTP server (CSRF, security headers) | crypto, logger, dashboard-html |
 | `src/dashboard-html.js` | Dashboard HTML template (CSS + client-side JS) | none (data only) |
@@ -144,7 +145,8 @@ npx nightytidy --init-run --steps 1,5,12  # Initialize orchestrated run (pre-che
 npx nightytidy --run-step 1     # Run a single step in orchestrated mode
 npx nightytidy --finish-run     # Finish orchestrated run (report, merge, cleanup)
 npm run gui               # Launch desktop GUI (Node.js server + Chrome app mode)
-npm test                  # Vitest — single pass
+npm test                  # Vitest — single pass (all 28 files)
+npm run test:fast         # Vitest — excludes slow integration/git tests (~6s vs ~10s)
 npm run test:watch        # Vitest — watch mode
 npm run test:ci           # Vitest with coverage + threshold enforcement
 npm run test:flaky        # Run suite 3x to detect flaky tests (use before merge)
@@ -230,6 +232,8 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **Prompt integrity check**: `executor.js` computes SHA-256 of all step prompts and compares against `STEPS_HASH`. After editing any markdown file in `src/prompts/steps/` or `src/prompts/specials/`, recompute and update the hash in `executor.js`. Warns but does not block (user may have legitimate prompt changes).
 - **`--dangerously-skip-permissions`**: Required for non-interactive Claude Code subprocess calls. NightyTidy is the permission layer — it controls what prompts are sent and operates on a safety branch.
 - **Prompt delivery threshold**: Prompts longer than 8000 chars (`STDIN_THRESHOLD` in `claude.js`) are piped via stdin instead of passed as a `-p` argument. This avoids OS command-line length limits. If prompts fail with argument-too-long errors, check this threshold.
+- **Env var allowlist**: `cleanEnv()` in `env.js` uses an explicit allowlist (system paths, locale, Anthropic/Claude/Git prefixes) instead of a blocklist. Unknown env vars are filtered out and logged via `debug()`. `CLAUDECODE` is explicitly blocked. Tests in `env.test.js`.
+- **Gitleaks CI scan**: `.github/workflows/ci.yml` runs `gitleaks/gitleaks-action@v2` on every push/PR to detect committed secrets.
 - **`npm run check:security`**: Runs `npm audit --audit-level=high`. Use before releases.
 
 ## Architectural Rules
@@ -258,7 +262,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 bin/nightytidy.js
   └── src/cli.js
         ├── src/logger.js            (no deps — universal dependency)
-        ├── src/env.js               (no deps — shared env helpers)
+        ├── src/env.js               → logger (allowlist env filtering)
         ├── src/checks.js            → logger, env
         ├── src/git.js               → logger
         ├── src/claude.js            → logger, env
@@ -305,8 +309,8 @@ Each command is a separate process invocation. State persists via `nightytidy-ru
 
 ## Testing
 
-- **Framework**: Vitest v2, `vitest.config.js` for coverage thresholds + strip-shebang plugin
-- **Tests** across 27 files — `npm test` to run, `npm run test:ci` for coverage enforcement
+- **Framework**: Vitest v3, `vitest.config.js` for coverage thresholds + strip-shebang plugin
+- **Tests** across 28 files — `npm test` to run, `npm run test:ci` for coverage enforcement
 - **Coverage thresholds**: 90% statements, 80% branches, 80% functions — enforced by `test:ci`
 - **Philosophy**: Mock Claude Code subprocess, use real git against temp directories. Test failure paths harder than success paths
 - **Universal mock**: All test files mock `../src/logger.js` to prevent file I/O during tests (exception: `logger.test.js` tests the real logger)

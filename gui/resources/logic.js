@@ -8,14 +8,16 @@
  * @param {string} projectDir - Absolute path to target project
  * @param {string} args - CLI arguments (e.g. '--list --json')
  * @param {string} [platform] - 'Windows', 'Linux', or 'Darwin'
+ * @param {string} [binPath] - Absolute path to bin/nightytidy.js (uses npx fallback if omitted)
  * @returns {string} Full shell command
  */
-function buildCommand(projectDir, args, platform) {
+function buildCommand(projectDir, args, platform, binPath) {
   const os = platform || 'Windows';
+  const cmd = binPath ? `node "${binPath}"` : 'npx nightytidy';
   if (os === 'Windows') {
-    return `cd /d "${projectDir}" && npx nightytidy ${args}`;
+    return `cd /d "${projectDir}" && ${cmd} ${args}`;
   }
-  return `cd "${projectDir}" && npx nightytidy ${args}`;
+  return `cd "${projectDir}" && ${cmd} ${args}`;
 }
 
 /**

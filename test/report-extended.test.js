@@ -6,12 +6,9 @@ vi.mock('fs', () => ({
   existsSync: vi.fn(),
 }));
 
-vi.mock('../src/logger.js', () => ({
-  info: vi.fn(),
-  warn: vi.fn(),
-  debug: vi.fn(),
-  error: vi.fn(),
-}));
+import { createLoggerMock } from './helpers/mocks.js';
+
+vi.mock('../src/logger.js', () => createLoggerMock());
 
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { generateReport, formatDuration } from '../src/report.js';

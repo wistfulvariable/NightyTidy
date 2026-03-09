@@ -19,7 +19,7 @@ Assumes CLAUDE.md loaded. Subprocess wrapper in `src/claude.js`.
 ## Platform Rules
 
 - **Windows**: Always `shell: true` (claude is `.cmd`). Set upfront — no ENOENT fallback. Avoids 0xC0000142 under sustained use.
-- **CLAUDECODE env var**: Stripped via `cleanEnv()` before every spawn. Prevents nesting block.
+- **Env allowlist**: `cleanEnv()` filters env vars through an allowlist (system, locale, Anthropic/Claude/Git prefixes). CLAUDECODE explicitly blocked. Unknown vars logged via debug().
 - **Permissions**: All calls include `--dangerously-skip-permissions` (no TTY for tool approval).
 
 ## Safety Preamble
@@ -54,6 +54,6 @@ Two-phase: silent `claude -p "Say OK"` (30s timeout) → interactive `stdio: 'in
 
 Export: `runPrompt(prompt, cwd, { timeout?, retries?, label?, signal? })`
 
-Internal: `sleep(ms, signal)`, `spawnClaude()`, `waitForChild()`, `runOnce()`
+Internal: `sleep(ms, signal)`, `spawnClaude()`, `setupTimeout()`, `setupAbortHandler()`, `waitForChild()`, `runOnce()`
 
-Shared: `cleanEnv()` from `src/env.js` — imported by both `claude.js` and `checks.js`
+Shared: `cleanEnv()` from `src/env.js` — imported by both `claude.js` and `checks.js`. Uses allowlist approach (see env.test.js for coverage).

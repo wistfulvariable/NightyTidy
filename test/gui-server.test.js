@@ -8,6 +8,7 @@
  *
  * API surface tested:
  *   - GET / and static files (index.html, css, js)
+ *   - POST /api/config — returns nightytidy binary path
  *   - POST /api/read-file — read file by path
  *   - POST /api/run-command — execute shell command
  *   - POST /api/kill-process — kill active process by id
@@ -24,6 +25,7 @@ import { spawn } from 'node:child_process';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const RESOURCES_DIR = join(__dirname, '..', 'gui', 'resources');
+const NIGHTYTIDY_BIN = join(__dirname, '..', 'bin', 'nightytidy.js');
 
 // ── Minimal test server (mirrors server.js routing) ────────────────
 // We re-implement the core routing to test without launching Chrome.
@@ -78,6 +80,12 @@ let baseUrl;
 beforeAll(async () => {
   server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
+
+    // API: config
+    if (url.pathname === '/api/config' && req.method === 'POST') {
+      sendJson(res, { ok: true, bin: NIGHTYTIDY_BIN });
+      return;
+    }
 
     // API: read-file
     if (url.pathname === '/api/read-file' && req.method === 'POST') {
@@ -231,6 +239,22 @@ describe('static file serving', () => {
   it('returns 404 for nonexistent files', async () => {
     const res = await fetch(`${baseUrl}/nonexistent.txt`);
     expect(res.status).toBe(404);
+  });
+});
+
+// ── API: Config ────────────────────────────────────────────────────
+
+describe('config API', () => {
+  it('returns ok:true with nightytidy bin path', async () => {
+    const res = await fetch(`${baseUrl}/api/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data.bin).toBe(NIGHTYTIDY_BIN);
+    expect(data.bin).toContain('nightytidy.js');
   });
 });
 

@@ -2,6 +2,20 @@ import { vi } from 'vitest';
 import { EventEmitter } from 'events';
 
 /**
+ * Creates a standard logger mock for vi.mock('../src/logger.js', ...).
+ * All test files that import logger must mock it to prevent file I/O.
+ */
+export function createLoggerMock() {
+  return {
+    initLogger: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  };
+}
+
+/**
  * Creates a mock child process that emits data and closes on the next tick.
  * Used by checks.test.js and checks-extended.test.js.
  */

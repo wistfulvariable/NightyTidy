@@ -14,12 +14,9 @@ vi.mock('../src/notifications.js', () => ({
   notify: vi.fn(),
 }));
 
-vi.mock('../src/logger.js', () => ({
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-}));
+import { createLoggerMock } from './helpers/mocks.js';
+
+vi.mock('../src/logger.js', () => createLoggerMock());
 
 vi.mock('../src/prompts/loader.js', () => ({
   STEPS: [],

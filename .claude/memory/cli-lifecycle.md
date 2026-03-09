@@ -30,6 +30,15 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
 
 `acquireLock(projectDir)` creates `nightytidy.lock` (PID + timestamp). Auto-removed via `process.on('exit')`. Stale locks (dead PID via `process.kill(pid, 0)`) cleaned up automatically.
 
+## Internal Structure
+
+`run()` delegates to three internal helpers passing a shared `ctx` object:
+- `setupGitAndPreChecks(projectDir)` — git init, exclude files, pre-checks with spinner
+- `executeRunFlow(selected, projectDir, ctx)` — dashboard, git branching, step execution, abort handling
+- `finalizeRun(executionResults, projectDir, ctx)` — changelog, report, commit, merge, summary, dashboard shutdown
+
+`ctx` fields: `spinner`, `runStarted`, `tagName`, `runBranch`, `originalBranch`, `dashState`, `abortController`, `timeoutMs`
+
 ## Lifecycle Steps (in order)
 
 1. **Parse CLI flags** — Commander setup
@@ -37,17 +46,10 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
 3. **Acquire lock** — prevents concurrent runs
 4. **Handle --list / --setup** — early exit paths
 5. **Welcome screen**: `showWelcome()` — ASCII banner
-6. **Git init + exclude**: `initGit()` → `excludeEphemeralFiles()`
-7. **Pre-checks**: spinner + `runPreChecks(projectDir, git)` — 7 checks (parallelized: git chain || claude chain || disk space), throws on failure
-8. **Step selection**: `@inquirer/checkbox` or `--all`/`--steps` parsing
-9. **Start dashboard**: HTTP server + TUI window spawn (fire-and-forget)
-10. **Git setup**: `getCurrentBranch()` → `createPreRunTag()` → `createRunBranch()`
-11. **Start notification**: `notify('NightyTidy Started', ...)`
-12. **Spinner + execute**: `ora()` + `executeSteps(selected, projectDir, { signal, callbacks })`
-13. **Changelog**: `runPrompt(CHANGELOG_PROMPT, ...)` — separate from executor
-14. **Report**: `generateReport()` → commit → `mergeRunBranch()`
-15. **Completion summary** — notification + terminal output
-16. **Schedule dashboard shutdown** — 3s delay then close
+6. **`setupGitAndPreChecks()`**: `initGit()` → `excludeEphemeralFiles()` → spinner + `runPreChecks()`
+7. **Step selection**: `@inquirer/checkbox` or `--all`/`--steps` parsing
+8. **`executeRunFlow()`**: dashboard → git branching → notify → spinner + `executeSteps()` → abort handling
+9. **`finalizeRun()`**: changelog → report → commit → merge → summary → dashboard shutdown
 
 ## Abort Handling (SIGINT)
 

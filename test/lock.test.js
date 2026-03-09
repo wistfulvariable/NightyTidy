@@ -15,13 +15,9 @@ import { tmpdir } from 'os';
 import path from 'path';
 import { robustCleanup } from './helpers/cleanup.js';
 
-vi.mock('../src/logger.js', () => ({
-  initLogger: vi.fn(),
-  info: vi.fn(),
-  debug: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-}));
+import { createLoggerMock } from './helpers/mocks.js';
+
+vi.mock('../src/logger.js', () => createLoggerMock());
 
 const LOCK_FILENAME = 'nightytidy.lock';
 

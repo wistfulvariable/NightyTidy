@@ -36,6 +36,7 @@ Interactive mode uses #1 + #2. Orchestrator mode uses #3 only (spawned by `--ini
 | `scheduleShutdown()` | 3s delay then `stopDashboard()` |
 | `broadcastOutput(chunk)` | Stream Claude output to SSE + progress JSON |
 | `clearOutputBuffer()` | Reset output buffer between steps |
+| `resetDashboardState()` | Reset all state (for test cleanup) |
 
 ## Exports (dashboard-tui.js — for testing)
 
@@ -83,7 +84,7 @@ On server startup, `dashboard-standalone.js` reads `nightytidy-progress.json` sy
 
 ## Module-Level State (dashboard.js)
 
-11 mutable variables. All reset by `stopDashboard()` except `tuiProcess` (unref'd, self-terminating).
+Single `ds` state object encapsulates all 11 mutable fields. `resetDashboardState()` resets the entire object (for test cleanup). `stopDashboard()` cleans up all fields.
 SSE `outputBuffer` cleared by `clearOutputBuffer()` between steps and on stop.
 Client-side `elapsedInterval` persists across SSE reconnects (correct: reconnect does not clear it).
 

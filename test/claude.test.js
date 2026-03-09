@@ -13,12 +13,9 @@ vi.mock('os', () => ({
   platform: vi.fn(() => 'linux'),
 }));
 
-vi.mock('../src/logger.js', () => ({
-  info: vi.fn(),
-  debug: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-}));
+import { createLoggerMock } from './helpers/mocks.js';
+
+vi.mock('../src/logger.js', () => createLoggerMock());
 
 // ---------------------------------------------------------------------------
 // Imports — after mocks are registered
@@ -194,6 +191,39 @@ describe('runPrompt', () => {
       expect(result.error).toBe(`Failed after ${totalAttempts} attempts`);
       expect(result.exitCode).toBe(-1);
       expect(result.duration).toBeTypeOf('number');
+      // No stdout emitted → output is empty
+      expect(result.output).toBe('');
+    });
+
+    it('preserves last attempt output for diagnostics when all retries exhausted', async () => {
+      const options = { timeout: 500, retries: 2, label: 'output-preserved-test' };
+
+      setupSpawnSequence(
+        // Attempt 1: some output, then fails
+        (child) => {
+          child.emitStdout('attempt 1 output');
+          child.emitClose(1);
+        },
+        // Attempt 2: different output, then fails
+        (child) => {
+          child.emitStdout('attempt 2 output');
+          child.emitClose(1);
+        },
+        // Attempt 3 (last): diagnostic info, then fails
+        (child) => {
+          child.emitStdout('Error: module not found\nStack trace here');
+          child.emitClose(1);
+        },
+      );
+
+      const promise = runPrompt('do something', '/tmp', options);
+      await vi.advanceTimersByTimeAsync(60_000);
+      const result = await promise;
+
+      expect(result.success).toBe(false);
+      expect(result.attempts).toBe(3);
+      // Last attempt's stdout is preserved — not empty string
+      expect(result.output).toBe('Error: module not found\nStack trace here');
     });
   });
 

@@ -1,6 +1,6 @@
 # Testing — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. 416 tests, 27 files, Vitest v2.
+Assumes CLAUDE.md loaded. 447 tests, 28 files, Vitest v3.
 
 ## Test File -> Module Coverage
 
@@ -11,8 +11,8 @@ Assumes CLAUDE.md loaded. 416 tests, 27 files, Vitest v2.
 | `dashboard.test.js` | `dashboard.js` | 20 |
 | `logger.test.js` | `logger.js` | 10 |
 | `checks.test.js` | `checks.js` | 4 |
-| `checks-extended.test.js` | `checks.js` | 12 |
-| `claude.test.js` | `claude.js` | 25 |
+| `checks-extended.test.js` | `checks.js` | 23 |
+| `claude.test.js` | `claude.js` | 26 |
 | `executor.test.js` | `executor.js` | 11 |
 | `git.test.js` | `git.js` | 16 |
 | `git-extended.test.js` | `git.js` | 7 |
@@ -28,29 +28,29 @@ Assumes CLAUDE.md loaded. 416 tests, 27 files, Vitest v2.
 | `integration-extended.test.js` | Multi-module | 6 |
 | `orchestrator.test.js` | `orchestrator.js` | 31 |
 | `contracts.test.js` | All modules | 38 |
-| `gui-logic.test.js` | `gui/resources/logic.js` | 43 |
-| `gui-server.test.js` | `gui/server.js` | 28 |
+| `gui-logic.test.js` | `gui/resources/logic.js` | 46 |
+| `gui-server.test.js` | `gui/server.js` | 29 |
 | `lock.test.js` | `lock.js` | 9 |
 | `orchestrator-extended.test.js` | `orchestrator.js` | 11 |
 | `dashboard-broadcastoutput.test.js` | `dashboard.js` | 5 |
+| `env.test.js` | `env.js` | 15 |
 
 ## Test Helpers (`test/helpers/`)
 
 | File | Exports | Used By |
 |------|---------|---------|
 | `cleanup.js` | `robustCleanup(dir, maxAttempts?, delay?)` | All integration tests with temp dirs |
-| `mocks.js` | `createMockProcess()`, `createErrorProcess()`, `createTimeoutProcess()`, `createMockGit()` | checks tests, contracts tests |
+| `mocks.js` | `createLoggerMock()`, `createMockProcess()`, `createErrorProcess()`, `createTimeoutProcess()`, `createMockGit()` | all test files (logger), checks tests, contracts tests |
 | `testdata.js` | `makeMetadata(overrides)`, `makeResults({ completedCount, failedCount })` | report tests |
 
 ## Universal Logger Mock
 
 ```js
-vi.mock('../src/logger.js', () => ({
-  initLogger: vi.fn(), info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn(),
-}));
+import { createLoggerMock } from './helpers/mocks.js';
+vi.mock('../src/logger.js', () => createLoggerMock());
 ```
 
-Without this: tests crash writing `nightytidy-run.log`. Exception: `logger.test.js` tests real logger.
+All 20 test files (except `logger.test.js`) use `createLoggerMock()` from `test/helpers/mocks.js`. The factory returns `{ initLogger, info, warn, error, debug }` as `vi.fn()` mocks. Without this: tests crash writing `nightytidy-run.log`. Exception: `logger.test.js` tests real logger.
 
 ## Common Pitfalls
 
@@ -64,7 +64,7 @@ Without this: tests crash writing `nightytidy-run.log`. Exception: `logger.test.
 - **lock.js needs real filesystem** — uses `openSync('wx')` for atomic create; mock fs loses the semantics. Use real temp dirs with `robustCleanup()`
 - **orchestrator.js fs mock must include renameSync** — `writeState()` uses write-to-temp-then-rename; missing `renameSync: vi.fn()` in the fs mock causes silent failures caught by try/catch (audit #21)
 - **broadcastOutput throttle** — uses real `setTimeout(500ms)`. Tests must `await` a real delay (700ms+) to verify the throttled write fires
-- **gui/resources/logic.js coverage** — loaded via `eval` in tests, so v8 coverage tool reports 0% despite 43 tests. Coverage config should exclude or handle this
+- **gui/resources/logic.js coverage** — loaded via `eval` in tests, so v8 coverage tool reports 0% despite 46 tests. Coverage config should exclude or handle this
 - **Coverage threshold gap** — `vitest.config.js` has no `include`/`exclude` for coverage. `gui/`, `bin/`, `scripts/` drag overall coverage below 90% even when `src/` is at ~90%. Consider adding `coverage.include: ['src/**']`
 - **gui/server.js not importable** — top-level `createServer()` + `listen()` + `launchChrome()` causes side effects on import. Tests must re-implement routing logic. Consider guarding with `if (import.meta.url === ...)` for direct testability
 
@@ -96,7 +96,7 @@ See `audit-reports/04_TEST_ARCHITECTURE_REPORT.md` for full report (404 tests, 2
 - `report.test.js`: formatDuration already used `it.each` (no change needed)
 - `report-extended.test.js`: formatDuration edge cases already used `it.each` (no change needed)
 - `dashboard-tui.test.js`: 3 individual formatMs blocks -> 10-row `it.each` (22->29 tests)
-- `gui-logic.test.js`: 6 describe blocks parameterized via `it.each` (39->43 tests)
+- `gui-logic.test.js`: 6 describe blocks parameterized via `it.each` (39->46 tests)
 
 Pattern: `it.each` rows count as individual tests, so parameterization can increase test count while reducing code lines. This is correct behavior -- each row exercises a distinct input/output pair.
 

@@ -62,6 +62,7 @@ body {
   transition: opacity 0.2s;
 }
 .btn:hover { opacity: 0.85; }
+.btn:active:not(:disabled) { transform: scale(0.97); }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .btn-primary { background: var(--cyan); color: #000; }
@@ -96,6 +97,7 @@ body {
   padding: 0;
 }
 .link-btn:hover { opacity: 0.8; }
+.link-btn:active { transform: scale(0.97); }
 
 /* ── Card panels ── */
 .card {

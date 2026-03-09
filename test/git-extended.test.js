@@ -5,12 +5,9 @@ import path from 'path';
 import { robustCleanup } from './helpers/cleanup.js';
 import simpleGit from 'simple-git';
 
-vi.mock('../src/logger.js', () => ({
-  info: vi.fn(),
-  debug: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-}));
+import { createLoggerMock } from './helpers/mocks.js';
+
+vi.mock('../src/logger.js', () => createLoggerMock());
 
 import {
   initGit,

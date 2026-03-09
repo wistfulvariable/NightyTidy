@@ -1,5 +1,4 @@
 import { Command } from 'commander';
-import checkbox from '@inquirer/checkbox';
 import ora from 'ora';
 import chalk from 'chalk';
 
@@ -205,6 +204,7 @@ async function selectSteps(opts) {
     process.exit(1);
   }
 
+  const { default: checkbox } = await import('@inquirer/checkbox');
   const selected = await checkbox({
     message: 'Select steps to run (Enter to run all):',
     choices: STEPS.map(step => ({
@@ -258,6 +258,144 @@ function printStepList() {
     }
   }
   console.log(chalk.dim(`\nUse --steps 1,5,12 to run specific steps, or --all to run everything.`));
+}
+
+async function setupGitAndPreChecks(projectDir) {
+  const git = initGit(projectDir);
+  excludeEphemeralFiles();
+  const checkSpinner = ora({ text: 'Running pre-flight checks...', color: 'cyan' }).start();
+  try {
+    await runPreChecks(projectDir, git);
+    checkSpinner.succeed('Pre-flight checks passed');
+  } catch (err) {
+    checkSpinner.fail('Pre-flight check failed');
+    throw err;
+  }
+}
+
+async function executeRunFlow(selected, projectDir, ctx) {
+  // Start live dashboard
+  ctx.dashState = {
+    status: 'starting',
+    totalSteps: selected.length,
+    currentStepIndex: -1,
+    currentStepName: '',
+    steps: selected.map(s => ({ number: s.number, name: s.name, status: 'pending', duration: null })),
+    completedCount: 0,
+    failedCount: 0,
+    startTime: null,
+    error: null,
+  };
+  const dashboard = await startDashboard(ctx.dashState, {
+    onStop: () => ctx.abortController.abort(),
+    projectDir,
+  });
+  if (dashboard) {
+    console.log(chalk.cyan('\n\ud83d\udcca Progress window opened.'));
+    if (dashboard.url) {
+      console.log(chalk.cyan(`\n\ud83c\udf10 Live dashboard: ${dashboard.url}`));
+      console.log(chalk.dim('   Open this link in your browser to monitor progress in real time.'));
+    }
+  }
+
+  console.log(chalk.dim(
+    '\n\ud83d\udca1 Tip: Make sure your computer won\'t go to sleep during the run.\n' +
+    '   This typically takes 4-8 hours. Disable sleep in your power settings.\n'
+  ));
+
+  // Git setup
+  ctx.originalBranch = await getCurrentBranch();
+  ctx.tagName = await createPreRunTag();
+  ctx.runBranch = await createRunBranch(ctx.originalBranch);
+  ctx.runStarted = true;
+
+  notify('NightyTidy Started', `Running ${selected.length} steps. Check nightytidy-run.log for progress.`);
+
+  ctx.spinner = ora({
+    text: `\u23f3 Step 1/${selected.length}: ${selected[0].name}...`,
+    color: 'cyan',
+  }).start();
+
+  const executionResults = await executeSteps(selected, projectDir, {
+    signal: ctx.abortController.signal,
+    timeout: ctx.timeoutMs,
+    ...buildStepCallbacks(ctx.spinner, selected, ctx.dashState),
+  });
+
+  ctx.spinner.stop();
+
+  // Handle interrupted run
+  if (ctx.abortController.signal.aborted) {
+    if (ctx.dashState) {
+      ctx.dashState.status = 'stopped';
+      updateDashboard(ctx.dashState);
+    }
+    stopDashboard();
+    await handleAbortedRun(executionResults, {
+      projectDir,
+      runBranch: ctx.runBranch,
+      tagName: ctx.tagName,
+      originalBranch: ctx.originalBranch,
+    });
+  }
+
+  return executionResults;
+}
+
+async function finalizeRun(executionResults, projectDir, ctx) {
+  // Update dashboard to finishing state
+  if (ctx.dashState) {
+    ctx.dashState.status = 'finishing';
+    ctx.dashState.currentStepIndex = -1;
+    ctx.dashState.currentStepName = '';
+    updateDashboard(ctx.dashState);
+  }
+
+  // Narrated changelog
+  info('Generating narrated changelog...');
+  ctx.spinner = ora({ text: 'Generating changelog...', color: 'cyan' }).start();
+
+  const changelogResult = await runPrompt(SAFETY_PREAMBLE + CHANGELOG_PROMPT, projectDir, {
+    label: 'Narrated changelog',
+    timeout: ctx.timeoutMs,
+  });
+  const narration = changelogResult.success ? changelogResult.output : null;
+  if (!narration) warn('Narrated changelog generation failed \u2014 using fallback text');
+
+  ctx.spinner.stop();
+
+  // Generate report
+  const startTime = Date.now() - executionResults.totalDuration;
+  await generateReport(executionResults, narration, {
+    projectDir,
+    branchName: ctx.runBranch,
+    tagName: ctx.tagName,
+    originalBranch: ctx.originalBranch,
+    startTime,
+    endTime: Date.now(),
+  });
+
+  // Commit report on run branch
+  const gitInstance = getGitInstance();
+  try {
+    await gitInstance.add(['NIGHTYTIDY-REPORT.md', 'CLAUDE.md']);
+    await gitInstance.commit('NightyTidy: Add run report and update CLAUDE.md');
+  } catch (err) {
+    warn(`Failed to commit report: ${err.message}`);
+  }
+
+  // Merge run branch
+  const mergeResult = await mergeRunBranch(ctx.originalBranch, ctx.runBranch);
+
+  // Completion notification + terminal summary
+  printCompletionSummary(executionResults, mergeResult, { runBranch: ctx.runBranch, tagName: ctx.tagName });
+
+  // Update dashboard to completed and schedule shutdown
+  if (ctx.dashState) {
+    ctx.dashState.status = 'completed';
+    updateDashboard(ctx.dashState);
+  }
+  scheduleShutdown();
 }
 
 export async function run() {
@@ -320,12 +458,16 @@ export async function run() {
     process.exit(result.success ? 0 : 1);
   }
 
-  let spinner;
-  let runStarted = false;
-  let tagName = '';
-  let runBranch = '';
-  let originalBranch = '';
-  let dashState = null;
+  const ctx = {
+    spinner: null,
+    runStarted: false,
+    tagName: '',
+    runBranch: '',
+    originalBranch: '',
+    dashState: null,
+    abortController: new AbortController(),
+    timeoutMs,
+  };
 
   // Unhandled rejection safety net
   process.on('unhandledRejection', (reason) => {
@@ -336,8 +478,6 @@ export async function run() {
 
   // Ctrl+C handling
   let interrupted = false;
-  const abortController = new AbortController();
-
   process.on('SIGINT', () => {
     if (interrupted) {
       console.log('\nForce stopping.');
@@ -345,24 +485,20 @@ export async function run() {
     }
     interrupted = true;
     console.log(chalk.yellow('\n\u26a0\ufe0f  Stopping NightyTidy... finishing current step.'));
-    abortController.abort();
+    ctx.abortController.abort();
   });
 
   try {
-    // 1. Initialize logger
     initLogger(projectDir);
     info(`NightyTidy v${getVersion()} starting (Node ${process.version}, ${process.platform} ${process.arch})`);
 
-    // 2. Prevent concurrent runs
     await acquireLock(projectDir);
 
-    // 3a. List steps and exit (no git or pre-checks needed)
     if (opts.list) {
       printStepList();
       process.exit(0);
     }
 
-    // 3b. Setup mode — add CLAUDE.md integration and exit
     if (opts.setup) {
       const result = setupProject(projectDir);
       const action = result === 'created' ? 'Created CLAUDE.md with' : 'Added';
@@ -371,25 +507,11 @@ export async function run() {
       process.exit(0);
     }
 
-    // 4. Show first-run welcome
     showWelcome();
+    await setupGitAndPreChecks(projectDir);
 
-    // 5. Initialize git and run pre-checks
-    const git = initGit(projectDir);
-    excludeEphemeralFiles();
-    const checkSpinner = ora({ text: 'Running pre-flight checks...', color: 'cyan' }).start();
-    try {
-      await runPreChecks(projectDir, git);
-      checkSpinner.succeed('Pre-flight checks passed');
-    } catch (err) {
-      checkSpinner.fail('Pre-flight check failed');
-      throw err;
-    }
-
-    // 6. Step selector
     const selected = await selectSteps(opts);
 
-    // 6b. Dry run — show plan and exit
     if (opts.dryRun) {
       console.log(chalk.cyan(`\n--- Dry Run ---\n`));
       console.log(`Pre-checks: ${chalk.green('passed')}`);
@@ -403,126 +525,11 @@ export async function run() {
       process.exit(0);
     }
 
-    // 7. Start live dashboard
-    dashState = {
-      status: 'starting',
-      totalSteps: selected.length,
-      currentStepIndex: -1,
-      currentStepName: '',
-      steps: selected.map(s => ({ number: s.number, name: s.name, status: 'pending', duration: null })),
-      completedCount: 0,
-      failedCount: 0,
-      startTime: null,
-      error: null,
-    };
-    const dashboard = await startDashboard(dashState, {
-      onStop: () => abortController.abort(),
-      projectDir,
-    });
-    if (dashboard) {
-      console.log(chalk.cyan('\n\ud83d\udcca Progress window opened.'));
-      if (dashboard.url) {
-        console.log(chalk.cyan(`\n\ud83c\udf10 Live dashboard: ${dashboard.url}`));
-        console.log(chalk.dim('   Open this link in your browser to monitor progress in real time.'));
-      }
-    }
-
-    // 8. Sleep tip
-    console.log(chalk.dim(
-      '\n\ud83d\udca1 Tip: Make sure your computer won\'t go to sleep during the run.\n' +
-      '   This typically takes 4-8 hours. Disable sleep in your power settings.\n'
-    ));
-
-    // 9. Git setup
-    originalBranch = await getCurrentBranch();
-    tagName = await createPreRunTag();
-    runBranch = await createRunBranch(originalBranch);
-    runStarted = true;
-
-    // 10. Run started notification
-    notify('NightyTidy Started', `Running ${selected.length} steps. Check nightytidy-run.log for progress.`);
-
-    // 11. Spinner
-    spinner = ora({
-      text: `\u23f3 Step 1/${selected.length}: ${selected[0].name}...`,
-      color: 'cyan',
-    }).start();
-
-    // 12. Execute steps
-    const executionResults = await executeSteps(selected, projectDir, {
-      signal: abortController.signal,
-      timeout: timeoutMs,
-      ...buildStepCallbacks(spinner, selected, dashState),
-    });
-
-    spinner.stop();
-
-    // Handle interrupted run
-    if (abortController.signal.aborted) {
-      if (dashState) {
-        dashState.status = 'stopped';
-        updateDashboard(dashState);
-      }
-      stopDashboard();
-      await handleAbortedRun(executionResults, { projectDir, runBranch, tagName, originalBranch });
-    }
-
-    // Update dashboard to finishing state
-    if (dashState) {
-      dashState.status = 'finishing';
-      dashState.currentStepIndex = -1;
-      dashState.currentStepName = '';
-      updateDashboard(dashState);
-    }
-
-    // 13. Narrated changelog
-    info('Generating narrated changelog...');
-    spinner = ora({ text: 'Generating changelog...', color: 'cyan' }).start();
-
-    const changelogResult = await runPrompt(SAFETY_PREAMBLE + CHANGELOG_PROMPT, projectDir, {
-      label: 'Narrated changelog',
-      timeout: timeoutMs,
-    });
-    const narration = changelogResult.success ? changelogResult.output : null;
-    if (!narration) warn('Narrated changelog generation failed — using fallback text');
-
-    spinner.stop();
-
-    // 14. Generate report
-    const startTime = Date.now() - executionResults.totalDuration;
-    await generateReport(executionResults, narration, {
-      projectDir,
-      branchName: runBranch,
-      tagName,
-      originalBranch,
-      startTime,
-      endTime: Date.now(),
-    });
-
-    // 15. Commit report on run branch
-    const gitInstance = getGitInstance();
-    try {
-      await gitInstance.add(['NIGHTYTIDY-REPORT.md', 'CLAUDE.md']);
-      await gitInstance.commit('NightyTidy: Add run report and update CLAUDE.md');
-    } catch (err) {
-      warn(`Failed to commit report: ${err.message}`);
-    }
-
-    // 16. Merge run branch
-    const mergeResult = await mergeRunBranch(originalBranch, runBranch);
-
-    // 17. Completion notification + terminal summary
-    printCompletionSummary(executionResults, mergeResult, { runBranch, tagName });
-
-    // Update dashboard to completed and schedule shutdown
-    if (dashState) {
-      dashState.status = 'completed';
-      updateDashboard(dashState);
-    }
-    scheduleShutdown();
+    const executionResults = await executeRunFlow(selected, projectDir, ctx);
+    await finalizeRun(executionResults, projectDir, ctx);
 
   } catch (err) {
-    spinner?.stop();
+    ctx.spinner?.stop();
     console.error(chalk.red(`\n\u274c ${err.message}`));
 
     try {
@@ -530,16 +537,16 @@ export async function run() {
       debug(`Stack: ${err.stack}`);
     } catch { /* logger may not be initialized */ }
 
-    if (dashState) {
-      dashState.status = 'error';
-      dashState.error = err.message;
-      updateDashboard(dashState);
+    if (ctx.dashState) {
+      ctx.dashState.status = 'error';
+      ctx.dashState.error = err.message;
+      updateDashboard(ctx.dashState);
     }
     stopDashboard();
 
-    if (runStarted) {
+    if (ctx.runStarted) {
       notify('NightyTidy Error', `Run stopped: ${err.message}. Check nightytidy-run.log.`);
-      console.error(chalk.yellow(`\n\ud83d\udca1 Your code is safe. Reset to tag ${tagName} to undo any changes.`));
+      console.error(chalk.yellow(`\n\ud83d\udca1 Your code is safe. Reset to tag ${ctx.tagName} to undo any changes.`));
     }
 
     process.exit(1);

@@ -38,6 +38,18 @@ describe('buildCommand', () => {
     const cmd = NtLogic.buildCommand('/tmp/test', '--init-run --steps 1,5,12 --timeout 60', 'Linux');
     expect(cmd).toContain('--init-run --steps 1,5,12 --timeout 60');
   });
+
+  it.each([
+    ['C:\\Projects\\MyApp', '--list --json', 'Windows', 'C:\\bin\\nightytidy.js', 'cd /d "C:\\Projects\\MyApp" && node "C:\\bin\\nightytidy.js" --list --json', 'Windows with binPath'],
+    ['/home/user/project', '--list --json', 'Linux', '/opt/nightytidy/bin/nightytidy.js', 'cd "/home/user/project" && node "/opt/nightytidy/bin/nightytidy.js" --list --json', 'Linux with binPath'],
+  ])('uses node + binPath when provided for %s on %s (%s)', (dir, args, os, binPath, expected) => {
+    expect(NtLogic.buildCommand(dir, args, os, binPath)).toBe(expected);
+  });
+
+  it('falls back to npx when binPath is null', () => {
+    const cmd = NtLogic.buildCommand('/tmp/test', '--list --json', 'Linux', null);
+    expect(cmd).toContain('npx nightytidy');
+  });
 });
 
 // ── parseCliOutput ─────────────────────────────────────────────────

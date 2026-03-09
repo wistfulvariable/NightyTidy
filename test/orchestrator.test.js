@@ -18,13 +18,9 @@ vi.mock('child_process', () => ({
   spawn: (...args) => mockSpawn(...args),
 }));
 
-vi.mock('../src/logger.js', () => ({
-  initLogger: vi.fn(),
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-}));
+import { createLoggerMock } from './helpers/mocks.js';
+
+vi.mock('../src/logger.js', () => createLoggerMock());
 
 vi.mock('../src/checks.js', () => ({
   runPreChecks: vi.fn(),
