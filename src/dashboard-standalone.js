@@ -6,7 +6,7 @@
 // browser dashboard with SSE push. Killed by --finish-run via PID.
 
 import { createServer } from 'http';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 import { randomBytes } from 'crypto';
 import { getHTML } from './dashboard-html.js';
 
@@ -24,9 +24,11 @@ const urlFilePath = `${projectDir}/nightytidy-dashboard.url`;
 const csrfToken = randomBytes(16).toString('hex');
 
 let currentState = null;
+let lastRawJson = '';
 let lastOutputLength = 0;
 let lastStepName = '';
 const sseClients = new Set();
+let pollIntervalId = null;
 
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -36,14 +38,13 @@ const SECURITY_HEADERS = {
 
 function pollProgress() {
   try {
-    if (!existsSync(progressPath)) return;
     const raw = readFileSync(progressPath, 'utf8');
+
+    // Only push if file content actually changed (avoids redundant JSON.parse + stringify)
+    if (raw === lastRawJson) return;
+    lastRawJson = raw;
+
     const state = JSON.parse(raw);
-
-    // Only push if state actually changed
-    const stateJson = JSON.stringify(state);
-    if (stateJson === JSON.stringify(currentState)) return;
-
     currentState = state;
 
     // Reset output tracking when step changes
@@ -62,7 +63,7 @@ function pollProgress() {
       }
     }
 
-    const payload = `event: state\ndata: ${stateJson}\n\n`;
+    const payload = `event: state\ndata: ${raw}\n\n`;
     for (const client of sseClients) {
       try { client.write(payload); } catch { sseClients.delete(client); }
     }
@@ -129,7 +130,7 @@ server.listen(0, '127.0.0.1', () => {
   // Write port to stdout so the spawning process can capture it
   process.stdout.write(JSON.stringify({ port, url, pid: process.pid }) + '\n');
 
-  setInterval(pollProgress, POLL_INTERVAL);
+  pollIntervalId = setInterval(pollProgress, POLL_INTERVAL);
 });
 
 server.on('error', (err) => {
@@ -139,7 +140,7 @@ server.on('error', (err) => {
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  clearInterval(pollProgress);
+  if (pollIntervalId) clearInterval(pollIntervalId);
   for (const client of sseClients) { try { client.end(); } catch { /* ignore */ } }
   server.close(() => process.exit(0));
 });

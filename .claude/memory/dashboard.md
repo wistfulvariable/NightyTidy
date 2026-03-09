@@ -62,11 +62,15 @@ Updated by `cli.js` callbacks -> passed to `updateDashboard()` -> written to JSO
 - **macOS**: `spawn('open', ['-a', 'Terminal', tuiScript, '--args', filePath])`
 - **Linux**: `spawn('x-terminal-emulator', ['-e', 'node', tuiScript, filePath])`
 
+## Standalone Polling Optimization (Audit #18)
+
+`dashboard-standalone.js` compares raw file content strings (`lastRawJson`) instead of double-`JSON.stringify` to detect changes. This avoids one `JSON.parse` + one `JSON.stringify` per poll cycle when the file hasn't changed (the common case at 500ms polling).
+
 ## Shutdown
 
 - `stopDashboard()`: delete ephemeral files -> close SSE clients -> close HTTP server -> reset state
 - Called directly on abort (not `scheduleShutdown()` — `process.exit` kills timers)
-- Orchestrator: `dashboard-standalone.js` killed via SIGTERM by `finishRun()` -> `stopDashboardServer(pid)`
+- Orchestrator: `dashboard-standalone.js` killed via SIGTERM by `finishRun()` -> `stopDashboardServer(pid)`. Interval ID stored in `pollIntervalId` and cleared on SIGTERM (previously passed function reference to `clearInterval` by mistake).
 
 ## Error Handling
 

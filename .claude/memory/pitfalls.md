@@ -36,6 +36,9 @@ Exit code 0 with no stdout → failure → retry. Whitespace-only also empty. Ha
 ### SIGKILL Grace Period
 `child.kill()` SIGTERM → 5s timer → SIGKILL. Timer NOT cleared if process exits during window. Harmless — `try { child.kill('SIGKILL') } catch {}`.
 
+### clearInterval Requires the ID, Not the Function
+`clearInterval(myFunction)` is a no-op — must pass the ID returned by `setInterval()`. Found in audit #18 on `dashboard-standalone.js`. Always store interval IDs when cleanup is needed.
+
 ## Testing
 
 ### vi.doMock() Leaks Across Tests
