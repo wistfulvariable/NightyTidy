@@ -131,13 +131,22 @@ function formatCost(costUSD) {
 
 /**
  * Format a token count for display.
- * Uses 'k' suffix for thousands (e.g. 30.5k). Below 1000, shows raw number.
+ * >= 1M: uses 'M' suffix (1 decimal < 10M, 0 decimals >= 10M).
+ * >= 1k: uses 'k' suffix, rounded to nearest thousand, no decimals.
+ * < 1k: raw number.
  * @param {number|null|undefined} tokens
- * @returns {string|null} e.g. '30.5k', '142', or null if no data
+ * @returns {string|null} e.g. '1.5M', '150k', '42', or null if no data
  */
 function formatTokens(tokens) {
   if (tokens === null || tokens === undefined || !Number.isFinite(tokens) || tokens === 0) return null;
-  if (tokens >= 1000) return (tokens / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  if (tokens >= 1_000_000) {
+    const m = tokens / 1_000_000;
+    if (m >= 10) return Math.round(m).toLocaleString('en-US') + 'M';
+    return m.toFixed(1) + 'M';
+  }
+  if (tokens >= 1000) {
+    return Math.round(tokens / 1000).toLocaleString('en-US') + 'k';
+  }
   return String(tokens);
 }
 
@@ -164,6 +173,46 @@ function detectStaleState(errorMsg) {
   return errorMsg.includes('already in progress') || errorMsg.includes('run-state.json');
 }
 
+/**
+ * Pre-process Claude Code output for markdown rendering.
+ *
+ * Claude output mixes tool action indicators (▸ Read:, ▸ Bash:, etc.) with
+ * prose text, separated by single newlines. Without pre-processing, marked.js
+ * with `breaks: true` puts everything in one <p> with <br> tags — no visual
+ * paragraph spacing between sections.
+ *
+ * This function inserts blank lines at boundaries between tool-action lines
+ * and prose lines so marked creates separate <p> elements with proper margins.
+ *
+ * @param {string} text - Raw Claude Code output text
+ * @returns {string} Text with blank lines inserted at section boundaries
+ */
+function preprocessClaudeOutput(text) {
+  if (!text || typeof text !== 'string') return '';
+  text = text.replace(/\r\n/g, '\n');
+
+  const lines = text.split('\n');
+  if (lines.length <= 1) return text;
+
+  const isTool = (s) => /^\s*[▸►▹⏵]/.test(s);
+  const result = [lines[0]];
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    const prev = lines[i - 1];
+    const blank = line.trim() === '';
+    const prevBlank = prev.trim() === '';
+
+    // Insert blank line at tool ↔ prose boundaries
+    if (!blank && !prevBlank && isTool(line) !== isTool(prev)) {
+      result.push('');
+    }
+    result.push(line);
+  }
+
+  return result.join('\n');
+}
+
 // Export for browser (app.js) and for Node.js tests
 const NtLogic = {
   buildCommand,
@@ -176,6 +225,7 @@ const NtLogic = {
   buildStepArgs,
   detectGitError,
   detectStaleState,
+  preprocessClaudeOutput,
 };
 
 // Browser: attach to window. Node.js: attach to globalThis.

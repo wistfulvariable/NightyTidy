@@ -173,13 +173,23 @@ describe('formatCost', () => {
 
 describe('formatTokens', () => {
   it.each([
-    [30500, '30.5k', 'thousands with decimal'],
-    [1000, '1k', 'exactly 1000 drops .0'],
-    [1500, '1.5k', 'thousands with one decimal'],
     [142, '142', 'below 1000 raw number'],
     [999, '999', 'just under 1000'],
-    [100000, '100k', 'large number drops .0'],
-    [1234567, '1234.6k', 'very large rounds'],
+    [1000, '1k', 'exactly 1000'],
+    [1500, '2k', '1500 rounds to 2k'],
+    [30500, '31k', 'rounds to nearest thousand'],
+    [100000, '100k', 'even thousands'],
+    [999499, '999k', 'just under 1M boundary'],
+    [999500, '1,000k', 'rounds up to 1000k at boundary'],
+    [1000000, '1.0M', 'exactly 1M with one decimal'],
+    [1234567, '1.2M', 'millions with one decimal'],
+    [1965300, '2.0M', 'rounds to 2.0M'],
+    [5500000, '5.5M', 'mid millions one decimal'],
+    [9999999, '10.0M', 'rounds up to 10.0M'],
+    [10000000, '10M', '10M with zero decimals'],
+    [12345678, '12M', 'tens of millions rounds'],
+    [150000000, '150M', 'hundreds of millions'],
+    [1500000000, '1,500M', 'billions with commas'],
   ])('formats %s -> "%s" (%s)', (input, expected, _desc) => {
     expect(NtLogic.formatTokens(input)).toBe(expected);
   });
@@ -260,5 +270,129 @@ describe('detectStaleState', () => {
     expect(NtLogic.detectStaleState('')).toBe(false);
     expect(NtLogic.detectStaleState(undefined)).toBe(false);
     expect(NtLogic.detectStaleState(42)).toBe(false);
+  });
+});
+
+// ── preprocessClaudeOutput ──────────────────────────────────────────
+
+describe('preprocessClaudeOutput', () => {
+  it('returns empty string for null/undefined/empty input', () => {
+    expect(NtLogic.preprocessClaudeOutput(null)).toBe('');
+    expect(NtLogic.preprocessClaudeOutput(undefined)).toBe('');
+    expect(NtLogic.preprocessClaudeOutput('')).toBe('');
+  });
+
+  it('returns single-line text unchanged', () => {
+    expect(NtLogic.preprocessClaudeOutput('Hello world')).toBe('Hello world');
+  });
+
+  it('returns consecutive tool lines without inserting blank lines', () => {
+    const input = '▸ Read: file.js\n▸ Glob: **/*.ts\n▸ Bash: npm test';
+    expect(NtLogic.preprocessClaudeOutput(input)).toBe(input);
+  });
+
+  it('returns consecutive prose lines without inserting blank lines', () => {
+    const input = 'Phase 0 complete.\nNow performing discovery.\nAll checks passed.';
+    expect(NtLogic.preprocessClaudeOutput(input)).toBe(input);
+  });
+
+  it('inserts blank line when tool line follows prose line', () => {
+    const input = 'Looking at the project.\n▸ Read: CLAUDE.md';
+    const expected = 'Looking at the project.\n\n▸ Read: CLAUDE.md';
+    expect(NtLogic.preprocessClaudeOutput(input)).toBe(expected);
+  });
+
+  it('inserts blank line when prose line follows tool line', () => {
+    const input = '▸ Read: CLAUDE.md\nThe project uses ESM modules.';
+    const expected = '▸ Read: CLAUDE.md\n\nThe project uses ESM modules.';
+    expect(NtLogic.preprocessClaudeOutput(input)).toBe(expected);
+  });
+
+  it('handles mixed tool/prose/tool sequence with correct boundaries', () => {
+    const input = [
+      '▸ Read: file1.js',
+      '▸ Read: file2.js',
+      'The code looks good. Let me check the tests.',
+      '▸ Bash: npm test',
+      '▸ Glob: test/**/*.test.js',
+    ].join('\n');
+
+    const expected = [
+      '▸ Read: file1.js',
+      '▸ Read: file2.js',
+      '',
+      'The code looks good. Let me check the tests.',
+      '',
+      '▸ Bash: npm test',
+      '▸ Glob: test/**/*.test.js',
+    ].join('\n');
+
+    expect(NtLogic.preprocessClaudeOutput(input)).toBe(expected);
+  });
+
+  it('does not double-insert when blank line already exists at boundary', () => {
+    const input = '▸ Read: file.js\n\nThe code looks good.';
+    expect(NtLogic.preprocessClaudeOutput(input)).toBe(input);
+  });
+
+  it('preserves existing blank lines between prose paragraphs', () => {
+    const input = 'First paragraph.\n\nSecond paragraph.';
+    expect(NtLogic.preprocessClaudeOutput(input)).toBe(input);
+  });
+
+  it('normalizes \\r\\n to \\n', () => {
+    const input = '▸ Read: file.js\r\nThe project looks good.';
+    const result = NtLogic.preprocessClaudeOutput(input);
+    expect(result).not.toContain('\r');
+    expect(result).toBe('▸ Read: file.js\n\nThe project looks good.');
+  });
+
+  it('handles ► and ▹ as tool indicators', () => {
+    const input = '► Read: file.js\nSome text.\n▹ Glob: *.md\nMore text.';
+    const result = NtLogic.preprocessClaudeOutput(input);
+    expect(result).toBe('► Read: file.js\n\nSome text.\n\n▹ Glob: *.md\n\nMore text.');
+  });
+
+  it('handles realistic multi-section Claude output', () => {
+    const input = [
+      '▸ Read: C:\\Projects\\App\\CLAUDE.md',
+      '▸ Read: C:\\Projects\\App\\MEMORY.md',
+      '▸ Glob: .claude/memory/*.md',
+      '▸ Glob: **/.cursorrules',
+      'This project has a comprehensive documentation system.',
+      'Let me read all memory files to understand coverage.',
+      '▸ Read: C:\\Projects\\App\\memory\\design.md',
+      '▸ Read: C:\\Projects\\App\\memory\\auth.md',
+      '▸ TodoWrite',
+      '**Phase 0 Complete**: Documentation system validated.',
+      'Now performing deep codebase discovery.',
+      '▸ Bash: wc -l "CLAUDE.md"',
+    ].join('\n');
+
+    const result = NtLogic.preprocessClaudeOutput(input);
+    const lines = result.split('\n');
+
+    // Tool block → prose transition: blank line after ▸ Glob: **/.cursorrules
+    const cursorrIdx = lines.indexOf('▸ Glob: **/.cursorrules');
+    expect(lines[cursorrIdx + 1]).toBe('');
+    expect(lines[cursorrIdx + 2]).toBe('This project has a comprehensive documentation system.');
+
+    // Prose → tool transition: blank line before ▸ Read: design.md
+    const designIdx = lines.findIndex(l => l.includes('design.md'));
+    expect(lines[designIdx - 1]).toBe('');
+
+    // Tool → prose transition: blank line before **Phase 0 Complete**
+    const phaseIdx = lines.findIndex(l => l.includes('Phase 0 Complete'));
+    expect(lines[phaseIdx - 1]).toBe('');
+
+    // Prose → tool transition: blank line before ▸ Bash
+    const bashIdx = lines.findIndex(l => l.includes('Bash: wc'));
+    expect(lines[bashIdx - 1]).toBe('');
+  });
+
+  it('handles non-string input gracefully', () => {
+    expect(NtLogic.preprocessClaudeOutput(42)).toBe('');
+    expect(NtLogic.preprocessClaudeOutput({})).toBe('');
+    expect(NtLogic.preprocessClaudeOutput(true)).toBe('');
   });
 });

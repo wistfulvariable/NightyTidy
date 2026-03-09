@@ -29,7 +29,7 @@ const markedInstance = new marked.Marked({
  */
 function renderMarkdown(text) {
   if (!text) return '';
-  return markedInstance.parse(text);
+  return markedInstance.parse(NtLogic.preprocessClaudeOutput(text));
 }
 
 /**
@@ -66,6 +66,8 @@ const state = {
   stopping: false,        // stop button was clicked
   viewingStepOutput: null, // step number whose stored output is shown (null = live mode)
   initMsgTimer: null,      // setInterval ID for init overlay rotating messages
+  currentStepNum: null,    // step number currently running (for live elapsed timer)
+  stepStartTime: null,     // timestamp ms when current step started
 };
 
 // ── Init Overlay (shown during --init-run) ────────────────────────
@@ -431,6 +433,7 @@ function renderRunningStepList() {
     return `
       <div class="step-item step-pending" id="run-step-${num}">
         <span class="step-icon">&#9675;</span>
+        <span class="step-num">${num}.</span>
         <span class="step-name">${NtLogic.escapeHtml(name)}</span>
         <span class="step-cost"></span>
         <span class="step-tokens"></span>
@@ -500,6 +503,16 @@ function updateElapsed() {
   if (!state.runStartTime) return;
   const elapsed = Date.now() - state.runStartTime;
   document.getElementById('progress-elapsed').textContent = NtLogic.formatMs(elapsed);
+
+  // Update the current step's live elapsed time
+  if (state.currentStepNum !== null && state.stepStartTime) {
+    const stepElapsed = Date.now() - state.stepStartTime;
+    const el = document.getElementById(`run-step-${state.currentStepNum}`);
+    if (el) {
+      const durEl = el.querySelector('.step-duration');
+      if (durEl) durEl.textContent = NtLogic.formatMs(stepElapsed);
+    }
+  }
 }
 
 function showCurrentStep(stepNum) {
@@ -536,6 +549,8 @@ async function runNextStep() {
   showCurrentStep(next);
   updateStepItemStatus(next, 'running');
   backToLive();
+  state.currentStepNum = next;
+  state.stepStartTime = Date.now();
 
   const timeoutArg = state.timeout !== 45 ? ` --timeout ${state.timeout}` : '';
   const result = await runCli(`--run-step ${next}${timeoutArg}`);
@@ -577,6 +592,8 @@ async function runNextStep() {
     updateStepItemStatus(next, status, duration);
   }
 
+  state.currentStepNum = null;
+  state.stepStartTime = null;
   updateProgressBar();
   runNextStep();
 }
@@ -898,6 +915,7 @@ function renderSummary(finishData) {
     return `
       <div class="step-item step-${status} step-clickable" data-step="${r.step}">
         <span class="step-icon">${icon}</span>
+        <span class="step-num">${r.step}.</span>
         <span class="step-name">${NtLogic.escapeHtml(name)}</span>
         <span class="step-cost">${cost}</span>
         <span class="step-tokens">${tokensStr}</span>
@@ -935,6 +953,8 @@ function resetApp() {
   state.finishResult = null;
   state.stopping = false;
   state.viewingStepOutput = null;
+  state.currentStepNum = null;
+  state.stepStartTime = null;
 
   clearError('setup');
   clearError('steps');

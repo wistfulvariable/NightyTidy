@@ -179,6 +179,7 @@ async function handleSelectFolder(res) {
       try {
         writeFileSync(script, FOLDER_PICKER_PS1);
         const result = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${script}"`, { encoding: 'utf-8', timeout: 60000 });
+        lastHeartbeat = Date.now(); // Blocking dialog starved the event loop — refresh before watchdog fires
         folder = result.trim() || null;
       } finally {
         try { unlinkSync(script); } catch { /* ignore cleanup failure */ }
@@ -189,6 +190,7 @@ async function handleSelectFolder(res) {
         `osascript -e 'POSIX path of (choose folder with prompt "Select target project")'`,
         { encoding: 'utf-8', timeout: 60000 }
       ).trim();
+      lastHeartbeat = Date.now(); // Blocking dialog starved the event loop — refresh before watchdog fires
       folder = result || null;
     } else {
       // Linux: try zenity, then kdialog
@@ -197,19 +199,22 @@ async function handleSelectFolder(res) {
           `zenity --file-selection --directory --title="Select target project"`,
           { encoding: 'utf-8', timeout: 60000 }
         ).trim();
+        lastHeartbeat = Date.now(); // Blocking dialog starved the event loop — refresh before watchdog fires
         folder = result || null;
       } catch {
         const result = execSync(
           `kdialog --getexistingdirectory .`,
           { encoding: 'utf-8', timeout: 60000 }
         ).trim();
+        lastHeartbeat = Date.now(); // Blocking dialog starved the event loop — refresh before watchdog fires
         folder = result || null;
       }
     }
 
     sendJson(res, { ok: true, folder });
   } catch (err) {
-    // User cancelled or dialog failed
+    // User cancelled or dialog failed — still refresh heartbeat after blocking execSync
+    lastHeartbeat = Date.now();
     sendJson(res, { ok: true, folder: null });
   }
 }

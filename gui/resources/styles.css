@@ -339,6 +339,11 @@ body {
 .step-running .step-icon  { color: var(--blue); }
 .step-completed .step-icon { color: var(--green); }
 .step-failed .step-icon   { color: var(--red); }
+.step-item .step-num {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  min-width: 24px;
+}
 .step-name { flex: 1; }
 .step-cost { color: var(--yellow); font-size: 0.8rem; }
 .step-tokens { color: var(--text-dim); font-size: 0.75rem; }
