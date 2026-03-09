@@ -72,6 +72,20 @@ Dashboard failures use `info()`, not `warn()`, because dashboard is non-critical
 ### GUI Error Messages
 GUI (`gui/resources/app.js`) must never show raw JS error objects or Node.js internals (ENOENT, stack traces). Always wrap with user-friendly message. See `docs/ERROR_MESSAGES.md` GUI section.
 
+## Data Integrity
+
+### JSON File Reads
+All JSON file reads (`lock`, `state`, `progress`) have `try/catch` around `JSON.parse`. Corrupt or torn files are handled gracefully (lock = stale, state = no run, progress = skip tick). **Never add a JSON read without a parse error handler.**
+
+### Lock File Atomicity
+Uses `openSync(path, 'wx')` — O_CREAT + O_EXCL. This is a single kernel operation; no TOCTOU race. **Do not replace with exists-then-write.**
+
+### State File Non-Atomicity
+`writeFileSync` is NOT atomic. A crash during write can leave truncated JSON. `readState()` returns `null` on parse failure, which means "no active run." Consequence: user re-runs from scratch (safe but loses progress). A write-to-temp+rename pattern would fix this but adds complexity.
+
+### CLI Argument Validation
+`parseInt` coercion can produce `NaN` for non-numeric strings. Always guard with `Number.isFinite()` after `parseInt` for numeric CLI args (`--run-step`, `--timeout`).
+
 ## Singleton State Risks
 
 - `logger.js`: Re-calling `initLogger()` clears the log file.

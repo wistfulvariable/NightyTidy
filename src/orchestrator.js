@@ -216,11 +216,19 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
     // Validate and select steps
     let selectedNums;
     if (steps) {
-      const nums = steps.split(',').map(s => parseInt(s.trim(), 10))
-        .filter(n => !Number.isNaN(n));
-      const err = validateStepNumbers(nums);
+      const rawTokens = steps.split(',').map(s => s.trim());
+      const nums = rawTokens.map(s => parseInt(s, 10));
+      const droppedTokens = rawTokens.filter((s, i) => Number.isNaN(nums[i]));
+      if (droppedTokens.length > 0) {
+        warn(`Ignoring non-numeric step values: ${droppedTokens.join(', ')}`);
+      }
+      const validNums = nums.filter(n => !Number.isNaN(n));
+      if (validNums.length === 0) {
+        return fail('No valid step numbers provided. Use --list to see available steps.');
+      }
+      const err = validateStepNumbers(validNums);
       if (err) return err;
-      selectedNums = nums;
+      selectedNums = validNums;
     } else {
       selectedNums = STEPS.map(s => s.number);
     }
@@ -271,6 +279,10 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
 
 export async function runStep(projectDir, stepNumber, { timeout } = {}) {
   try {
+    if (!Number.isFinite(stepNumber) || stepNumber < 1) {
+      return fail(`Invalid step number: ${stepNumber}. Use --list to see available steps.`);
+    }
+
     initLogger(projectDir, { quiet: true });
 
     const state = readState(projectDir);

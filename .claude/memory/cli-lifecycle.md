@@ -11,11 +11,18 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
 | Flag | Type | Default | Behavior |
 |------|------|---------|----------|
 | `--all` | boolean | false | Run all 33 steps non-interactively |
-| `--steps <n>` | string | — | Comma-separated: `--steps 1,5,12` |
+| `--steps <n>` | string | -- | Comma-separated: `--steps 1,5,12` |
 | `--list` | boolean | false | Print step numbers + names, exit(0) |
 | `--setup` | boolean | false | Generate CLAUDE.md integration snippet, exit(0) |
-| `--timeout <min>` | number | 45 | Per-step timeout in minutes (converted to ms) |
+| `--timeout <min>` | number | 45 | Per-step timeout in minutes (validated: positive finite) |
+| `--dry-run` | boolean | false | Pre-checks + step selection, show plan, no execution |
+| `--json` | boolean | false | JSON output (use with `--list`) |
+| `--init-run` | boolean | false | Initialize orchestrated run |
+| `--run-step <N>` | number | -- | Run single step (validated: positive finite integer) |
+| `--finish-run` | boolean | false | Finish orchestrated run |
 | `--version` | boolean | false | Print version, exit(0) |
+
+**Input validation**: `--timeout` and `--run-step` both use `parseInt` + `Number.isFinite` + positivity check. Invalid values produce actionable error messages with examples.
 
 **Non-TTY**: Exits with error unless `--all` or `--steps` provided. No interactive selection without TTY.
 

@@ -305,6 +305,10 @@ export async function run() {
   }
 
   if (opts.runStep !== undefined) {
+    if (!Number.isFinite(opts.runStep) || opts.runStep < 1) {
+      console.log(JSON.stringify({ success: false, error: `--run-step expects a positive step number (got "${process.argv.find(a => a === String(opts.runStep)) ?? opts.runStep}"). Use --list to see available steps.` }));
+      process.exit(1);
+    }
     const result = await runStep(projectDir, opts.runStep, { timeout: timeoutMs });
     console.log(JSON.stringify(result));
     process.exit(result.success ? 0 : 1);
