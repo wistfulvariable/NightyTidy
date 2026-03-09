@@ -17,6 +17,7 @@ vi.mock('fs', () => ({
   existsSync: vi.fn(),
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
+  renameSync: vi.fn(),
   unlinkSync: vi.fn(),
   openSync: vi.fn(() => 99),
   closeSync: vi.fn(),
@@ -300,7 +301,7 @@ describe('initRun edge cases', () => {
 
     expect(result.success).toBe(true);
 
-    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json'));
+    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
     const state = JSON.parse(stateCall[1]);
     expect(state.timeout).toBe(3600000);
   });
@@ -310,7 +311,7 @@ describe('initRun edge cases', () => {
 
     expect(result.success).toBe(true);
 
-    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json'));
+    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
     const state = JSON.parse(stateCall[1]);
     expect(state.timeout).toBeNull();
   });

@@ -83,8 +83,8 @@ All JSON file reads (`lock`, `state`, `progress`) have `try/catch` around `JSON.
 ### Lock File Atomicity
 Uses `openSync(path, 'wx')` — O_CREAT + O_EXCL. This is a single kernel operation; no TOCTOU race. **Do not replace with exists-then-write.**
 
-### State File Non-Atomicity
-`writeFileSync` is NOT atomic. A crash during write can leave truncated JSON. `readState()` returns `null` on parse failure, which means "no active run." Consequence: user re-runs from scratch (safe but loses progress). A write-to-temp+rename pattern would fix this but adds complexity.
+### State File Atomic Writes
+`writeState()` in `orchestrator.js` uses write-to-temp-then-rename (`writeFileSync` to `.tmp` then `renameSync`). This prevents truncated JSON on crash. `readState()` still returns `null` on parse failure as a safety net. The `.tmp` file is in the ephemeral files list (`git.js`). Fixed in audit #21.
 
 ### CLI Argument Validation
 `parseInt` coercion can produce `NaN` for non-numeric strings. Always guard with `Number.isFinite()` after `parseInt` for numeric CLI args (`--run-step`, `--timeout`).
@@ -102,3 +102,20 @@ All HTTP servers must set `server.requestTimeout` and `server.headersTimeout` to
 - `logger.js`: Re-calling `initLogger()` clears the log file.
 - `git.js`: Re-calling `initGit()` changes working directory for all callers.
 - Both safe in production (init once), but tests must re-init per test.
+
+## Concurrency & Race Conditions (Audit #21)
+
+### broadcastOutput Throttle Timer
+`broadcastOutput()` uses a 500ms `setTimeout` for throttled disk writes. `stopDashboard()` clears this timer to prevent stale writes after cleanup. Track timer ID in `outputWriteTimer` module variable.
+
+### Progress JSON Torn Reads
+`writeFileSync` is not atomic. Dashboard/TUI readers may see truncated JSON if they read mid-write. All readers wrap `JSON.parse` in try/catch and skip the tick. No fix needed -- the polling interval (500ms-1s) ensures the next read succeeds.
+
+### SIGINT Sequencing
+First SIGINT aborts the current Claude subprocess and sets `abortController.abort()`. The executor checks `signal.aborted` at loop top and breaks cleanly. `handleAbortedRun()` commits a partial report. Second SIGINT calls `process.exit(1)`. No git corruption risk -- safety tag preserves pre-run state.
+
+### Lock File vs SIGKILL
+`process.on('exit')` handler cleans the lock file on normal exit. SIGKILL leaves an orphan, but `isLockStale()` detects dead PIDs and auto-removes. 24-hour `MAX_LOCK_AGE_MS` catches PID recycling on Windows.
+
+### fs Mock Must Include renameSync
+Orchestrator tests mock `fs`. Since `writeState()` uses `renameSync`, the mock must include it: `renameSync: vi.fn()`. Without it, the try/catch in orchestrator functions catches the error and returns `{ success: false }`.

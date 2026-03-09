@@ -62,6 +62,7 @@ Without this: tests crash writing `nightytidy-run.log`. Exception: `logger.test.
 - **loader.js + mocked fs** — tests mocking `fs` must also mock `prompts/loader.js` or the loader breaks at import time
 - **vi.doMock() leaks** — registrations persist across `vi.resetModules()`. Must `vi.doUnmock()` in `afterEach`
 - **lock.js needs real filesystem** — uses `openSync('wx')` for atomic create; mock fs loses the semantics. Use real temp dirs with `robustCleanup()`
+- **orchestrator.js fs mock must include renameSync** — `writeState()` uses write-to-temp-then-rename; missing `renameSync: vi.fn()` in the fs mock causes silent failures caught by try/catch (audit #21)
 - **broadcastOutput throttle** — uses real `setTimeout(500ms)`. Tests must `await` a real delay (700ms+) to verify the throttled write fires
 - **gui/resources/logic.js coverage** — loaded via `eval` in tests, so v8 coverage tool reports 0% despite 43 tests. Coverage config should exclude or handle this
 - **Coverage threshold gap** — `vitest.config.js` has no `include`/`exclude` for coverage. `gui/`, `bin/`, `scripts/` drag overall coverage below 90% even when `src/` is at ~90%. Consider adding `coverage.include: ['src/**']`

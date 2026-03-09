@@ -5,6 +5,7 @@ vi.mock('fs', () => ({
   existsSync: vi.fn(),
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
+  renameSync: vi.fn(),
   unlinkSync: vi.fn(),
   openSync: vi.fn(() => 99),
   closeSync: vi.fn(),
@@ -148,7 +149,7 @@ describe('initRun', () => {
     await initRun('/fake/project', { steps: '1,2' });
 
     expect(writeFileSync).toHaveBeenCalled();
-    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json'));
+    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
     expect(stateCall).toBeDefined();
     const state = JSON.parse(stateCall[1]);
     expect(state.version).toBe(1);
@@ -233,7 +234,7 @@ describe('runStep', () => {
 
     await runStep('/fake/project', 1);
 
-    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json'));
+    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
     const updatedState = JSON.parse(stateCall[1]);
     expect(updatedState.completedSteps).toHaveLength(1);
     expect(updatedState.completedSteps[0].number).toBe(1);
@@ -254,7 +255,7 @@ describe('runStep', () => {
     expect(result.success).toBe(true); // Command succeeded even though step failed
     expect(result.status).toBe('failed');
 
-    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json'));
+    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
     const updatedState = JSON.parse(stateCall[1]);
     expect(updatedState.failedSteps).toHaveLength(1);
   });
@@ -473,7 +474,7 @@ describe('dashboard integration', () => {
     expect(result.dashboardUrl).toBe('http://localhost:9999');
 
     // State should include dashboard PID
-    const stateCalls = writeFileSync.mock.calls.filter(c => c[0].includes('nightytidy-run-state.json'));
+    const stateCalls = writeFileSync.mock.calls.filter(c => c[0].includes('nightytidy-run-state.json.tmp'));
     const lastState = JSON.parse(stateCalls[stateCalls.length - 1][1]);
     expect(lastState.dashboardPid).toBe(12345);
     expect(lastState.dashboardUrl).toBe('http://localhost:9999');

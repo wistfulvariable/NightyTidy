@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, unlinkSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, renameSync, unlinkSync, existsSync } from 'fs';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -38,7 +38,12 @@ function readState(projectDir) {
 }
 
 function writeState(projectDir, state) {
-  writeFileSync(statePath(projectDir), JSON.stringify(state, null, 2), 'utf8');
+  // Write to temp file then rename for atomic replacement.
+  // Prevents truncated JSON on crash (FINDING-06, audit #21).
+  const target = statePath(projectDir);
+  const tmp = target + '.tmp';
+  writeFileSync(tmp, JSON.stringify(state, null, 2), 'utf8');
+  renameSync(tmp, target);
 }
 
 function deleteState(projectDir) {

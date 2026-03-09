@@ -24,6 +24,7 @@ let tuiProcess = null;
 let csrfToken = null;
 let outputBuffer = '';
 let outputWritePending = false;
+let outputWriteTimer = null;
 
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
@@ -215,6 +216,13 @@ export function updateDashboard(state) {
 export function stopDashboard() {
   clearOutputBuffer();
 
+  // Clear any pending broadcastOutput throttle timer (FINDING-07, audit #21)
+  if (outputWriteTimer) {
+    clearTimeout(outputWriteTimer);
+    outputWriteTimer = null;
+    outputWritePending = false;
+  }
+
   if (shutdownTimer) {
     clearTimeout(shutdownTimer);
     shutdownTimer = null;
@@ -262,8 +270,9 @@ export function broadcastOutput(chunk) {
   // Throttled write to progress JSON (avoid thrashing disk on every chunk)
   if (!outputWritePending && progressFilePath && currentState) {
     outputWritePending = true;
-    setTimeout(() => {
+    outputWriteTimer = setTimeout(() => {
       outputWritePending = false;
+      outputWriteTimer = null;
       if (progressFilePath && currentState) {
         currentState.currentStepOutput = outputBuffer;
         try {

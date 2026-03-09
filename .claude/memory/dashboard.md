@@ -71,7 +71,8 @@ Updated by `cli.js` callbacks -> passed to `updateDashboard()` -> written to JSO
 
 ## Shutdown
 
-- `stopDashboard()`: delete ephemeral files -> close SSE clients -> close HTTP server -> reset state
+- `stopDashboard()`: clear broadcastOutput throttle timer -> delete ephemeral files -> close SSE clients -> close HTTP server -> reset state
+- Throttle timer (`outputWriteTimer`) cleared in `stopDashboard()` to prevent stale writes after cleanup (audit #21)
 - Called directly on abort (not `scheduleShutdown()` — `process.exit` kills timers)
 - Orchestrator: `dashboard-standalone.js` killed via SIGTERM by `finishRun()` -> `stopDashboardServer(pid)`. Interval ID stored in `pollIntervalId` and cleared on SIGTERM (previously passed function reference to `clearInterval` by mistake).
 - `dashboard-standalone.js` SIGTERM has 10s force-exit timeout (audit #20). `server.close()` waits for connections; SSE connections never close on their own. Force timer is `.unref()`ed to not block Node's event loop if server closes cleanly.
