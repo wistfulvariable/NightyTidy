@@ -26,23 +26,19 @@ import { formatMs, progressBar, render } from '../src/dashboard-tui.js';
 // formatMs
 describe('dashboard-tui.js', () => {
   describe('formatMs', () => {
-    it('formats sub-minute durations as seconds', () => {
-      expect(formatMs(0)).toBe('0s');
-      expect(formatMs(999)).toBe('0s');
-      expect(formatMs(1000)).toBe('1s');
-      expect(formatMs(59999)).toBe('59s');
-    });
-
-    it('formats minute-range durations as Xm YYs', () => {
-      expect(formatMs(60000)).toBe('1m 00s');
-      expect(formatMs(90000)).toBe('1m 30s');
-      expect(formatMs(3599000)).toBe('59m 59s');
-    });
-
-    it('formats hour-range durations as Xh YYm', () => {
-      expect(formatMs(3600000)).toBe('1h 00m');
-      expect(formatMs(5400000)).toBe('1h 30m');
-      expect(formatMs(7200000)).toBe('2h 00m');
+    it.each([
+      [0, '0s', 'zero'],
+      [999, '0s', 'sub-second'],
+      [1000, '1s', 'exactly 1 second'],
+      [59999, '59s', 'just under 1 minute'],
+      [60000, '1m 00s', 'exactly 1 minute'],
+      [90000, '1m 30s', '1.5 minutes'],
+      [3599000, '59m 59s', 'just under 1 hour'],
+      [3600000, '1h 00m', 'exactly 1 hour'],
+      [5400000, '1h 30m', '1.5 hours'],
+      [7200000, '2h 00m', 'exactly 2 hours'],
+    ])('formats %i ms as "%s" (%s)', (ms, expected) => {
+      expect(formatMs(ms)).toBe(expected);
     });
   });
 
