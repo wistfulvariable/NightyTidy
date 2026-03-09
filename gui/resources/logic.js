@@ -11,7 +11,7 @@
  * @returns {string} Full shell command
  */
 function buildCommand(projectDir, args, platform) {
-  const os = platform || (typeof NL_OS !== 'undefined' ? NL_OS : 'Windows');
+  const os = platform || 'Windows';
   if (os === 'Windows') {
     return `cd /d "${projectDir}" && npx nightytidy ${args}`;
   }

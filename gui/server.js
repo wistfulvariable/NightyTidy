@@ -5,7 +5,7 @@
  */
 
 import { createServer } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { spawn, execSync } from 'node:child_process';
 import { join, extname, resolve, sep } from 'node:path';
@@ -34,6 +34,21 @@ const SECURITY_HEADERS = {
 // Track spawned processes for cleanup
 const activeProcesses = new Map();
 let serverInstance = null;
+
+function killProcess(proc) {
+  if (process.platform === 'win32') {
+    execSync(`taskkill /pid ${proc.pid} /T /F`, { windowsHide: true });
+  } else {
+    proc.kill('SIGTERM');
+  }
+}
+
+function killAllProcesses() {
+  for (const [, proc] of activeProcesses) {
+    try { killProcess(proc); } catch { /* ignore */ }
+  }
+  activeProcesses.clear();
+}
 
 // ── Static File Serving ────────────────────────────────────────────
 
@@ -167,12 +182,7 @@ async function handleKillProcess(req, res) {
   const proc = activeProcesses.get(id);
   if (proc) {
     try {
-      // On Windows, kill the process tree
-      if (process.platform === 'win32') {
-        execSync(`taskkill /pid ${proc.pid} /T /F`, { windowsHide: true });
-      } else {
-        proc.kill('SIGTERM');
-      }
+      killProcess(proc);
       activeProcesses.delete(id);
       sendJson(res, { ok: true });
     } catch (err) {
@@ -206,17 +216,7 @@ async function handleReadFile(req, res) {
 
 function handleExit(res) {
   sendJson(res, { ok: true });
-  // Kill all active processes
-  for (const [id, proc] of activeProcesses) {
-    try {
-      if (process.platform === 'win32') {
-        execSync(`taskkill /pid ${proc.pid} /T /F`, { windowsHide: true });
-      } else {
-        proc.kill('SIGTERM');
-      }
-    } catch { /* ignore */ }
-  }
-  activeProcesses.clear();
+  killAllProcesses();
   setTimeout(() => process.exit(0), 200);
 }
 
@@ -340,16 +340,7 @@ function launchChrome(url) {
 // ── Cleanup ────────────────────────────────────────────────────────
 
 function cleanup() {
-  for (const [id, proc] of activeProcesses) {
-    try {
-      if (process.platform === 'win32') {
-        execSync(`taskkill /pid ${proc.pid} /T /F`, { windowsHide: true });
-      } else {
-        proc.kill('SIGTERM');
-      }
-    } catch { /* ignore */ }
-  }
-  activeProcesses.clear();
+  killAllProcesses();
   if (serverInstance) {
     serverInstance.close();
     serverInstance = null;
