@@ -145,6 +145,30 @@ describe('getNextStep', () => {
   });
 });
 
+// ── formatCost ────────────────────────────────────────────────────
+
+describe('formatCost', () => {
+  it.each([
+    [0.1234, '$0.1234', 'typical cost'],
+    [0, '$0.0000', 'zero cost'],
+    [1.5, '$1.5000', 'pads to 4 decimals'],
+    [0.00001, '$0.0000', 'rounds tiny cost'],
+    [12.3456789, '$12.3457', 'rounds large cost'],
+  ])('formats %s -> "%s" (%s)', (input, expected, _desc) => {
+    expect(NtLogic.formatCost(input)).toBe(expected);
+  });
+
+  it.each([
+    [null, 'null'],
+    [undefined, 'undefined'],
+    [NaN, 'NaN'],
+    [Infinity, 'Infinity'],
+    [-Infinity, '-Infinity'],
+  ])('returns null for %s (%s)', (input, _desc) => {
+    expect(NtLogic.formatCost(input)).toBeNull();
+  });
+});
+
 // ── buildStepArgs ──────────────────────────────────────────────────
 
 describe('buildStepArgs', () => {

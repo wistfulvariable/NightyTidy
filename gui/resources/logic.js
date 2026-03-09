@@ -119,11 +119,22 @@ function buildStepArgs(selectedSteps, totalSteps) {
   return `--steps ${selectedSteps.join(',')}`;
 }
 
+/**
+ * Format a cost in USD to a display string.
+ * @param {number|null|undefined} costUSD
+ * @returns {string|null} e.g. '$0.1234', or null if no cost data
+ */
+function formatCost(costUSD) {
+  if (costUSD === null || costUSD === undefined || !Number.isFinite(costUSD)) return null;
+  return '$' + costUSD.toFixed(4);
+}
+
 // Export for browser (app.js) and for Node.js tests
 const NtLogic = {
   buildCommand,
   parseCliOutput,
   formatMs,
+  formatCost,
   escapeHtml,
   getNextStep,
   buildStepArgs,

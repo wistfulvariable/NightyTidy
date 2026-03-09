@@ -43,6 +43,7 @@ const state = {
   runStartTime: null,     // timestamp ms
   finishResult: null,     // from --finish-run response
   stopping: false,        // stop button was clicked
+  viewingStepOutput: null, // step number whose stored output is shown (null = live mode)
 };
 
 // ── Screen Management ──────────────────────────────────────────────
@@ -217,6 +218,7 @@ async function startRun() {
 
   showScreen(SCREENS.RUNNING);
   renderRunningStepList();
+  updateProgressBar();
   startProgressPolling();
   startElapsedTimer();
   runNextStep();
@@ -225,6 +227,7 @@ async function startRun() {
 // ── Screen 3: Running ──────────────────────────────────────────────
 
 function renderRunningStepList() {
+  document.getElementById('running-project-path').textContent = state.projectDir || '';
   const container = document.getElementById('running-step-list');
   container.innerHTML = state.selectedSteps.map(num => {
     const step = state.steps.find(s => s.number === num);
@@ -233,6 +236,7 @@ function renderRunningStepList() {
       <div class="step-item step-pending" id="run-step-${num}">
         <span class="step-icon">&#9675;</span>
         <span class="step-name">${NtLogic.escapeHtml(name)}</span>
+        <span class="step-cost"></span>
         <span class="step-duration"></span>
       </div>
     `;
@@ -247,6 +251,8 @@ function updateStepItemStatus(stepNum, status, duration) {
   const iconEl = el.querySelector('.step-icon');
   const durEl = el.querySelector('.step-duration');
 
+  const costEl = el.querySelector('.step-cost');
+
   switch (status) {
     case 'running':
       iconEl.innerHTML = '<span class="spinner"></span>';
@@ -254,10 +260,24 @@ function updateStepItemStatus(stepNum, status, duration) {
     case 'completed':
       iconEl.textContent = '\u2713';
       if (duration) durEl.textContent = NtLogic.formatMs(duration);
+      if (costEl) {
+        const r = state.stepResults.find(r => r.step === stepNum);
+        const costStr = r ? NtLogic.formatCost(r.costUSD) : null;
+        if (costStr) costEl.textContent = costStr;
+      }
+      el.classList.add('step-clickable');
+      el.onclick = () => viewStepOutput(stepNum);
       break;
     case 'failed':
       iconEl.textContent = '\u2717';
       if (duration) durEl.textContent = NtLogic.formatMs(duration);
+      if (costEl) {
+        const r = state.stepResults.find(r => r.step === stepNum);
+        const costStr = r ? NtLogic.formatCost(r.costUSD) : null;
+        if (costStr) costEl.textContent = costStr;
+      }
+      el.classList.add('step-clickable');
+      el.onclick = () => viewStepOutput(stepNum);
       break;
     default:
       iconEl.innerHTML = '&#9675;';
@@ -292,12 +312,23 @@ function updateElapsed() {
 function showCurrentStep(stepNum) {
   const step = state.steps.find(s => s.number === stepNum);
   const name = step ? step.name : `Step ${stepNum}`;
-  document.getElementById('current-step-card').style.display = 'block';
-  document.getElementById('current-step-name').textContent = `Step ${stepNum}: ${name}`;
+  const done = state.completedSteps.length + state.failedSteps.length;
+  const total = state.selectedSteps.length;
+  const position = done + 1;
+
+  const subtitle = document.getElementById('running-subtitle');
+  subtitle.textContent = `Step ${position} of ${total} — ${name}`;
+  subtitle.className = 'subtitle subtitle-running';
+
+  document.title = `Step ${position}/${total} — NightyTidy`;
 }
 
 function hideCurrentStep() {
-  document.getElementById('current-step-card').style.display = 'none';
+  const subtitle = document.getElementById('running-subtitle');
+  subtitle.textContent = '';
+  subtitle.className = 'subtitle';
+
+  document.title = 'NightyTidy';
 }
 
 async function runNextStep() {
@@ -311,16 +342,19 @@ async function runNextStep() {
 
   showCurrentStep(next);
   updateStepItemStatus(next, 'running');
-  clearOutput();
+  backToLive();
 
   const timeoutArg = state.timeout !== 45 ? ` --timeout ${state.timeout}` : '';
   const result = await runCli(`--run-step ${next}${timeoutArg}`);
 
   if (state.stopping) return;
 
+  // Snapshot the last live output before it gets cleared (fallback if response has no output)
+  const liveSnapshot = document.getElementById('output-content').textContent || '';
+
   if (!result.ok) {
     state.failedSteps.push(next);
-    state.stepResults.push({ step: next, status: 'failed', error: result.error });
+    state.stepResults.push({ step: next, status: 'failed', error: result.error, output: liveSnapshot, costUSD: null });
     updateStepItemStatus(next, 'failed');
   } else {
     const data = result.data;
@@ -340,6 +374,8 @@ async function runNextStep() {
       duration,
       durationFormatted: data.durationFormatted,
       attempts: data.attempts,
+      output: data.output || liveSnapshot,
+      costUSD: data.costUSD ?? null,
     });
 
     updateStepItemStatus(next, status, duration);
@@ -395,6 +431,9 @@ async function pollProgress() {
 function renderProgressFromFile(progress) {
   if (!progress) return;
 
+  // Skip live output updates when user is viewing a stored step's output
+  if (state.viewingStepOutput !== null) return;
+
   if (progress.currentStepOutput) {
     const outputEl = document.getElementById('output-content');
     outputEl.textContent = progress.currentStepOutput;
@@ -407,9 +446,86 @@ function clearOutput() {
   document.getElementById('output-content').textContent = '';
 }
 
+// ── Step Output Viewer ──────────────────────────────────────────
+
+function viewStepOutput(stepNum) {
+  const result = state.stepResults.find(r => r.step === stepNum);
+  if (!result) return;
+
+  state.viewingStepOutput = stepNum;
+  const name = result.name || `Step ${stepNum}`;
+  const outputEl = document.getElementById('output-content');
+  const titleEl = document.getElementById('output-title');
+  const backBtn = document.getElementById('btn-back-to-live');
+
+  titleEl.textContent = `Step ${stepNum}: ${name}`;
+  outputEl.textContent = result.output || '(No output recorded)';
+  backBtn.style.display = 'inline';
+
+  // Highlight the active step in the running list
+  document.querySelectorAll('#running-step-list .step-item').forEach(el => el.classList.remove('step-active'));
+  const activeEl = document.getElementById(`run-step-${stepNum}`);
+  if (activeEl) activeEl.classList.add('step-active');
+}
+
+function backToLive() {
+  state.viewingStepOutput = null;
+  const titleEl = document.getElementById('output-title');
+  const backBtn = document.getElementById('btn-back-to-live');
+  const outputEl = document.getElementById('output-content');
+
+  titleEl.textContent = 'Claude Output';
+  backBtn.style.display = 'none';
+  outputEl.textContent = '';
+
+  document.querySelectorAll('#running-step-list .step-item').forEach(el => el.classList.remove('step-active'));
+}
+
+function viewSummaryStepOutput(stepNum) {
+  const result = state.stepResults.find(r => r.step === stepNum);
+  if (!result) return;
+
+  const panel = document.getElementById('summary-output-panel');
+  const titleEl = document.getElementById('summary-output-title');
+  const contentEl = document.getElementById('summary-output-content');
+
+  // Toggle: clicking same step again closes the panel
+  if (panel.style.display !== 'none' && state.viewingStepOutput === stepNum) {
+    closeSummaryOutput();
+    return;
+  }
+
+  state.viewingStepOutput = stepNum;
+  const name = result.name || `Step ${stepNum}`;
+  titleEl.textContent = `Step ${stepNum}: ${name}`;
+  contentEl.textContent = result.output || '(No output recorded)';
+  panel.style.display = 'block';
+
+  // Highlight active step
+  document.querySelectorAll('#summary-step-list .step-item').forEach(el => el.classList.remove('step-active'));
+  const activeEl = document.querySelector(`#summary-step-list .step-item[data-step="${stepNum}"]`);
+  if (activeEl) activeEl.classList.add('step-active');
+}
+
+function closeSummaryOutput() {
+  state.viewingStepOutput = null;
+  document.getElementById('summary-output-panel').style.display = 'none';
+  document.querySelectorAll('#summary-step-list .step-item').forEach(el => el.classList.remove('step-active'));
+}
+
 // ── Stop Run ───────────────────────────────────────────────────────
 
+function confirmStopRun() {
+  if (state.stopping) return;
+  document.getElementById('confirm-stop-overlay').classList.remove('hidden');
+}
+
+function cancelStopRun() {
+  document.getElementById('confirm-stop-overlay').classList.add('hidden');
+}
+
 async function stopRun() {
+  document.getElementById('confirm-stop-overlay').classList.add('hidden');
   if (state.stopping) return;
   state.stopping = true;
 
@@ -423,11 +539,10 @@ async function stopRun() {
     } catch { /* ignore */ }
   }
 
-  hideCurrentStep();
-
-  const badge = document.getElementById('running-status-badge');
-  badge.className = 'status-badge status-stopped';
-  badge.textContent = 'Stopped';
+  const subtitle = document.getElementById('running-subtitle');
+  subtitle.textContent = 'Stopped';
+  subtitle.className = 'subtitle subtitle-stopped';
+  document.title = 'Stopped — NightyTidy';
 
   await finishRun();
 }
@@ -437,8 +552,8 @@ async function stopRun() {
 async function finishRun() {
   stopProgressPolling();
   stopElapsedTimer();
-  hideCurrentStep();
 
+  document.title = 'Finishing... — NightyTidy';
   showScreen(SCREENS.FINISHING);
 
   const result = await runCli('--finish-run');
@@ -458,6 +573,7 @@ async function finishRun() {
 // ── Screen 5: Summary ──────────────────────────────────────────────
 
 function renderSummary(finishData) {
+  document.getElementById('summary-project-path').textContent = state.projectDir || '';
   const completed = state.completedSteps.length;
   const failed = state.failedSteps.length;
   const total = state.selectedSteps.length;
@@ -469,20 +585,33 @@ function renderSummary(finishData) {
   if (state.stopping) {
     resultEl.className = 'summary-result partial';
     titleEl.textContent = 'Run Stopped';
+    document.title = 'Stopped — NightyTidy';
   } else if (failed === 0 && completed > 0) {
     resultEl.className = 'summary-result success';
     titleEl.textContent = 'Run Complete';
+    document.title = 'Complete — NightyTidy';
   } else if (completed === 0) {
     resultEl.className = 'summary-result failure';
     titleEl.textContent = 'Run Failed';
+    document.title = 'Failed — NightyTidy';
   } else {
     resultEl.className = 'summary-result partial';
     titleEl.textContent = 'Run Complete (with failures)';
+    document.title = 'Complete — NightyTidy';
   }
 
   const statsEl = document.getElementById('summary-stats');
   const durationStr = finishData?.totalDurationFormatted || NtLogic.formatMs(totalDuration);
-  statsEl.innerHTML = `
+
+  // Total cost: prefer finishData (includes overhead), fallback to sum of step costs
+  let totalCostUSD = finishData?.totalCostUSD ?? null;
+  if (totalCostUSD === null) {
+    const stepCosts = state.stepResults.filter(r => r.costUSD != null).map(r => r.costUSD);
+    if (stepCosts.length > 0) totalCostUSD = stepCosts.reduce((a, b) => a + b, 0);
+  }
+  const totalCostStr = NtLogic.formatCost(totalCostUSD);
+
+  let statsHtml = `
     <div class="stat-card">
       <div class="value green">${completed}</div>
       <div class="label">Passed</div>
@@ -500,6 +629,15 @@ function renderSummary(finishData) {
       <div class="label">Duration</div>
     </div>
   `;
+  if (totalCostStr) {
+    statsHtml += `
+    <div class="stat-card">
+      <div class="value yellow">${totalCostStr}</div>
+      <div class="label">Total Cost</div>
+    </div>
+    `;
+  }
+  statsEl.innerHTML = statsHtml;
 
   const detailsEl = document.getElementById('summary-details');
   let details = '';
@@ -527,14 +665,24 @@ function renderSummary(finishData) {
     const icon = status === 'completed' ? '\u2713' : status === 'failed' ? '\u2717' : '&#9675;';
     const name = r.name || `Step ${r.step}`;
     const dur = r.duration ? NtLogic.formatMs(r.duration) : '';
+    const cost = NtLogic.formatCost(r.costUSD) || '';
     return `
-      <div class="step-item step-${status}">
+      <div class="step-item step-${status} step-clickable" data-step="${r.step}">
         <span class="step-icon">${icon}</span>
         <span class="step-name">${NtLogic.escapeHtml(name)}</span>
+        <span class="step-cost">${cost}</span>
         <span class="step-duration">${dur}</span>
       </div>
     `;
   }).join('');
+
+  // Attach click handlers for viewing step output
+  listEl.querySelectorAll('.step-item[data-step]').forEach(el => {
+    el.addEventListener('click', () => {
+      const stepNum = parseInt(el.getAttribute('data-step'), 10);
+      viewSummaryStepOutput(stepNum);
+    });
+  });
 }
 
 // ── Reset ──────────────────────────────────────────────────────────
@@ -556,6 +704,7 @@ function resetApp() {
   state.runStartTime = null;
   state.finishResult = null;
   state.stopping = false;
+  state.viewingStepOutput = null;
 
   clearError('setup');
   clearError('steps');
@@ -566,9 +715,33 @@ function resetApp() {
   document.getElementById('btn-stop-run').textContent = 'Stop Run';
   document.getElementById('progress-bar-fill').style.width = '0%';
   document.getElementById('progress-bar-track').setAttribute('aria-valuenow', '0');
+  document.title = 'NightyTidy';
 
   showScreen(SCREENS.SETUP);
 }
+
+// ── Window Close Protection ────────────────────────────────────────
+
+function isRunInProgress() {
+  return state.screen === SCREENS.RUNNING || state.screen === SCREENS.FINISHING;
+}
+
+// Native browser dialog when user tries to close window during a run
+// (title bar X, Alt+F4, Ctrl+W). Message cannot be customized in modern Chrome.
+window.addEventListener('beforeunload', (e) => {
+  if (isRunInProgress()) {
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
+// Best-effort backend cleanup when the page actually unloads during a run.
+// sendBeacon is fire-and-forget — works even as the page is torn down.
+window.addEventListener('unload', () => {
+  if (isRunInProgress()) {
+    navigator.sendBeacon('/api/exit');
+  }
+});
 
 // ── Event Binding ──────────────────────────────────────────────────
 
@@ -579,7 +752,11 @@ function bindEvents() {
   document.getElementById('btn-select-none').addEventListener('click', () => selectAllSteps(false));
   document.getElementById('btn-back-setup').addEventListener('click', () => showScreen(SCREENS.SETUP));
   document.getElementById('btn-start-run').addEventListener('click', startRun);
-  document.getElementById('btn-stop-run').addEventListener('click', stopRun);
+  document.getElementById('btn-stop-run').addEventListener('click', confirmStopRun);
+  document.getElementById('btn-confirm-stop-yes').addEventListener('click', stopRun);
+  document.getElementById('btn-confirm-stop-cancel').addEventListener('click', cancelStopRun);
+  document.getElementById('btn-back-to-live').addEventListener('click', backToLive);
+  document.getElementById('btn-close-output').addEventListener('click', closeSummaryOutput);
   document.getElementById('btn-new-run').addEventListener('click', resetApp);
   document.getElementById('btn-close-app').addEventListener('click', () => {
     api('exit').catch(() => {});
