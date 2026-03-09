@@ -62,7 +62,7 @@ function parseCliOutput(stdout) {
  * @returns {string} e.g. '2h 15m 30s', '45m 12s', '8s'
  */
 function formatMs(ms) {
-  if (!ms || ms < 0) return '0s';
+  if (ms === null || ms === undefined || !Number.isFinite(ms) || ms < 0) return '0s';
 
   const totalSec = Math.floor(ms / 1000);
   const h = Math.floor(totalSec / 3600);

@@ -187,7 +187,7 @@ async function selectSteps(opts) {
 
   if (opts.steps) {
     const requestedNums = opts.steps.split(',').map(s => parseInt(s.trim(), 10));
-    const invalid = requestedNums.filter(n => isNaN(n) || n < 1 || n > STEPS.length);
+    const invalid = requestedNums.filter(n => Number.isNaN(n) || n < 1 || n > STEPS.length);
     if (invalid.length > 0) {
       console.log(chalk.red(`Invalid step number(s): ${invalid.join(', ')}. Valid range: 1-${STEPS.length}.`));
       process.exit(1);

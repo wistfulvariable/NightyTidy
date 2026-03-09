@@ -32,6 +32,8 @@ function readState() {
 }
 
 export function formatMs(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '0s';
+
   const s = Math.floor(ms / 1000);
   if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
@@ -192,7 +194,9 @@ const isMain = process.argv[1]?.replace(/\\/g, '/').endsWith('dashboard-tui.js')
 
 if (isMain) {
   // Prevent uncaught errors from silently closing the window
-  process.on('uncaughtException', () => { /* stay alive — retry on next poll */ });
+  process.on('uncaughtException', (err) => {
+    try { process.stderr.write(`[dashboard-tui] uncaught: ${err?.message || err}\n`); } catch { /* ignore */ }
+  });
 
   const path = process.argv[2];
   if (!path) {

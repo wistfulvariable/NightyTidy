@@ -216,7 +216,8 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
     // Validate and select steps
     let selectedNums;
     if (steps) {
-      const nums = steps.split(',').map(s => parseInt(s.trim(), 10));
+      const nums = steps.split(',').map(s => parseInt(s.trim(), 10))
+        .filter(n => !Number.isNaN(n));
       const err = validateStepNumbers(nums);
       if (err) return err;
       selectedNums = nums;

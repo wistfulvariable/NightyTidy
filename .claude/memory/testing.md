@@ -127,7 +127,7 @@ See `audit-reports/06_TEST_QUALITY_REPORT.md` for full report (6-phase analysis)
 - 5 test name/assertion mismatches (test names promise more than assertions verify)
 
 **Untested boundaries to watch**:
-- `formatDuration(negative)`, `formatDuration(NaN)`, `formatDuration(Infinity)` in report.js
+- `formatDuration(negative)`, `formatDuration(NaN)`, `formatDuration(Infinity)` in report.js -- guard added (returns `'0m 00s'`), but no explicit tests for these edge cases yet
 - `executeSteps([])` with empty step array
 - `runPrompt('')` with empty prompt string
 - `claude.js` STDIN_THRESHOLD boundary (exactly 8000 chars)

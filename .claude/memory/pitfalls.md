@@ -53,7 +53,7 @@ Standalone scripts calling `process.exit()` at top level crash smoke tests on im
 ## Git
 
 ### Ephemeral Files Must Never Be Tracked
-`nightytidy-run.log`, `nightytidy-progress.json`, `nightytidy-dashboard.url` in target project root. `git add -A` would track them. Fix: `excludeEphemeralFiles()` → `.git/info/exclude` + `fallbackCommit` `:!file` pathspec.
+`nightytidy-run.log`, `nightytidy-progress.json`, `nightytidy-dashboard.url` in target project root. `git add -A` would track them. Fix: `excludeEphemeralFiles()` adds them to `.git/info/exclude` — `fallbackCommit` then uses plain `git add -A` which respects these exclusions.
 
 ## Singleton State Risks
 
