@@ -245,6 +245,40 @@ function showWelcome() {
   ));
 }
 
+function printSyncSummary(summary, isDryRun) {
+  const prefix = isDryRun ? '[DRY RUN] ' : '';
+  console.log(chalk.cyan(`\n${prefix}Prompt Sync Summary\n`));
+
+  if (summary.updated.length > 0) {
+    console.log(chalk.yellow(`  Updated (${summary.updated.length}):`));
+    for (const p of summary.updated) console.log(`    ${p.id} — ${p.name}`);
+  }
+  if (summary.added.length > 0) {
+    console.log(chalk.green(`  Added (${summary.added.length}):`));
+    for (const p of summary.added) console.log(`    ${p.id} — ${p.name}`);
+  }
+  if (summary.removed.length > 0) {
+    console.log(chalk.red(`  Removed (${summary.removed.length}):`));
+    for (const p of summary.removed) console.log(`    ${p.id} — ${p.name}`);
+  }
+  if (summary.unchanged.length > 0) {
+    console.log(chalk.dim(`  Unchanged (${summary.unchanged.length}):`));
+    for (const p of summary.unchanged) console.log(chalk.dim(`    ${p.id} — ${p.name}`));
+  }
+
+  console.log();
+  const total = summary.updated.length + summary.added.length + summary.removed.length + summary.unchanged.length;
+  console.log(`  Total: ${total} prompts`);
+  if (summary.newStepsHash) {
+    console.log(chalk.dim(`  New STEPS_HASH: ${summary.newStepsHash.slice(0, 16)}...`));
+  }
+  if (isDryRun) {
+    console.log(chalk.dim(`\n  Run with --sync to apply these changes.`));
+  } else {
+    console.log(chalk.green(`\n  Sync complete.`));
+  }
+}
+
 function printStepList() {
   console.log(chalk.cyan(`\nAvailable steps (${STEPS.length} total):\n`));
   const numWidth = String(STEPS.length).length;
@@ -428,7 +462,10 @@ export async function run() {
     .option('--json', 'Output as JSON (use with --list)')
     .option('--init-run', 'Initialize an orchestrated run (pre-checks, git setup, state file)')
     .option('--run-step <N>', 'Run a single step in an orchestrated run', parseInt)
-    .option('--finish-run', 'Finish an orchestrated run (report, merge, cleanup)');
+    .option('--finish-run', 'Finish an orchestrated run (report, merge, cleanup)')
+    .option('--sync', 'Sync prompts from the published Google Doc')
+    .option('--sync-dry-run', 'Preview what --sync would change without writing files')
+    .option('--sync-url <url>', 'Override the Google Doc URL for sync');
 
   program.parse();
   const opts = program.opts();
@@ -470,6 +507,22 @@ export async function run() {
   if (opts.finishRun) {
     const result = await finishRun(projectDir);
     console.log(JSON.stringify(result));
+    process.exit(result.success ? 0 : 1);
+  }
+
+  // Sync commands — update local prompt files from Google Doc
+  if (opts.sync || opts.syncDryRun) {
+    initLogger(projectDir);
+    const { syncPrompts } = await import('./sync.js');
+    const result = await syncPrompts({
+      dryRun: !!opts.syncDryRun,
+      url: opts.syncUrl,
+    });
+    if (result.success) {
+      printSyncSummary(result.summary, !!opts.syncDryRun);
+    } else {
+      console.error(chalk.red(`\nSync failed: ${result.error}`));
+    }
     process.exit(result.success ? 0 : 1);
   }
 

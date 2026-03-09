@@ -4,7 +4,7 @@ Automated overnight codebase improvement through Claude Code. NightyTidy is an o
 
 ## Workflow Rules
 
-- **Prompt files are the source of truth** — edit markdown files in `src/prompts/steps/` and `src/prompts/specials/`. Update `manifest.json` for ordering/naming. Update `STEPS_HASH` in `executor.js` after any prompt change.
+- **Google Doc is the source of truth for prompts** — run `npx nightytidy --sync` to pull latest prompts from the published Google Doc. Manual edits to `src/prompts/steps/*.md` will be overwritten on next sync. Update `manifest.json` for ordering/naming. `STEPS_HASH` in `executor.js` is auto-updated by sync.
 - **Logger must be initialized first** — `initLogger(projectDir)` before any other module
 - **All steps run on a dedicated branch** — `nightytidy/run-*` branches with pre-run safety tag
 - **No bare `console.log`** in production code — use logger (exception: `cli.js` terminal UX output)
@@ -49,8 +49,9 @@ src/
   report.js                # NIGHTYTIDY-REPORT.md generation + CLAUDE.md update
   consolidation.js         # Post-run action plan — consolidates step recommendations into NIGHTYTIDY-ACTIONS.md
   setup.js                 # --setup command: generates CLAUDE.md integration snippet for target projects
+  sync.js                  # Google Doc prompt sync — fetches, parses, diffs, updates local prompt files
   prompts/
-    manifest.json          # Step ordering + display names (33 entries)
+    manifest.json          # Step ordering + display names + sourceUrl (33 entries)
     loader.js              # Reads manifest + markdown files, exports STEPS/DOC_UPDATE_PROMPT/CHANGELOG_PROMPT
     steps/                 # 33 individual markdown prompt files (01-documentation.md .. 33-strategic-opportunities.md)
     specials/              # Non-step prompts (doc-update.md, changelog.md)
@@ -84,6 +85,9 @@ test/
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks
   dashboard-broadcastoutput.test.js # 5 tests — buffer overflow, throttled writes, clearOutputBuffer with state
   env.test.js              # 15 tests — allowlist filtering, prefix matching, CLAUDECODE blocking, debug logging
+  sync.test.js             # 64 tests — Google Doc fetch, HTML parsing, section filtering, manifest matching, hash computation, sync orchestration
+  fixtures/
+    google-doc-sample.html # Representative Google Doc HTML for deterministic sync testing
   helpers/
     cleanup.js             # Shared temp directory cleanup with EBUSY retry for Windows
     mocks.js               # Shared mock factories: createLoggerMock, createMockProcess, createErrorProcess, createMockGit
@@ -127,6 +131,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/report.js` | Report generation + CLAUDE.md update + `getVersion()` | logger |
 | `src/consolidation.js` | Post-run action plan — consolidates step outputs into tiered recommendations | claude, logger, executor, prompts/loader, report |
 | `src/setup.js` | `--setup` command: CLAUDE.md integration for target projects | logger, prompts/loader |
+| `src/sync.js` | Google Doc prompt sync — fetches published doc, parses HTML, updates prompt files + manifest + STEPS_HASH | crypto, logger |
 | `src/prompts/loader.js` | Loads 33 prompts + special prompts (doc-update, changelog, consolidation) from markdown files via manifest.json | fs (data loader) |
 | `gui/server.js` | Desktop GUI backend — HTTP server + native folder dialog + Chrome launcher | node:http, node:fs, node:child_process |
 | `gui/resources/logic.js` | GUI pure logic — command building, JSON parsing, formatting | none (browser + Node.js dual) |
@@ -147,8 +152,11 @@ npx nightytidy --list --json    # List steps as JSON (for Claude Code orchestrat
 npx nightytidy --init-run --steps 1,5,12  # Initialize orchestrated run (pre-checks, git, state file)
 npx nightytidy --run-step 1     # Run a single step in orchestrated mode
 npx nightytidy --finish-run     # Finish orchestrated run (report, merge, cleanup)
+npx nightytidy --sync           # Sync prompts from the published Google Doc
+npx nightytidy --sync-dry-run   # Preview what --sync would change without writing files
+npx nightytidy --sync --sync-url <url>  # Sync from a custom Google Doc URL
 npm run gui               # Launch desktop GUI (Node.js server + Chrome app mode)
-npm test                  # Vitest — single pass (all 28 files)
+npm test                  # Vitest — single pass (all 30 files)
 npm run test:fast         # Vitest — excludes slow integration/git tests (~6s vs ~10s)
 npm run test:watch        # Vitest — watch mode
 npm run test:ci           # Vitest with coverage + threshold enforcement
@@ -216,7 +224,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 ## What NOT to Do
 
 - **Don't add `require()`** — ESM only, no CommonJS
-- **Don't throw from `claude.js`, `executor.js`, `orchestrator.js`, or `consolidation.js`** — they must return result objects (consolidation returns `null` on failure)
+- **Don't throw from `claude.js`, `executor.js`, `orchestrator.js`, `consolidation.js`, or `sync.js`** — they must return result objects (consolidation returns `null` on failure)
 - **Don't change loader.js export shape** — 33 steps with `{ number, name, prompt }` validated by tests. Edit prompt content in `src/prompts/steps/*.md`, not in loader.js
 - **Don't remove the logger mock** from any test — it will crash trying to write log files
 - **Don't make notifications blocking** — they must be fire-and-forget
@@ -259,6 +267,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | `consolidation.js` | **Warns but never throws** → returns `null` on failure (action plan is optional) |
 | `orchestrator.js` | **Never throws** → returns `{ success: false, error }` on failure |
 | `setup.js` | **Writes to filesystem** → returns `'created'`/`'appended'`/`'updated'` |
+| `sync.js` | **Warns but never throws** → returns `{ success: false, error }` on failure |
 | `cli.js` `run()` | **Top-level try/catch** catches everything |
 
 ### Module Dependency Graph
@@ -280,6 +289,7 @@ bin/nightytidy.js
         ├── src/dashboard-tui.js     (standalone — chalk only, spawned by dashboard.js)
         ├── src/consolidation.js     → claude, logger, executor, prompts/loader, report
         ├── src/setup.js             → logger, prompts/loader
+        ├── src/sync.js              → crypto, logger (dynamic import from cli.js)
         ├── src/orchestrator.js      → logger, checks, git, claude, executor, lock, report, consolidation, notifications, prompts, dashboard-standalone
         │     └── src/dashboard-standalone.js → dashboard-html (standalone detached process)
         └── src/report.js            → logger  (cli.js imports formatDuration + getVersion)
@@ -316,7 +326,7 @@ Each command is a separate process invocation. State persists via `nightytidy-ru
 ## Testing
 
 - **Framework**: Vitest v3, `vitest.config.js` for coverage thresholds + strip-shebang plugin
-- **Tests** across 28 files — `npm test` to run, `npm run test:ci` for coverage enforcement
+- **Tests** across 30 files — `npm test` to run, `npm run test:ci` for coverage enforcement
 - **Coverage thresholds**: 90% statements, 80% branches, 80% functions — enforced by `test:ci`
 - **Philosophy**: Mock Claude Code subprocess, use real git against temp directories. Test failure paths harder than success paths
 - **Universal mock**: All test files mock `../src/logger.js` to prevent file I/O during tests (exception: `logger.test.js` tests the real logger)
@@ -330,7 +340,6 @@ Each command is a separate process invocation. State persists via `nightytidy-ru
 ## Known Technical Debt
 
 - No `.nightytidyrc` config file — only `NIGHTYTIDY_LOG_LEVEL` env var exists
-- Prompt source of truth is the [Google Doc](https://docs.google.com/document/d/1Kg8MTNOzWSXd_sCEcenjX_8_DPDItH8wgp3oW2loV5A) — markdown files were extracted from it
 
 ## Documentation Hierarchy
 
