@@ -4,14 +4,14 @@
  * gui/server.js has top-level side effects (createServer + listen + Chrome launch),
  * so it cannot be imported directly. Instead, we re-implement the routing logic
  * here to verify the API contracts: request/response shapes, error handling, and
- * security behavior (traversal prevention, CORS headers).
+ * security behavior (traversal prevention, security headers).
  *
  * API surface tested:
  *   - GET / and static files (index.html, css, js)
  *   - POST /api/read-file — read file by path
  *   - POST /api/run-command — execute shell command
  *   - POST /api/kill-process — kill active process by id
- *   - OPTIONS * — CORS preflight
+ *   - Security headers (CSP, X-Frame-Options, X-Content-Type-Options)
  *   - Directory traversal prevention (403)
  */
 
@@ -35,14 +35,31 @@ const MIME_TYPES = {
   '.json': 'application/json; charset=utf-8',
 };
 
+const MAX_BODY_BYTES = 1024 * 1024; // 1 MB — mirrors server.js
+
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'",
+};
+
 // Track spawned processes — mirrors server.js activeProcesses
 const activeProcesses = new Map();
 
 function readBody(req) {
   return new Promise((resolve) => {
     let data = '';
-    req.on('data', (chunk) => { data += chunk; });
+    let aborted = false;
+    req.on('data', (chunk) => {
+      data += chunk;
+      if (data.length > MAX_BODY_BYTES) {
+        aborted = true;
+        req.destroy();
+        resolve({});
+      }
+    });
     req.on('end', () => {
+      if (aborted) return;
       try { resolve(JSON.parse(data)); } catch { resolve({}); }
     });
   });
@@ -51,7 +68,6 @@ function readBody(req) {
 function sendJson(res, data, status = 200) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
   });
   res.end(JSON.stringify(data));
 }
@@ -62,17 +78,6 @@ let baseUrl;
 beforeAll(async () => {
   server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
-
-    // CORS preflight — mirrors server.js
-    if (req.method === 'OPTIONS') {
-      res.writeHead(204, {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      });
-      res.end();
-      return;
-    }
 
     // API: read-file
     if (url.pathname === '/api/read-file' && req.method === 'POST') {
@@ -128,6 +133,10 @@ beforeAll(async () => {
     // API: kill-process — mirrors server.js handleKillProcess
     if (url.pathname === '/api/kill-process' && req.method === 'POST') {
       const body = await readBody(req);
+      if (!body.id) {
+        sendJson(res, { ok: false, error: 'No process id provided' }, 400);
+        return;
+      }
       const proc = activeProcesses.get(body.id);
       if (proc) {
         try {
@@ -156,7 +165,7 @@ beforeAll(async () => {
       const ext = extname(filePath);
       res.writeHead(200, {
         'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
-        'X-Content-Type-Options': 'nosniff',
+        ...SECURITY_HEADERS,
       });
       res.end(content);
     } catch {
@@ -364,6 +373,18 @@ describe('kill-process API', () => {
     const data = await res.json();
     expect(data.ok).toBe(true);
   });
+
+  it('returns 400 when no id provided', async () => {
+    const res = await fetch(`${baseUrl}/api/kill-process`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.ok).toBe(false);
+    expect(data.error).toContain('No process id');
+  });
 });
 
 // ── API: Read File — additional edge cases ──────────────────────────
@@ -394,15 +415,22 @@ describe('read-file API — edge cases', () => {
   });
 });
 
-// ── CORS Preflight ──────────────────────────────────────────────────
+// ── Security Headers ────────────────────────────────────────────────
 
-describe('CORS preflight', () => {
-  it('OPTIONS request returns 204 with correct CORS headers', async () => {
-    const res = await fetch(`${baseUrl}/api/run-command`, { method: 'OPTIONS' });
-    expect(res.status).toBe(204);
-    expect(res.headers.get('access-control-allow-origin')).toBe('*');
-    expect(res.headers.get('access-control-allow-methods')).toContain('POST');
-    expect(res.headers.get('access-control-allow-headers')).toContain('Content-Type');
+describe('security headers on static files', () => {
+  it('HTML response includes CSP, X-Frame-Options, and X-Content-Type-Options', async () => {
+    const res = await fetch(`${baseUrl}/`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+    expect(res.headers.get('content-security-policy')).toContain("default-src 'self'");
+  });
+
+  it('JS files include security headers', async () => {
+    const res = await fetch(`${baseUrl}/logic.js`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+    expect(res.headers.get('content-security-policy')).toContain("default-src 'self'");
   });
 });
 
@@ -425,10 +453,9 @@ describe('directory traversal protection', () => {
 // ── Response Shape Contracts ────────────────────────────────────────
 
 describe('API response shape contracts', () => {
-  it('all JSON API responses include Access-Control-Allow-Origin header', async () => {
+  it('JSON API responses do not include Access-Control-Allow-Origin (same-origin only)', async () => {
     const endpoints = [
       { url: '/api/read-file', body: { path: '/nonexistent' } },
-      { url: '/api/run-command', body: { command: 'echo test' } },
       { url: '/api/kill-process', body: { id: 'fake' } },
     ];
 
@@ -440,8 +467,8 @@ describe('API response shape contracts', () => {
       });
       expect(
         res.headers.get('access-control-allow-origin'),
-        `${ep.url} should have CORS header`,
-      ).toBe('*');
+        `${ep.url} should NOT have CORS header`,
+      ).toBeNull();
     }
   });
 

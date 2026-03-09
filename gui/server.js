@@ -23,6 +23,14 @@ const MIME_TYPES = {
   '.svg': 'image/svg+xml',
 };
 
+const MAX_BODY_BYTES = 1024 * 1024; // 1 MB — prevents memory exhaustion from oversized POST bodies
+
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'",
+};
+
 // Track spawned processes for cleanup
 const activeProcesses = new Map();
 let serverInstance = null;
@@ -43,10 +51,11 @@ async function serveStatic(res, urlPath) {
   try {
     const content = await readFile(filePath);
     const ext = extname(filePath);
-    res.writeHead(200, {
+    const headers = {
       'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
-      'X-Content-Type-Options': 'nosniff',
-    });
+      ...SECURITY_HEADERS,
+    };
+    res.writeHead(200, headers);
     res.end(content);
   } catch {
     res.writeHead(404);
@@ -148,6 +157,11 @@ async function handleKillProcess(req, res) {
   const body = await readBody(req);
   const { id } = body;
 
+  if (!id) {
+    sendJson(res, { ok: false, error: 'No process id provided' }, 400);
+    return;
+  }
+
   const proc = activeProcesses.get(id);
   if (proc) {
     try {
@@ -209,8 +223,17 @@ function handleExit(res) {
 function readBody(req) {
   return new Promise((resolve) => {
     let data = '';
-    req.on('data', (chunk) => { data += chunk; });
+    let aborted = false;
+    req.on('data', (chunk) => {
+      data += chunk;
+      if (data.length > MAX_BODY_BYTES) {
+        aborted = true;
+        req.destroy();
+        resolve({});
+      }
+    });
     req.on('end', () => {
+      if (aborted) return;
       try {
         resolve(JSON.parse(data));
       } catch {
@@ -223,7 +246,6 @@ function readBody(req) {
 function sendJson(res, data, status = 200) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
   });
   res.end(JSON.stringify(data));
 }
@@ -232,17 +254,6 @@ function sendJson(res, data, status = 200) {
 
 function handleRequest(req, res) {
   const url = new URL(req.url, `http://localhost`);
-
-  // CORS preflight
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    });
-    res.end();
-    return;
-  }
 
   // API routes
   if (url.pathname === '/api/select-folder' && req.method === 'POST') {

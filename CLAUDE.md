@@ -76,7 +76,7 @@ test/
   orchestrator.test.js     # 31 tests — initRun, runStep, finishRun, dashboard integration with mocked modules
   contracts.test.js        # 38 tests — module API contract verification against CLAUDE.md
   gui-logic.test.js        # 43 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, etc.)
-  gui-server.test.js       # 26 tests — HTTP server, static files, run-command, kill-process, CORS, traversal
+  gui-server.test.js       # 28 tests — HTTP server, static files, run-command, kill-process, security headers, traversal
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks
   dashboard-broadcastoutput.test.js # 5 tests — buffer overflow, throttled writes, clearOutputBuffer with state

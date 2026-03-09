@@ -47,11 +47,13 @@ Main entry guarded: `process.argv[1]?.endsWith('dashboard-tui.js')` — prevents
 
 Updated by `cli.js` callbacks -> passed to `updateDashboard()` -> written to JSON + SSE broadcast.
 
-## HTTP Endpoints
+## HTTP Endpoints (dashboard.js + dashboard-standalone.js)
 
-- `GET /` -> HTML dashboard (inline CSS/JS, dark theme, real-time updates)
-- `GET /events` -> SSE stream
-- `POST /stop` -> triggers `onStop` callback (abort signal propagation)
+- `GET /` -> HTML dashboard (inline CSS/JS, dark theme, real-time updates). Security headers: CSP, X-Frame-Options: DENY, X-Content-Type-Options: nosniff
+- `GET /events` -> SSE stream (text/event-stream, no-cache). No security headers (SSE streams).
+- `POST /stop` -> CSRF-protected. Requires `{ token }` body matching server-generated token. Returns 403 on invalid token, 200 with `{ ok: true }` on valid. Dashboard calls `onStop` callback; standalone returns `{ ok: true, message: 'Stop not supported in orchestrator mode' }`.
+- Unknown routes -> 404 plain text (no security headers)
+- Error responses on `/stop` use `{ error: string }` shape (no `ok` field). This differs from GUI server which always includes `ok: false`.
 
 ## TUI Spawn (Platform-Specific)
 
