@@ -283,7 +283,7 @@ export async function run() {
   const projectDir = process.cwd();
   const timeoutMs = opts.timeout ? opts.timeout * 60 * 1000 : undefined;
   if (opts.timeout !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
-    console.error(chalk.red(`--timeout must be a positive number of minutes (got "${opts.timeout}")`));
+    console.error(chalk.red(`--timeout expects a positive number of minutes (got "${opts.timeout}"). Example: --timeout 60`));
     process.exit(1);
   }
 

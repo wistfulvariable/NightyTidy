@@ -84,13 +84,13 @@ async function runCli(args) {
   state.currentProcessId = null;
 
   if (!result.ok) {
-    return { ok: false, data: null, error: result.error || 'Command failed' };
+    return { ok: false, data: null, error: 'NightyTidy command did not complete. Check that the project folder is valid and try again.' };
   }
 
   const parsed = NtLogic.parseCliOutput(result.stdout);
   if (!parsed.ok) {
     const detail = result.stderr ? `\n${result.stderr.trim()}` : '';
-    return { ok: false, data: null, error: (parsed.error || 'CLI failed') + detail };
+    return { ok: false, data: null, error: 'Could not read NightyTidy output. The command may have failed — check nightytidy-run.log for details.' };
   }
 
   return parsed;
@@ -107,7 +107,7 @@ async function selectFolder() {
     showFolderPath(result.folder);
     await loadSteps();
   } catch (err) {
-    showError('setup', `Folder selection failed: ${err.message || err}`);
+    showError('setup', 'Folder selection did not complete. Please try again or type the path manually.');
   }
 }
 

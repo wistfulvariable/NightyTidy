@@ -160,7 +160,7 @@ function spawnDashboardServer(projectDir) {
       const timer = setTimeout(() => {
         child.stdout.removeAllListeners();
         child.unref();
-        warn('Dashboard server did not respond in time — continuing without dashboard');
+        info('Dashboard server did not respond in time — continuing without dashboard');
         resolve(null);
       }, DASHBOARD_STARTUP_TIMEOUT);
 
@@ -200,7 +200,7 @@ function stopDashboardServer(pid) {
 export async function initRun(projectDir, { steps, timeout } = {}) {
   try {
     initLogger(projectDir, { quiet: true });
-    info('NightyTidy orchestrator: init-run starting');
+    info('Orchestrator: init-run starting');
 
     // Check for existing run
     if (readState(projectDir)) {
@@ -366,13 +366,13 @@ export async function finishRun(projectDir) {
     // Generate changelog
     let narration = null;
     if (executionResults.completedCount > 0) {
-      info('Generating narrated changelog...');
+      info('Orchestrator: generating narrated changelog...');
       const changelogResult = await runPrompt(SAFETY_PREAMBLE + CHANGELOG_PROMPT, projectDir, {
         label: 'Narrated changelog',
         timeout: state.timeout || undefined,
       });
       narration = changelogResult.success ? changelogResult.output : null;
-      if (!narration) warn('Narrated changelog generation failed — using fallback text');
+      if (!narration) warn('Orchestrator: narrated changelog generation failed — using fallback text');
     }
 
     // Generate report

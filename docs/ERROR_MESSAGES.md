@@ -73,7 +73,8 @@ Every error message should follow this pattern:
 | Trigger | Message | Type |
 |---------|---------|------|
 | No steps selected | `No steps selected. Select at least one step to continue.` | Validation (yellow) |
-| Invalid --steps numbers | `Invalid step number(s): [N, ...]. Valid range: 1-28.` | Validation (red) |
+| Invalid --steps numbers | `Invalid step number(s): [N, ...]. Valid range: 1-33.` | Validation (red) |
+| Invalid --timeout | `--timeout expects a positive number of minutes (got "[value]"). Example: --timeout 60` | Validation (red) |
 | First SIGINT | `Stopping NightyTidy... finishing current step.` | Feedback (yellow) |
 | Second SIGINT | `Force stopping.` | Confirmation (plain) |
 | Unexpected error | `An unexpected error occurred. Check nightytidy-run.log for details.` | Error (red) |
@@ -97,6 +98,37 @@ Every error message should follow this pattern:
 | Merge conflict | `NightyTidy: Merge Conflict` | `Changes are on branch [branch]. See NIGHTYTIDY-REPORT.md for resolution steps.` |
 | Run aborted | `NightyTidy Stopped` | `[N] steps completed. Changes on branch [branch].` |
 | Fatal error | `NightyTidy Error` | `Run stopped: [message]. Check nightytidy-run.log.` |
+
+## Orchestrator Mode (`src/orchestrator.js`)
+
+| Trigger | Message | Context |
+|---------|---------|---------|
+| State file already exists | `A run is already in progress. Call --finish-run first, or delete nightytidy-run-state.json to reset.` | Returned in JSON `{ success: false, error }` |
+| No active run (--run-step) | `No active orchestrator run. Call --init-run first.` | Returned in JSON |
+| Step not in selection | `Step [N] is not in the selected steps for this run. Selected: [list]` | Returned in JSON |
+| Step already completed | `Step [N] has already been completed in this run.` | Returned in JSON |
+| Step already failed | `Step [N] has already been attempted and failed in this run.` | Returned in JSON |
+| Step not found | `Step [N] not found in available steps.` | Returned in JSON |
+| No active run (--finish-run) | `No active orchestrator run. Nothing to finish.` | Returned in JSON |
+| Invalid step numbers | `Invalid step number(s): [N, ...]. Valid range: 1-33.` | Returned in JSON |
+
+## GUI (`gui/resources/app.js`)
+
+| Trigger | Message | Context |
+|---------|---------|---------|
+| CLI command did not complete | `NightyTidy command did not complete. Check that the project folder is valid and try again.` | Shown in error box on current screen |
+| CLI output not parseable | `Could not read NightyTidy output. The command may have failed — check nightytidy-run.log for details.` | Shown in error box |
+| Folder selection error | `Folder selection did not complete. Please try again or type the path manually.` | Shown on setup screen |
+| No steps from CLI | `No steps returned from NightyTidy CLI` | Shown on setup screen |
+| Init-run failed | `Failed to initialize run` | Fallback if JSON error field is empty |
+| Non-interactive mode | `Non-interactive mode requires --all or --steps <numbers>.` | With examples shown below |
+
+## Dashboard (`src/dashboard-html.js`)
+
+| Trigger | Message | Context |
+|---------|---------|---------|
+| Run ended with error | `Error: [error message]` or `No error details available` | Shown in summary section |
+| SSE disconnected | Reconnecting indicator shown | Visual cue, no text message |
 
 ## Report (`src/report.js`)
 

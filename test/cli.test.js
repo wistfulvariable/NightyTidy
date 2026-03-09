@@ -380,7 +380,7 @@ describe('cli.js run()', () => {
     await expect(run()).rejects.toThrow('process.exit called');
 
     expect(consoleErrorSpy).toHaveBeenCalledWith(
-      expect.stringContaining('--timeout must be a positive number'),
+      expect.stringContaining('--timeout expects a positive number'),
     );
     expect(processExitSpy).toHaveBeenCalledWith(1);
   });

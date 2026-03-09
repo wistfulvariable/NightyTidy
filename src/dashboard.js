@@ -158,7 +158,7 @@ export async function startDashboard(initialState, { onStop, projectDir }) {
       server = createServer((req, res) => handleRequest(req, res, onStop));
 
       server.on('error', (err) => {
-        warn(`Dashboard server could not start: ${err.message}`);
+        info(`Dashboard server could not start: ${err.message} — continuing with TUI fallback`);
         server = null;
         // TUI still works via file — return success
         resolve({ url: null, port: null });

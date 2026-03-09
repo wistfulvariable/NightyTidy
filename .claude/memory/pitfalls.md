@@ -55,6 +55,23 @@ Standalone scripts calling `process.exit()` at top level crash smoke tests on im
 ### Ephemeral Files Must Never Be Tracked
 `nightytidy-run.log`, `nightytidy-progress.json`, `nightytidy-dashboard.url` in target project root. `git add -A` would track them. Fix: `excludeEphemeralFiles()` adds them to `.git/info/exclude` — `fallbackCommit` then uses plain `git add -A` which respects these exclusions.
 
+## Logging Conventions
+
+### Log Message Prefixes
+Each module uses a consistent prefix for log messages so they can be traced in the log file:
+- `checks.js`: `Pre-check: ...`
+- `claude.js`: `Claude Code ...` / `Running Claude Code: ...`
+- `executor.js`: `Step N: StepName — ...`
+- `orchestrator.js`: `Orchestrator: ...` (not `NightyTidy orchestrator:`)
+- `dashboard.js`: `Dashboard ...`
+- `lock.js`: No prefix (context is clear)
+
+### Dashboard Log Levels
+Dashboard failures use `info()`, not `warn()`, because dashboard is non-critical (TUI fallback exists). The run continues fine without the dashboard. Reserve `warn()` for actual degradation.
+
+### GUI Error Messages
+GUI (`gui/resources/app.js`) must never show raw JS error objects or Node.js internals (ENOENT, stack traces). Always wrap with user-friendly message. See `docs/ERROR_MESSAGES.md` GUI section.
+
 ## Singleton State Risks
 
 - `logger.js`: Re-calling `initLogger()` clears the log file.
