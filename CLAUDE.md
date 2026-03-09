@@ -58,7 +58,7 @@ test/
   dashboard.test.js        # 20 tests — HTTP server start/stop, SSE events, CSRF, stop callback
   logger.test.js           # 10 tests — real file I/O, level filtering, stderr fallback
   checks.test.js           # 4 tests — mock subprocess, mock git
-  checks-extended.test.js  # 13 tests — auth paths, disk space, branch warnings, empty repo
+  checks-extended.test.js  # 12 tests — auth paths, disk space, branch warnings, empty repo
   claude.test.js           # 25 tests — fake child process, fake timers, abort signal, Windows shell mode
   executor.test.js         # 11 tests — mocks claude, git, notifications, signal propagation
   git.test.js              # 16 tests — real git against temp dirs (integration)
@@ -69,13 +69,13 @@ test/
   steps.test.js            # 8 tests — structural integrity of prompt data + manifest validation
   integration.test.js      # 5 tests — multi-module integration with real git repos
   setup.test.js            # 7 tests — integration snippet generation, idempotent setup
-  dashboard-tui.test.js    # 22 tests — formatMs, progressBar, render with chalk proxy mock
+  dashboard-tui.test.js    # 29 tests — formatMs, progressBar, render with chalk proxy mock
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
   orchestrator.test.js     # 31 tests — initRun, runStep, finishRun, dashboard integration with mocked modules
   contracts.test.js        # 38 tests — module API contract verification against CLAUDE.md
-  gui-logic.test.js        # 39 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, etc.)
+  gui-logic.test.js        # 43 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, etc.)
   gui-server.test.js       # 26 tests — HTTP server, static files, run-command, kill-process, CORS, traversal
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks

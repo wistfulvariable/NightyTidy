@@ -1,6 +1,6 @@
 # Testing — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. 404 tests, 27 files, Vitest v2.
+Assumes CLAUDE.md loaded. 414 tests, 27 files, Vitest v2.
 
 ## Test File -> Module Coverage
 
@@ -11,7 +11,7 @@ Assumes CLAUDE.md loaded. 404 tests, 27 files, Vitest v2.
 | `dashboard.test.js` | `dashboard.js` | 20 |
 | `logger.test.js` | `logger.js` | 10 |
 | `checks.test.js` | `checks.js` | 4 |
-| `checks-extended.test.js` | `checks.js` | 13 |
+| `checks-extended.test.js` | `checks.js` | 12 |
 | `claude.test.js` | `claude.js` | 25 |
 | `executor.test.js` | `executor.js` | 11 |
 | `git.test.js` | `git.js` | 16 |
@@ -24,11 +24,11 @@ Assumes CLAUDE.md loaded. 404 tests, 27 files, Vitest v2.
 | `setup.test.js` | `setup.js` | 7 |
 | `cli-extended.test.js` | `cli.js` | 31 |
 | `dashboard-extended.test.js` | `dashboard.js` | 3 |
-| `dashboard-tui.test.js` | `dashboard-tui.js` | 22 |
+| `dashboard-tui.test.js` | `dashboard-tui.js` | 29 |
 | `integration-extended.test.js` | Multi-module | 6 |
 | `orchestrator.test.js` | `orchestrator.js` | 31 |
 | `contracts.test.js` | All modules | 38 |
-| `gui-logic.test.js` | `gui/resources/logic.js` | 39 |
+| `gui-logic.test.js` | `gui/resources/logic.js` | 43 |
 | `gui-server.test.js` | `gui/server.js` | 26 |
 | `lock.test.js` | `lock.js` | 9 |
 | `orchestrator-extended.test.js` | `orchestrator.js` | 11 |
@@ -86,6 +86,17 @@ See `audit-reports/04_TEST_ARCHITECTURE_REPORT.md` for full report (404 tests, 2
 - `gui/resources/app.js` has zero test coverage (state machine, ~400 LOC)
 
 **Strengths confirmed**: contract tests, real git integration tests, testing pyramid ratio (61% unit, 24% integration, 9% contract, 6% smoke+structural)
+
+## Test Consolidation Audit (2026-03-09)
+
+5 consolidations applied across 5 files, 133 net lines removed, zero coverage loss:
+- `checks-extended.test.js`: removed verbatim duplicate auth failure test (13->12 tests)
+- `report.test.js`: formatDuration already used `it.each` (no change needed)
+- `report-extended.test.js`: formatDuration edge cases already used `it.each` (no change needed)
+- `dashboard-tui.test.js`: 3 individual formatMs blocks -> 10-row `it.each` (22->29 tests)
+- `gui-logic.test.js`: 6 describe blocks parameterized via `it.each` (39->43 tests)
+
+Pattern: `it.each` rows count as individual tests, so parameterization can increase test count while reducing code lines. This is correct behavior -- each row exercises a distinct input/output pair.
 
 ## Contract Test Coverage
 
