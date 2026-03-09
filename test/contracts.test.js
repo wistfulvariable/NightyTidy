@@ -838,3 +838,200 @@ describe('contract: initialization sequence', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// 15. orchestrator.js — "Never throws → returns { success: false, error }"
+// ---------------------------------------------------------------------------
+describe('contract: orchestrator.js — never throws, returns result objects', () => {
+  beforeEach(() => {
+    vi.resetModules();
+
+    vi.doMock('fs', () => ({
+      existsSync: vi.fn(() => false),
+      readFileSync: vi.fn(),
+      writeFileSync: vi.fn(),
+      unlinkSync: vi.fn(),
+      openSync: vi.fn(() => 99),
+      closeSync: vi.fn(),
+      appendFileSync: vi.fn(),
+    }));
+
+    vi.doMock('child_process', () => ({
+      spawn: vi.fn(() => {
+        const stdout = new EventEmitter();
+        const child = new EventEmitter();
+        child.stdout = stdout;
+        child.unref = vi.fn();
+        return child;
+      }),
+    }));
+
+    vi.doMock('../src/logger.js', () => ({
+      initLogger: vi.fn(),
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }));
+
+    vi.doMock('../src/checks.js', () => ({
+      runPreChecks: vi.fn().mockRejectedValue(new Error('Git not found')),
+    }));
+
+    vi.doMock('../src/git.js', () => ({
+      initGit: vi.fn(() => ({})),
+      excludeEphemeralFiles: vi.fn(),
+      getCurrentBranch: vi.fn(),
+      createPreRunTag: vi.fn(),
+      createRunBranch: vi.fn(),
+      mergeRunBranch: vi.fn(),
+      getGitInstance: vi.fn(() => ({ add: vi.fn(), commit: vi.fn() })),
+      getHeadHash: vi.fn(),
+      hasNewCommit: vi.fn(),
+      fallbackCommit: vi.fn(),
+    }));
+
+    vi.doMock('../src/claude.js', () => ({
+      runPrompt: vi.fn(),
+    }));
+
+    vi.doMock('../src/executor.js', () => ({
+      executeSingleStep: vi.fn(),
+      SAFETY_PREAMBLE: 'MOCK\n',
+    }));
+
+    vi.doMock('../src/notifications.js', () => ({
+      notify: vi.fn(),
+    }));
+
+    vi.doMock('../src/report.js', () => ({
+      generateReport: vi.fn(),
+      formatDuration: vi.fn(() => '0m'),
+    }));
+
+    vi.doMock('../src/lock.js', () => ({
+      acquireLock: vi.fn(),
+      releaseLock: vi.fn(),
+    }));
+
+    vi.doMock('../src/prompts/loader.js', () => ({
+      STEPS: [{ number: 1, name: 'Test', prompt: 'test' }],
+      DOC_UPDATE_PROMPT: 'doc',
+      CHANGELOG_PROMPT: 'log',
+    }));
+  });
+
+  afterEach(() => {
+    vi.doUnmock('fs');
+    vi.doUnmock('child_process');
+    vi.doUnmock('../src/logger.js');
+    vi.doUnmock('../src/checks.js');
+    vi.doUnmock('../src/git.js');
+    vi.doUnmock('../src/claude.js');
+    vi.doUnmock('../src/executor.js');
+    vi.doUnmock('../src/notifications.js');
+    vi.doUnmock('../src/report.js');
+    vi.doUnmock('../src/lock.js');
+    vi.doUnmock('../src/prompts/loader.js');
+    vi.restoreAllMocks();
+  });
+
+  it('initRun returns { success: false, error } when pre-checks throw (never throws)', async () => {
+    const { initRun } = await import('../src/orchestrator.js');
+
+    const result = await initRun('/fake/project', { steps: '1' });
+
+    expect(result).toBeDefined();
+    expect(result.success).toBe(false);
+    expect(typeof result.error).toBe('string');
+    expect(result.error.length).toBeGreaterThan(0);
+  });
+
+  it('runStep returns { success: false, error } when no state exists (never throws)', async () => {
+    const { runStep } = await import('../src/orchestrator.js');
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result).toBeDefined();
+    expect(result.success).toBe(false);
+    expect(typeof result.error).toBe('string');
+  });
+
+  it('finishRun returns { success: false, error } when no state exists (never throws)', async () => {
+    const { finishRun } = await import('../src/orchestrator.js');
+
+    const result = await finishRun('/fake/project');
+
+    expect(result).toBeDefined();
+    expect(result.success).toBe(false);
+    expect(typeof result.error).toBe('string');
+  });
+
+  it('exports initRun, runStep, and finishRun as functions', async () => {
+    const mod = await import('../src/orchestrator.js');
+
+    expect(mod.initRun).toBeTypeOf('function');
+    expect(mod.runStep).toBeTypeOf('function');
+    expect(mod.finishRun).toBeTypeOf('function');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 16. lock.js — "Async, throws with user-friendly messages"
+// ---------------------------------------------------------------------------
+describe('contract: lock.js — throws on contention, releaseLock never throws', () => {
+  let tempDir;
+
+  beforeEach(async () => {
+    vi.resetModules();
+
+    vi.doMock('../src/logger.js', () => ({
+      initLogger: vi.fn(),
+      info: vi.fn(),
+      debug: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    }));
+
+    tempDir = await mkdtemp(path.join(tmpdir(), 'nightytidy-contract-lock-'));
+  });
+
+  afterEach(async () => {
+    vi.doUnmock('../src/logger.js');
+    vi.restoreAllMocks();
+    await robustCleanup(tempDir);
+  });
+
+  it('acquireLock throws an Error (not a result object) on contention', async () => {
+    const { acquireLock } = await import('../src/lock.js');
+
+    // Write a lock with current PID (alive) and recent timestamp
+    writeFileSync(path.join(tempDir, 'nightytidy.lock'), JSON.stringify({
+      pid: process.pid,
+      started: new Date().toISOString(),
+    }));
+
+    try {
+      await acquireLock(tempDir);
+      expect.unreachable('acquireLock should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(Error);
+      expect(typeof err.message).toBe('string');
+      expect(err.message).toContain('already in progress');
+    }
+  });
+
+  it('releaseLock never throws even when no lock exists', async () => {
+    const { releaseLock } = await import('../src/lock.js');
+
+    expect(() => releaseLock(tempDir)).not.toThrow();
+    expect(() => releaseLock('/nonexistent/path/12345')).not.toThrow();
+  });
+
+  it('exports acquireLock and releaseLock as functions', async () => {
+    const mod = await import('../src/lock.js');
+
+    expect(mod.acquireLock).toBeTypeOf('function');
+    expect(mod.releaseLock).toBeTypeOf('function');
+  });
+});

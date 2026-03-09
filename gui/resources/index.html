@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NightyTidy</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+  <!-- ═══ Screen 1: Setup ═══ -->
+  <section id="screen-setup" class="screen active">
+    <div class="setup-hero">
+      <h1>NightyTidy</h1>
+      <p>Automated overnight codebase improvement</p>
+      <button class="btn btn-primary" id="btn-select-folder">Select Project Folder</button>
+      <div class="folder-display" id="folder-display" style="display:none">
+        <span class="path" id="folder-path"></span>
+        <button class="link-btn" id="btn-change-folder">Change</button>
+      </div>
+      <div id="setup-loading" style="display:none; margin-top:12px; color:var(--text-dim); font-size:0.85rem;">
+        <span class="spinner" style="vertical-align:middle;margin-right:8px;"></span>
+        Loading steps...
+      </div>
+    </div>
+    <div class="error-msg" id="setup-error"></div>
+  </section>
+
+  <!-- ═══ Screen 2: Step Selection ═══ -->
+  <section id="screen-steps" class="screen">
+    <div class="header">
+      <h1>NightyTidy</h1>
+      <span class="subtitle">Select Steps</span>
+    </div>
+
+    <div class="steps-header">
+      <span class="project-path" id="steps-project-path"></span>
+      <div class="btn-group">
+        <button class="btn btn-secondary btn-sm" id="btn-select-all">Select All</button>
+        <button class="btn btn-secondary btn-sm" id="btn-select-none">Deselect All</button>
+      </div>
+    </div>
+
+    <div class="step-checklist" id="step-checklist"></div>
+
+    <div class="options-bar">
+      <div class="timeout-group">
+        <label for="timeout-input">Timeout per step:</label>
+        <input type="number" id="timeout-input" value="45" min="1" max="180">
+        <span>min</span>
+      </div>
+      <span class="step-count-badge" id="step-count-badge">33 steps selected</span>
+    </div>
+
+    <div class="start-bar">
+      <button class="link-btn" id="btn-back-setup">Back</button>
+      <button class="btn btn-primary" id="btn-start-run">Start Run</button>
+    </div>
+
+    <div class="error-msg" id="steps-error"></div>
+  </section>
+
+  <!-- ═══ Screen 3: Running ═══ -->
+  <section id="screen-running" class="screen">
+    <div class="header">
+      <h1>NightyTidy</h1>
+      <span class="subtitle" id="running-subtitle">Running</span>
+    </div>
+
+    <div class="status-badge status-running" id="running-status-badge">Running</div>
+
+    <div class="card">
+      <div class="progress-stats">
+        <span id="progress-counter">0 / 0 steps</span>
+        <span class="elapsed" id="progress-elapsed">0m 0s</span>
+      </div>
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progress-bar-fill" style="width:0%"></div>
+      </div>
+      <div class="progress-stats">
+        <span id="progress-detail"></span>
+        <span id="progress-pct">0%</span>
+      </div>
+    </div>
+
+    <div class="card" id="current-step-card" style="display:none">
+      <div class="current-step">
+        <span class="label">Now running:</span>
+        <span class="name pulse" id="current-step-name"></span>
+      </div>
+    </div>
+
+    <div class="step-list" id="running-step-list"></div>
+
+    <div class="output-panel" id="output-panel">
+      <h3>Claude Output</h3>
+      <div class="output-content" id="output-content"></div>
+    </div>
+
+    <div class="actions">
+      <button class="btn btn-danger" id="btn-stop-run">Stop Run</button>
+    </div>
+
+    <div class="error-msg" id="running-error"></div>
+  </section>
+
+  <!-- ═══ Screen 4: Finishing ═══ -->
+  <section id="screen-finishing" class="screen">
+    <div class="header">
+      <h1>NightyTidy</h1>
+      <span class="subtitle">Finishing</span>
+    </div>
+    <div class="finishing-content">
+      <div class="big-spinner"></div>
+      <p>Generating report and merging changes...</p>
+    </div>
+    <div class="error-msg" id="finishing-error"></div>
+  </section>
+
+  <!-- ═══ Screen 5: Summary ═══ -->
+  <section id="screen-summary" class="screen">
+    <div class="header">
+      <h1>NightyTidy</h1>
+      <span class="subtitle">Summary</span>
+    </div>
+
+    <div class="summary-result" id="summary-result">
+      <h2 id="summary-title">Run Complete</h2>
+    </div>
+
+    <div class="summary-stats" id="summary-stats"></div>
+
+    <div class="card">
+      <div class="summary-details" id="summary-details"></div>
+    </div>
+
+    <div class="step-list" id="summary-step-list"></div>
+
+    <div class="summary-actions">
+      <button class="btn btn-primary" id="btn-new-run">New Run</button>
+      <button class="btn btn-secondary" id="btn-close-app">Close</button>
+    </div>
+  </section>
+
+  <script src="/logic.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

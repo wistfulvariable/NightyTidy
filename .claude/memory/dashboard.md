@@ -69,3 +69,13 @@ Updated by `cli.js` callbacks -> passed to `updateDashboard()` -> written to JSO
 
 All errors swallowed. Server fail -> TUI-only. TUI fail -> HTTP-only. Both fail -> run continues.
 Orchestrator mode: spawn fail -> `dashboardUrl: null` in output, run continues without dashboard.
+
+## HTTP API Contract Tests
+
+Dashboard endpoints verified in `dashboard.test.js` (20 tests) and `dashboard-broadcastoutput.test.js` (5 tests):
+- `GET /` — returns 200, content-type text/html, includes CSP + X-Frame-Options headers
+- `GET /events` — returns 200, content-type text/event-stream, sends initial state event
+- `POST /stop` — requires CSRF token (403 without, 200 with), calls onStop callback
+- Unknown routes — returns 404
+- `startDashboard` return shape: `{ url: string, port: number }`
+- SSE events: state events on connect + updateDashboard, output events on broadcastOutput

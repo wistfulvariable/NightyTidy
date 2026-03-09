@@ -1,0 +1,461 @@
+/* NightyTidy Desktop GUI — Dark theme extracted from dashboard + new screens */
+
+:root {
+  --bg: #0f0f1a;
+  --surface: #1a1a2e;
+  --border: #2a2a3e;
+  --text: #e0e0e8;
+  --text-dim: #8888a0;
+  --cyan: #00d4ff;
+  --green: #22c55e;
+  --red: #ef4444;
+  --yellow: #eab308;
+  --blue: #3b82f6;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+  padding: 24px;
+  overflow-y: auto;
+}
+
+/* ── Screen visibility ── */
+.screen { display: none; }
+.screen.active { display: block; }
+
+/* ── Shared header ── */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.header h1 {
+  font-size: 1.5rem;
+  color: var(--cyan);
+  font-weight: 600;
+}
+.header .subtitle {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+/* ── Buttons ── */
+.btn {
+  border: none;
+  padding: 10px 24px;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.btn:hover { opacity: 0.85; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.btn-primary { background: var(--cyan); color: #000; }
+.btn-danger  { background: var(--red); color: #fff; }
+.btn-secondary {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.btn-secondary:hover { border-color: var(--text-dim); }
+.btn-success { background: var(--green); color: #000; }
+
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 0.8rem;
+}
+
+.btn-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ── Link buttons ── */
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--cyan);
+  cursor: pointer;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  padding: 0;
+}
+.link-btn:hover { opacity: 0.8; }
+
+/* ── Card panels ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+/* ── Error message ── */
+.error-msg {
+  background: #450a0a;
+  border: 1px solid var(--red);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  color: var(--red);
+  font-size: 0.9rem;
+  display: none;
+}
+.error-msg.visible { display: block; }
+
+/* ═══════════════════════════════════════
+   Screen 1: Setup
+   ═══════════════════════════════════════ */
+.setup-hero {
+  text-align: center;
+  padding: 60px 0 40px;
+}
+.setup-hero h1 {
+  font-size: 2.2rem;
+  color: var(--cyan);
+  margin-bottom: 8px;
+}
+.setup-hero p {
+  color: var(--text-dim);
+  font-size: 1rem;
+  margin-bottom: 32px;
+}
+
+.folder-display {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-width: 600px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.folder-display .path {
+  flex: 1;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.85rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-display .loading {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+
+/* ═══════════════════════════════════════
+   Screen 2: Step Selection
+   ═══════════════════════════════════════ */
+.steps-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.steps-header .project-path {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+
+.step-checklist {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  max-height: 380px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.step-check-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.step-check-item:hover { background: rgba(255,255,255,0.03); }
+
+.step-check-item input[type="checkbox"] {
+  accent-color: var(--cyan);
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.step-check-item .step-num {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  min-width: 24px;
+}
+.step-check-item .step-label { flex: 1; }
+
+.options-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.timeout-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+.timeout-group input {
+  width: 60px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.start-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.step-count-badge {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+/* ═══════════════════════════════════════
+   Screen 3: Running (Progress)
+   ═══════════════════════════════════════ */
+.status-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 20px;
+}
+.status-starting  { background: #1e3a5f; color: var(--blue); }
+.status-running   { background: #1e3a5f; color: var(--blue); }
+.status-finishing  { background: #1e3a5f; color: var(--cyan); }
+.status-completed  { background: #14532d; color: var(--green); }
+.status-stopped    { background: #422006; color: var(--yellow); }
+.status-error      { background: #450a0a; color: var(--red); }
+
+.progress-bar-track {
+  width: 100%;
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 8px 0;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--cyan);
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+.progress-stats {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+}
+
+.current-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.current-step .label { color: var(--text-dim); font-size: 0.85rem; }
+.current-step .name { font-weight: 500; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.pulse { animation: pulse 1.5s ease-in-out infinite; color: var(--cyan); }
+
+/* Step list (running view) */
+.step-list {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 16px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.step-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+.step-item:hover { background: rgba(255,255,255,0.03); }
+.step-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+}
+.step-pending .step-icon  { color: var(--text-dim); }
+.step-running .step-icon  { color: var(--blue); }
+.step-completed .step-icon { color: var(--green); }
+.step-failed .step-icon   { color: var(--red); }
+.step-name { flex: 1; }
+.step-duration { color: var(--text-dim); font-size: 0.8rem; }
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* Output panel */
+.output-panel {
+  background: #0a0a14;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.output-panel h3 {
+  color: var(--cyan);
+  font-size: 0.85rem;
+  margin-bottom: 8px;
+}
+.output-content {
+  color: #b0b0c0;
+  font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.actions { margin-bottom: 16px; }
+
+.elapsed { font-variant-numeric: tabular-nums; }
+
+/* ═══════════════════════════════════════
+   Screen 4: Finishing
+   ═══════════════════════════════════════ */
+.finishing-content {
+  text-align: center;
+  padding: 80px 0;
+}
+.finishing-content .big-spinner {
+  display: inline-block;
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--cyan);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 20px;
+}
+.finishing-content p {
+  color: var(--text-dim);
+  font-size: 1rem;
+}
+
+/* ═══════════════════════════════════════
+   Screen 5: Summary
+   ═══════════════════════════════════════ */
+.summary-result {
+  text-align: center;
+  margin-bottom: 24px;
+}
+.summary-result h2 {
+  font-size: 1.5rem;
+  margin-bottom: 8px;
+}
+.summary-result.success h2 { color: var(--green); }
+.summary-result.partial h2 { color: var(--yellow); }
+.summary-result.failure h2 { color: var(--red); }
+
+.summary-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  text-align: center;
+}
+.stat-card .value {
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.stat-card .label {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+.stat-card .value.green { color: var(--green); }
+.stat-card .value.red   { color: var(--red); }
+.stat-card .value.cyan  { color: var(--cyan); }
+
+.summary-details {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  line-height: 1.7;
+}
+.summary-details strong { color: var(--text); }
+
+.summary-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 24px;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }

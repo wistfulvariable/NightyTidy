@@ -33,7 +33,8 @@
     "test:ci": "vitest run --coverage",
     "test:flaky": "node scripts/run-flaky-check.js",
     "check:docs": "node scripts/check-docs-freshness.js",
-    "check:security": "npm audit --audit-level=high"
+    "check:security": "npm audit --audit-level=high",
+    "gui": "node gui/server.js"
   },
   "engines": {
     "node": ">=20.12.0"

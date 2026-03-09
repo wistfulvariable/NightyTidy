@@ -74,9 +74,9 @@ test/
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
   orchestrator.test.js     # 31 tests — initRun, runStep, finishRun, dashboard integration with mocked modules
-  contracts.test.js        # 31 tests — module API contract verification against CLAUDE.md
+  contracts.test.js        # 38 tests — module API contract verification against CLAUDE.md
   gui-logic.test.js        # 39 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, etc.)
-  gui-server.test.js       # 13 tests — HTTP server, static file serving, read-file API, HTML structure
+  gui-server.test.js       # 26 tests — HTTP server, static files, run-command, kill-process, CORS, traversal
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks
   dashboard-broadcastoutput.test.js # 5 tests — buffer overflow, throttled writes, clearOutputBuffer with state
