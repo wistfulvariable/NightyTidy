@@ -17,6 +17,7 @@ NightyTidy: automated overnight codebase improvement via Claude Code subprocess 
 - Dashboard standalone server for orchestrator mode (`dashboard-standalone.js`)
 - GUI test coverage: `gui-logic.test.js` (43 tests), `gui-server.test.js` (28 tests)
 - Test consolidation audit: 5 files cleaned, 133 net LOC removed, zero coverage loss
+- Design system documented: `docs/DESIGN_SYSTEM.md` — color tokens, type scale, spacing, components
 
 ## Topic Files
 
