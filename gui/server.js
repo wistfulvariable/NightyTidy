@@ -6,9 +6,10 @@
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { statSync } from 'node:fs';
+import { statSync, writeFileSync, unlinkSync } from 'node:fs';
 import { spawn, execSync } from 'node:child_process';
 import { join, extname, resolve, sep } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -29,8 +30,78 @@ const MAX_BODY_BYTES = 1024 * 1024; // 1 MB — prevents memory exhaustion from 
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
-  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'",
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'",
 };
+
+// PowerShell script for the modern Windows folder picker (IFileOpenDialog COM).
+// Uses FOS_PICKFOLDERS to show the standard Explorer-style dialog instead of the
+// legacy FolderBrowserDialog tree view.
+const FOLDER_PICKER_PS1 = `
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+[ComImport, Guid("DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7")]
+class FileOpenDialogRCW {}
+
+[ComImport, Guid("43826D1E-E718-42EE-BC55-A1E261C37BFE"),
+ InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IShellItem {
+    void BindToHandler();
+    void GetParent();
+    void GetDisplayName([In] uint sigdnName,
+        [MarshalAs(UnmanagedType.LPWStr)] out string ppszName);
+    void GetAttributes();
+    void Compare();
+}
+
+[ComImport, Guid("42F85136-DB7E-439C-85F1-E4075D135FC8"),
+ InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IFileDialog {
+    [PreserveSig] int Show(IntPtr hwndOwner);
+    void SetFileTypes();
+    void SetFileTypeIndex();
+    void GetFileTypeIndex();
+    void Advise();
+    void Unadvise();
+    void SetOptions(uint fos);
+    void GetOptions(out uint pfos);
+    void SetDefaultFolder(IShellItem psi);
+    void SetFolder(IShellItem psi);
+    void GetFolder(out IShellItem ppsi);
+    void GetCurrentSelection(out IShellItem ppsi);
+    void SetFileName([MarshalAs(UnmanagedType.LPWStr)] string pszName);
+    void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string pszName);
+    void SetTitle([MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
+    void SetOkButtonLabel([MarshalAs(UnmanagedType.LPWStr)] string pszText);
+    void SetFileNameLabel([MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
+    void GetResult(out IShellItem ppsi);
+    void AddPlace();
+    void SetDefaultExtension([MarshalAs(UnmanagedType.LPWStr)] string pszExt);
+    void Close(int hr);
+    void SetClientGuid();
+    void ClearClientData();
+    void SetFilter();
+}
+
+public static class FolderPicker {
+    public static string Pick(string title) {
+        var dlg = (IFileDialog)new FileOpenDialogRCW();
+        uint opts;
+        dlg.GetOptions(out opts);
+        dlg.SetOptions(opts | 0x20u | 0x40000u | 0x800u);
+        dlg.SetTitle(title);
+        if (dlg.Show(IntPtr.Zero) != 0) return "";
+        IShellItem item;
+        dlg.GetResult(out item);
+        string path;
+        item.GetDisplayName(0x80058000u, out path);
+        return path;
+    }
+}
+"@
+[FolderPicker]::Pick("Select target project")
+`;
 
 // Track spawned processes for cleanup
 const activeProcesses = new Map();
@@ -96,10 +167,16 @@ async function handleSelectFolder(res) {
     let folder = null;
 
     if (platform === 'win32') {
-      // Use PowerShell's folder browser dialog
-      const ps = `Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; $f.Description = 'Select target project'; $f.ShowNewFolderButton = $false; if ($f.ShowDialog() -eq 'OK') { $f.SelectedPath } else { '' }`;
-      const result = execSync(`powershell -NoProfile -Command "${ps}"`, { encoding: 'utf-8', timeout: 60000 });
-      folder = result.trim() || null;
+      // Modern Windows folder picker (IFileOpenDialog COM with FOS_PICKFOLDERS)
+      // Written to temp .ps1 to avoid Windows cmd escaping issues
+      const script = join(tmpdir(), `nt-folder-${Date.now()}.ps1`);
+      try {
+        writeFileSync(script, FOLDER_PICKER_PS1);
+        const result = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${script}"`, { encoding: 'utf-8', timeout: 60000 });
+        folder = result.trim() || null;
+      } finally {
+        try { unlinkSync(script); } catch { /* ignore cleanup failure */ }
+      }
     } else if (platform === 'darwin') {
       // macOS: use osascript
       const result = execSync(
