@@ -18,9 +18,9 @@ Automated overnight codebase improvement through Claude Code. NightyTidy is an o
 | Layer | Technology | Version |
 |-------|-----------|---------|
 | Runtime | Node.js (ESM) | >=20.12.0 |
-| CLI Framework | Commander | v12 |
+| CLI Framework | Commander | v14 |
 | Interactive UI | @inquirer/checkbox | v5 |
-| Terminal UX | ora (spinners), chalk (colors) | v8, v5 |
+| Terminal UX | ora (spinners), chalk (colors) | v9, v5 |
 | Git | simple-git | v3 |
 | AI Engine | Claude Code CLI (subprocess) | latest |
 | Notifications | node-notifier | v10 |
