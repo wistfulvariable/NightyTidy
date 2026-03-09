@@ -132,6 +132,14 @@ server.listen(0, '127.0.0.1', () => {
 
   try { writeFileSync(urlFilePath, url + '\n', 'utf8'); } catch { /* non-critical */ }
 
+  // Pre-populate currentState from progress file so SSE clients connecting
+  // before the first poll tick get immediate data instead of a blank dashboard.
+  try {
+    const raw = readFileSync(progressPath, 'utf8');
+    currentState = JSON.parse(raw);
+    lastRawJson = raw;
+  } catch { /* file may not exist yet — first poll will pick it up */ }
+
   // Write port to stdout so the spawning process can capture it
   process.stdout.write(JSON.stringify({ port, url, pid: process.pid }) + '\n');
 

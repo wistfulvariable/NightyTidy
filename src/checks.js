@@ -220,12 +220,28 @@ async function checkExistingBranches(git) {
 }
 
 export async function runPreChecks(projectDir, git) {
+  // Phase 1: git-installed must pass before any git operations
   await checkGitInstalled();
-  await checkGitRepo(git);
-  await checkHasCommits(git);
-  await checkClaudeInstalled();
-  await checkClaudeAuthenticated();
-  await checkDiskSpace(projectDir);
-  await checkExistingBranches(git);
+
+  // Phase 2: Run independent check groups in parallel for faster perceived startup.
+  // - Git chain: repo -> commits -> branches (sequential, each depends on the prior)
+  // - Claude chain: installed -> authenticated (sequential dependency)
+  // - Disk space: fully independent
+  const gitChain = async () => {
+    await checkGitRepo(git);
+    await checkHasCommits(git);
+    await checkExistingBranches(git);
+  };
+  const claudeChain = async () => {
+    await checkClaudeInstalled();
+    await checkClaudeAuthenticated();
+  };
+
+  await Promise.all([
+    gitChain(),
+    claudeChain(),
+    checkDiskSpace(projectDir),
+  ]);
+
   info('All pre-run checks passed');
 }

@@ -33,6 +33,8 @@ vi.mock('ora', () => ({
   default: vi.fn(() => ({
     start: vi.fn().mockReturnThis(),
     stop: vi.fn(),
+    succeed: vi.fn(),
+    fail: vi.fn(),
     text: '',
   })),
 }));

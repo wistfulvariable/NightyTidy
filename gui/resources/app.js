@@ -194,9 +194,12 @@ async function startRun() {
   const timeoutArg = state.timeout !== 45 ? ` --timeout ${state.timeout}` : '';
   const args = `--init-run ${stepArgs}${timeoutArg}`;
 
-  document.getElementById('btn-start-run').disabled = true;
+  const startBtn = document.getElementById('btn-start-run');
+  startBtn.disabled = true;
+  startBtn.textContent = 'Initializing...';
   const result = await runCli(args);
-  document.getElementById('btn-start-run').disabled = false;
+  startBtn.disabled = false;
+  startBtn.textContent = 'Start Run';
 
   if (!result.ok) {
     showError('steps', result.error);

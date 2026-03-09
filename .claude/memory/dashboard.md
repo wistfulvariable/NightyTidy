@@ -69,6 +69,10 @@ Updated by `cli.js` callbacks -> passed to `updateDashboard()` -> written to JSO
 
 `dashboard-standalone.js` compares raw file content strings (`lastRawJson`) instead of double-`JSON.stringify` to detect changes. This avoids one `JSON.parse` + one `JSON.stringify` per poll cycle when the file hasn't changed (the common case at 500ms polling).
 
+## Standalone Initial State Pre-population (Audit #26)
+
+On server startup, `dashboard-standalone.js` reads `nightytidy-progress.json` synchronously before the first poll tick. This ensures clients connecting in the first 500ms get immediate SSE state instead of a blank dashboard. The file is guaranteed to exist (written by `--init-run` before spawning the server).
+
 ## Shutdown & State Cleanup
 
 - `stopDashboard()`: clear broadcastOutput throttle timer -> delete ephemeral files -> close SSE clients -> close HTTP server -> reset state (`tuiProcess = null` added audit #25)

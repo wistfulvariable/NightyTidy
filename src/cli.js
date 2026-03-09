@@ -377,7 +377,14 @@ export async function run() {
     // 5. Initialize git and run pre-checks
     const git = initGit(projectDir);
     excludeEphemeralFiles();
-    await runPreChecks(projectDir, git);
+    const checkSpinner = ora({ text: 'Running pre-flight checks...', color: 'cyan' }).start();
+    try {
+      await runPreChecks(projectDir, git);
+      checkSpinner.succeed('Pre-flight checks passed');
+    } catch (err) {
+      checkSpinner.fail('Pre-flight check failed');
+      throw err;
+    }
 
     // 6. Step selector
     const selected = await selectSteps(opts);

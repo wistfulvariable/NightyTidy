@@ -85,6 +85,7 @@ See `audit-reports/04_TEST_ARCHITECTURE_REPORT.md` for full report (404 tests, 2
 - Duplicated `createMockChildProcess()` in `orchestrator.test.js` + `orchestrator-extended.test.js` — extract to `test/helpers/mocks.js`
 - Duplicated mock block + `makeExecutionResults()` in `cli.test.js` + `cli-extended.test.js` — shared via extended importing from base
 - `gui/resources/app.js` has zero test coverage (state machine, ~580 LOC)
+- **ora mock needs `succeed` and `fail`** — `cli.js` uses `checkSpinner.succeed()` and `checkSpinner.fail()` (added audit #26). Both `cli.test.js` and `cli-extended.test.js` ora mocks must include these methods
 
 **Strengths confirmed**: contract tests, real git integration tests, testing pyramid ratio (61% unit, 24% integration, 9% contract, 6% smoke+structural)
 

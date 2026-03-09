@@ -38,7 +38,7 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
 4. **Handle --list / --setup** — early exit paths
 5. **Welcome screen**: `showWelcome()` — ASCII banner
 6. **Git init + exclude**: `initGit()` → `excludeEphemeralFiles()`
-7. **Pre-checks**: `runPreChecks(projectDir, git)` — 7 checks, throws on failure
+7. **Pre-checks**: spinner + `runPreChecks(projectDir, git)` — 7 checks (parallelized: git chain || claude chain || disk space), throws on failure
 8. **Step selection**: `@inquirer/checkbox` or `--all`/`--steps` parsing
 9. **Start dashboard**: HTTP server + TUI window spawn (fire-and-forget)
 10. **Git setup**: `getCurrentBranch()` → `createPreRunTag()` → `createRunBranch()`
