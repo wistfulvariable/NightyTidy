@@ -364,6 +364,8 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
       durationFormatted: formatDuration(result.duration),
       attempts: result.attempts,
       costUSD: result.cost?.costUSD ?? null,
+      inputTokens: result.cost?.inputTokens ?? null,
+      outputTokens: result.cost?.outputTokens ?? null,
       suspiciousFast: result.suspiciousFast || false,
       remainingSteps: remaining,
     });
@@ -410,6 +412,8 @@ export async function finishRun(projectDir) {
     // Sum step costs + overhead (changelog, consolidation tracked via overhead)
     const stepsCostUSD = executionResults.results.reduce((sum, r) => sum + (r.cost?.costUSD || 0), 0);
     const totalCostUSD = stepsCostUSD + overheadCostUSD;
+    const totalInputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.inputTokens || 0), 0) || null;
+    const totalOutputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.outputTokens || 0), 0) || null;
 
     // Generate report
     generateReport(executionResults, narration, {
@@ -460,6 +464,8 @@ export async function finishRun(projectDir) {
       failed: executionResults.failedCount,
       totalDurationFormatted: formatDuration(totalDuration),
       totalCostUSD: totalCostUSD || null,
+      totalInputTokens,
+      totalOutputTokens,
       merged: mergeResult.success,
       mergeConflict: mergeResult.conflict || false,
       reportPath: 'NIGHTYTIDY-REPORT.md',

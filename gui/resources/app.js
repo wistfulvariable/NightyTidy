@@ -433,6 +433,7 @@ function renderRunningStepList() {
         <span class="step-icon">&#9675;</span>
         <span class="step-name">${NtLogic.escapeHtml(name)}</span>
         <span class="step-cost"></span>
+        <span class="step-tokens"></span>
         <span class="step-duration"></span>
       </div>
     `;
@@ -446,35 +447,31 @@ function updateStepItemStatus(stepNum, status, duration) {
   el.className = `step-item step-${status}`;
   const iconEl = el.querySelector('.step-icon');
   const durEl = el.querySelector('.step-duration');
-
   const costEl = el.querySelector('.step-cost');
+  const tokensEl = el.querySelector('.step-tokens');
 
   switch (status) {
     case 'running':
       iconEl.innerHTML = '<span class="spinner"></span>';
       break;
     case 'completed':
-      iconEl.textContent = '\u2713';
+    case 'failed': {
+      iconEl.textContent = status === 'completed' ? '\u2713' : '\u2717';
       if (duration) durEl.textContent = NtLogic.formatMs(duration);
+      const r = state.stepResults.find(r => r.step === stepNum);
       if (costEl) {
-        const r = state.stepResults.find(r => r.step === stepNum);
         const costStr = r ? NtLogic.formatCost(r.costUSD) : null;
         if (costStr) costEl.textContent = costStr;
+      }
+      if (tokensEl && r) {
+        const total = (r.inputTokens || 0) + (r.outputTokens || 0);
+        const tokStr = NtLogic.formatTokens(total);
+        if (tokStr) tokensEl.textContent = tokStr + ' tok';
       }
       el.classList.add('step-clickable');
       el.onclick = () => viewStepOutput(stepNum);
       break;
-    case 'failed':
-      iconEl.textContent = '\u2717';
-      if (duration) durEl.textContent = NtLogic.formatMs(duration);
-      if (costEl) {
-        const r = state.stepResults.find(r => r.step === stepNum);
-        const costStr = r ? NtLogic.formatCost(r.costUSD) : null;
-        if (costStr) costEl.textContent = costStr;
-      }
-      el.classList.add('step-clickable');
-      el.onclick = () => viewStepOutput(stepNum);
-      break;
+    }
     default:
       iconEl.innerHTML = '&#9675;';
   }
@@ -550,7 +547,7 @@ async function runNextStep() {
 
   if (!result.ok) {
     state.failedSteps.push(next);
-    state.stepResults.push({ step: next, status: 'failed', error: result.error, output: liveSnapshot, costUSD: null });
+    state.stepResults.push({ step: next, status: 'failed', error: result.error, output: liveSnapshot, costUSD: null, inputTokens: null, outputTokens: null });
     updateStepItemStatus(next, 'failed');
   } else {
     const data = result.data;
@@ -573,6 +570,8 @@ async function runNextStep() {
       output: data.output || liveSnapshot,
       error: data.error || null,
       costUSD: data.costUSD ?? null,
+      inputTokens: data.inputTokens ?? null,
+      outputTokens: data.outputTokens ?? null,
     });
 
     updateStepItemStatus(next, status, duration);
@@ -816,6 +815,20 @@ function renderSummary(finishData) {
   }
   const totalCostStr = NtLogic.formatCost(totalCostUSD);
 
+  // Total tokens: prefer finishData, fallback to sum of step tokens
+  let totalInputTokens = finishData?.totalInputTokens ?? null;
+  let totalOutputTokens = finishData?.totalOutputTokens ?? null;
+  if (totalInputTokens === null) {
+    const stepInputs = state.stepResults.filter(r => r.inputTokens != null).map(r => r.inputTokens);
+    if (stepInputs.length > 0) totalInputTokens = stepInputs.reduce((a, b) => a + b, 0);
+  }
+  if (totalOutputTokens === null) {
+    const stepOutputs = state.stepResults.filter(r => r.outputTokens != null).map(r => r.outputTokens);
+    if (stepOutputs.length > 0) totalOutputTokens = stepOutputs.reduce((a, b) => a + b, 0);
+  }
+  const totalTokens = (totalInputTokens || 0) + (totalOutputTokens || 0);
+  const totalTokensStr = NtLogic.formatTokens(totalTokens);
+
   let statsHtml = `
     <div class="stat-card">
       <div class="value green">${completed}</div>
@@ -839,6 +852,14 @@ function renderSummary(finishData) {
     <div class="stat-card">
       <div class="value yellow">${totalCostStr}</div>
       <div class="label">Total Cost</div>
+    </div>
+    `;
+  }
+  if (totalTokensStr) {
+    statsHtml += `
+    <div class="stat-card">
+      <div class="value">${totalTokensStr}</div>
+      <div class="label">Total Tokens</div>
     </div>
     `;
   }
@@ -871,11 +892,15 @@ function renderSummary(finishData) {
     const name = r.name || `Step ${r.step}`;
     const dur = r.duration ? NtLogic.formatMs(r.duration) : '';
     const cost = NtLogic.formatCost(r.costUSD) || '';
+    const stepTotalTokens = (r.inputTokens || 0) + (r.outputTokens || 0);
+    const tokens = NtLogic.formatTokens(stepTotalTokens);
+    const tokensStr = tokens ? tokens + ' tok' : '';
     return `
       <div class="step-item step-${status} step-clickable" data-step="${r.step}">
         <span class="step-icon">${icon}</span>
         <span class="step-name">${NtLogic.escapeHtml(name)}</span>
         <span class="step-cost">${cost}</span>
+        <span class="step-tokens">${tokensStr}</span>
         <span class="step-duration">${dur}</span>
       </div>
     `;
@@ -973,6 +998,12 @@ function bindEvents() {
 document.addEventListener('DOMContentLoaded', async () => {
   bindEvents();
   showScreen(SCREENS.SETUP);
+
+  // Heartbeat — lets the server detect if the browser window is gone
+  // (e.g. Chrome crashed or was force-killed). Server self-terminates if stale.
+  setInterval(() => {
+    fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
+  }, 5000);
 
   // Load server config (nightytidy binary path)
   try {

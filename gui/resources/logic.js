@@ -122,11 +122,23 @@ function buildStepArgs(selectedSteps, totalSteps) {
 /**
  * Format a cost in USD to a display string.
  * @param {number|null|undefined} costUSD
- * @returns {string|null} e.g. '$0.1234', or null if no cost data
+ * @returns {string|null} e.g. '$0.12', or null if no cost data
  */
 function formatCost(costUSD) {
   if (costUSD === null || costUSD === undefined || !Number.isFinite(costUSD)) return null;
-  return '$' + costUSD.toFixed(4);
+  return '$' + costUSD.toFixed(2);
+}
+
+/**
+ * Format a token count for display.
+ * Uses 'k' suffix for thousands (e.g. 30.5k). Below 1000, shows raw number.
+ * @param {number|null|undefined} tokens
+ * @returns {string|null} e.g. '30.5k', '142', or null if no data
+ */
+function formatTokens(tokens) {
+  if (tokens === null || tokens === undefined || !Number.isFinite(tokens) || tokens === 0) return null;
+  if (tokens >= 1000) return (tokens / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+  return String(tokens);
 }
 
 /**
@@ -158,6 +170,7 @@ const NtLogic = {
   parseCliOutput,
   formatMs,
   formatCost,
+  formatTokens,
   escapeHtml,
   getNextStep,
   buildStepArgs,

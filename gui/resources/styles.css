@@ -341,6 +341,7 @@ body {
 .step-failed .step-icon   { color: var(--red); }
 .step-name { flex: 1; }
 .step-cost { color: var(--yellow); font-size: 0.8rem; }
+.step-tokens { color: var(--text-dim); font-size: 0.75rem; }
 .step-duration { color: var(--text-dim); font-size: 0.8rem; }
 
 @keyframes spin {

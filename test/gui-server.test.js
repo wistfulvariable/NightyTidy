@@ -161,6 +161,12 @@ beforeAll(async () => {
       return;
     }
 
+    // API: heartbeat — mirrors server.js handleHeartbeat
+    if (url.pathname === '/api/heartbeat' && req.method === 'POST') {
+      sendJson(res, { ok: true });
+      return;
+    }
+
     // API: delete-file — mirrors server.js handleDeleteFile
     if (url.pathname === '/api/delete-file' && req.method === 'POST') {
       const body = await readBody(req);
@@ -496,6 +502,25 @@ describe('kill-process API', () => {
     const data = await res.json();
     expect(data.ok).toBe(false);
     expect(data.error).toContain('No process id');
+  });
+});
+
+// ── API: Heartbeat ──────────────────────────────────────────────────
+
+describe('heartbeat API', () => {
+  it('returns ok:true on POST', async () => {
+    const res = await fetch(`${baseUrl}/api/heartbeat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+  });
+
+  it('returns 404 for GET (only POST is routed)', async () => {
+    const res = await fetch(`${baseUrl}/api/heartbeat`);
+    expect(res.status).toBe(404);
   });
 });
 

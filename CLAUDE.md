@@ -81,7 +81,7 @@ test/
   orchestrator.test.js     # 36 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough
   contracts.test.js        # 38 tests — module API contract verification against CLAUDE.md
   gui-logic.test.js        # 67 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, detectGitError, detectStaleState, etc.)
-  gui-server.test.js       # 34 tests — HTTP server, static files, config, run-command, kill-process, delete-file, security headers, traversal
+  gui-server.test.js       # 36 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, security headers, traversal
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks
   dashboard-broadcastoutput.test.js # 5 tests — buffer overflow, throttled writes, clearOutputBuffer with state
@@ -240,7 +240,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **Dashboard CSRF**: POST `/stop` requires a CSRF token (generated per session via `crypto.randomBytes`). Token is embedded in served HTML and verified server-side. Tests in `dashboard.test.js`.
 - **Dashboard security headers**: All responses (200 and 4xx) include CSP, X-Frame-Options, X-Content-Type-Options. CSP allows `'unsafe-inline'` for inline scripts/styles.
 - **Dashboard body limits**: POST `/stop` enforces 1 KB body size limit to prevent memory exhaustion.
-- **GUI server security**: Binds to `127.0.0.1` only. No CORS headers. Body limit 1 MB. Path traversal protection with trailing separator boundary check. Security headers on all responses (HTML, JSON, and error responses). CSP uses `'self'` only (no inline scripts).
+- **GUI server security**: Binds to `127.0.0.1` only. No CORS headers. Body limit 1 MB. Path traversal protection with trailing separator boundary check. Security headers on all responses (HTML, JSON, and error responses). CSP uses `'self'` only (no inline scripts). Frontend heartbeat every 5s; server watchdog self-terminates after 15s with no heartbeat (catches Chrome crash / force-kill).
 - **Security headers on error responses**: All HTTP servers must include `SECURITY_HEADERS` on error responses (403, 404), not just 200 responses. This prevents header-based fingerprinting of error vs success paths.
 - **Lock file is atomic**: `acquireLock()` uses `fs.openSync(path, 'wx')` (O_EXCL) to prevent TOCTOU races between concurrent processes.
 - **Prompt integrity check**: `executor.js` computes SHA-256 of all step prompts and compares against `STEPS_HASH`. After editing any markdown file in `src/prompts/steps/` or `src/prompts/specials/`, recompute and update the hash in `executor.js`. Warns but does not block (user may have legitimate prompt changes).

@@ -108,6 +108,11 @@ public static class FolderPicker {
 const activeProcesses = new Map();
 let serverInstance = null;
 
+// Heartbeat — frontend pings every 5s; server self-terminates if no ping for 15s
+let lastHeartbeat = Date.now();
+const HEARTBEAT_CHECK_MS = 5000;
+const HEARTBEAT_STALE_MS = 15000;
+
 function killProcess(proc) {
   if (process.platform === 'win32') {
     execSync(`taskkill /pid ${proc.pid} /T /F`, { windowsHide: true });
@@ -321,6 +326,13 @@ async function handleDeleteFile(req, res) {
   }
 }
 
+// ── API: Heartbeat ─────────────────────────────────────────────────
+
+function handleHeartbeat(res) {
+  lastHeartbeat = Date.now();
+  sendJson(res, { ok: true });
+}
+
 // ── API: Shutdown ──────────────────────────────────────────────────
 
 function handleExit(res) {
@@ -385,6 +397,9 @@ function handleRequest(req, res) {
   }
   if (url.pathname === '/api/delete-file' && req.method === 'POST') {
     return handleDeleteFile(req, res);
+  }
+  if (url.pathname === '/api/heartbeat' && req.method === 'POST') {
+    return handleHeartbeat(res);
   }
   if (url.pathname === '/api/exit' && req.method === 'POST') {
     return handleExit(res);
@@ -476,6 +491,18 @@ server.listen(0, '127.0.0.1', () => {
   const url = `http://127.0.0.1:${port}`;
   console.log(`NightyTidy GUI server running on ${url}`);
   launchChrome(url);
+
+  // Watchdog: self-terminate if no heartbeat from the browser for 15s.
+  // Catches cases where Chrome crashes or is force-killed (unload never fires).
+  const watchdog = setInterval(() => {
+    if (Date.now() - lastHeartbeat > HEARTBEAT_STALE_MS) {
+      console.log('No heartbeat from browser — shutting down.');
+      clearInterval(watchdog);
+      cleanup();
+      process.exit(0);
+    }
+  }, HEARTBEAT_CHECK_MS);
+  watchdog.unref(); // Don't keep the process alive solely for the watchdog
 });
 
 // Graceful shutdown with force-exit safety net.
@@ -493,3 +520,4 @@ function shutdownHandler() {
 
 process.on('SIGINT', shutdownHandler);
 process.on('SIGTERM', shutdownHandler);
+process.on('SIGHUP', shutdownHandler);

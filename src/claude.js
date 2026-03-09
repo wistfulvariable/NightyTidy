@@ -224,11 +224,14 @@ function parseJsonOutput(result) {
     try {
       const event = JSON.parse(lines[i]);
       if (event.type === 'result') {
+        const usage = event.usage || {};
         return {
           ...result,
           output: event.result || '',
           cost: {
             costUSD: event.total_cost_usd ?? null,
+            inputTokens: (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0) || null,
+            outputTokens: usage.output_tokens ?? null,
             numTurns: event.num_turns ?? null,
             durationApiMs: event.duration_api_ms ?? null,
             sessionId: event.session_id ?? null,
@@ -243,11 +246,14 @@ function parseJsonOutput(result) {
   // Fallback: try parsing entire output as single JSON (--output-format json compat)
   try {
     const json = JSON.parse(result.output.trim());
+    const usage = json.usage || {};
     return {
       ...result,
       output: json.result || '',
       cost: {
         costUSD: json.total_cost_usd ?? null,
+        inputTokens: (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0) || null,
+        outputTokens: usage.output_tokens ?? null,
         numTurns: json.num_turns ?? null,
         durationApiMs: json.duration_api_ms ?? null,
         sessionId: json.session_id ?? null,
