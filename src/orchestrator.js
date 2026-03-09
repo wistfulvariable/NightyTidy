@@ -10,7 +10,7 @@ import { runPrompt } from './claude.js';
 import { STEPS, CHANGELOG_PROMPT } from './prompts/loader.js';
 import { executeSingleStep, SAFETY_PREAMBLE } from './executor.js';
 import { notify } from './notifications.js';
-import { generateReport, formatDuration } from './report.js';
+import { generateReport, formatDuration, getVersion } from './report.js';
 import { acquireLock, releaseLock } from './lock.js';
 
 const PROGRESS_FILENAME = 'nightytidy-progress.json';
@@ -205,7 +205,7 @@ function stopDashboardServer(pid) {
 export async function initRun(projectDir, { steps, timeout } = {}) {
   try {
     initLogger(projectDir, { quiet: true });
-    info('Orchestrator: init-run starting');
+    info(`NightyTidy v${getVersion()} orchestrator starting (Node ${process.version}, ${process.platform} ${process.arch})`);
 
     // Check for existing run
     if (readState(projectDir)) {

@@ -351,7 +351,7 @@ export async function run() {
   try {
     // 1. Initialize logger
     initLogger(projectDir);
-    info('NightyTidy starting');
+    info(`NightyTidy v${getVersion()} starting (Node ${process.version}, ${process.platform} ${process.arch})`);
 
     // 2. Prevent concurrent runs
     await acquireLock(projectDir);

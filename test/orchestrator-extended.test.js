@@ -73,6 +73,7 @@ vi.mock('../src/notifications.js', () => ({
 vi.mock('../src/report.js', () => ({
   generateReport: vi.fn(),
   formatDuration: vi.fn((ms) => `${Math.floor(ms / 60000)}m`),
+  getVersion: vi.fn(() => '0.1.0'),
 }));
 
 vi.mock('../src/lock.js', () => ({
