@@ -79,7 +79,7 @@ test/
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
   orchestrator.test.js     # 36 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough
   contracts.test.js        # 38 tests — module API contract verification against CLAUDE.md
-  gui-logic.test.js        # 56 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, etc.)
+  gui-logic.test.js        # 63 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, detectGitError, etc.)
   gui-server.test.js       # 29 tests — HTTP server, static files, config, run-command, kill-process, security headers, traversal
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks
@@ -370,3 +370,7 @@ When you learn something worth preserving, put it in the right place:
 | `dashboard.md` | Changing progress display (HTTP, TUI, SSE) |
 | `report-generation.md` | Changing report format or CLAUDE.md auto-update |
 | `pitfalls.md` | Debugging platform-specific or subprocess issues |
+
+## NightyTidy — Last Run
+
+Last run: 2026-03-09. To undo, reset to git tag `nightytidy-before-2026-03-09-1319`.
