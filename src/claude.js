@@ -11,9 +11,10 @@ const SIGKILL_DELAY = 5000; // grace period before SIGKILL after initial kill
 
 function forceKillChild(child) {
   child.kill();
-  setTimeout(() => {
+  const killTimer = setTimeout(() => {
     try { child.kill('SIGKILL'); } catch { /* already dead */ }
   }, SIGKILL_DELAY);
+  killTimer.unref(); // Don't prevent Node.js from exiting if child dies quickly
 }
 
 function timeoutMessage(ms) {
