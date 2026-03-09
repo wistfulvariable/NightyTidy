@@ -140,30 +140,15 @@ describe('generateReport — CLAUDE.md update', () => {
 // ---------------------------------------------------------------------------
 
 describe('formatDuration — edge cases', () => {
-  it('formats 0ms as 0m 00s', () => {
-    expect(formatDuration(0)).toBe('0m 00s');
-  });
-
-  it('formats exactly 1 hour as 1h 00m', () => {
-    expect(formatDuration(3600000)).toBe('1h 00m');
-  });
-
-  it('formats multi-hour durations correctly', () => {
-    // 3h 45m = 3*3600000 + 45*60000 = 13500000
-    expect(formatDuration(13500000)).toBe('3h 45m');
-  });
-
-  it('formats 59 seconds correctly', () => {
-    expect(formatDuration(59000)).toBe('0m 59s');
-  });
-
-  it('formats 1 minute exactly', () => {
-    expect(formatDuration(60000)).toBe('1m 00s');
-  });
-
-  it('drops seconds when hours are present', () => {
-    // 1h 2m 30s = 3750000ms — should show as 1h 02m (not 1h 02m 30s)
-    expect(formatDuration(3750000)).toBe('1h 02m');
+  it.each([
+    [0, '0m 00s', '0ms'],
+    [3600000, '1h 00m', 'exactly 1 hour'],
+    [13500000, '3h 45m', 'multi-hour (3h 45m)'],
+    [59000, '0m 59s', '59 seconds'],
+    [60000, '1m 00s', '1 minute exactly'],
+    [3750000, '1h 02m', 'drops seconds when hours present (1h 2m 30s)'],
+  ])('formats %i ms as "%s" (%s)', (ms, expected) => {
+    expect(formatDuration(ms)).toBe(expected);
   });
 });
 
