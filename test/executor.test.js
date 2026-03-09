@@ -23,11 +23,11 @@ vi.mock('../src/prompts/loader.js', () => ({
   DOC_UPDATE_PROMPT: 'mock doc update prompt',
 }));
 
-import { executeSteps } from '../src/executor.js';
+import { executeSteps, executeSingleStep, FAST_COMPLETION_THRESHOLD_MS } from '../src/executor.js';
 import { runPrompt } from '../src/claude.js';
 import { getHeadHash, hasNewCommit, fallbackCommit } from '../src/git.js';
 import { notify } from '../src/notifications.js';
-import { warn } from '../src/logger.js';
+import { warn, info } from '../src/logger.js';
 
 function makeStep(number, name = `Step ${number}`) {
   return { number, name, prompt: `prompt for ${name}` };
@@ -316,5 +316,150 @@ describe('cost tracking', () => {
 
     // When runPrompt returns no cost field, the result should have cost: null
     expect(result.results[0].cost).toBeNull();
+  });
+});
+
+describe('fast completion detection', () => {
+  it('retries when improvement completes suspiciously fast', async () => {
+    const step = makeStep(1, 'Lint');
+
+    runPrompt
+      // First call: fast success (21 seconds)
+      .mockResolvedValueOnce({
+        success: true, output: 'too quick', error: null, exitCode: 0,
+        attempts: 1, duration: 21_000,
+        cost: { costUSD: 0.01, numTurns: 1, durationApiMs: 500, sessionId: 's1' },
+      })
+      // Second call: retry success (normal duration)
+      .mockResolvedValueOnce({
+        success: true, output: 'thorough work', error: null, exitCode: 0,
+        attempts: 1, duration: 300_000,
+        cost: { costUSD: 0.08, numTurns: 5, durationApiMs: 4000, sessionId: 's2' },
+      })
+      // Third call: doc update
+      .mockResolvedValueOnce({
+        success: true, output: 'docs updated', error: null, exitCode: 0,
+        attempts: 1,
+        cost: { costUSD: 0.02, numTurns: 1, durationApiMs: 500, sessionId: 's2' },
+      });
+
+    const result = await executeSingleStep(step, '/fake/project');
+
+    expect(result.status).toBe('completed');
+    expect(result.suspiciousFast).toBe(true);
+    // Uses retry output, not the fast output
+    expect(result.output).toBe('thorough work');
+    // 3 calls: original improvement + retry + doc update
+    expect(runPrompt).toHaveBeenCalledTimes(3);
+    // Retry prompt contains the context prefix
+    const retryPromptArg = runPrompt.mock.calls[1][0];
+    expect(retryPromptArg).toContain('completed it in under 2 minutes');
+    expect(retryPromptArg).toContain(step.prompt);
+    // Warning logged about suspicious speed
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('suspiciously fast'));
+  });
+
+  it('does not retry when improvement takes longer than threshold', async () => {
+    const step = makeStep(1, 'Lint');
+
+    runPrompt
+      // Improvement: normal duration
+      .mockResolvedValueOnce({
+        success: true, output: 'ok', error: null, exitCode: 0,
+        attempts: 1, duration: 300_000,
+      })
+      // Doc update
+      .mockResolvedValueOnce({
+        success: true, output: 'docs ok', error: null, exitCode: 0,
+        attempts: 1,
+      });
+
+    const result = await executeSingleStep(step, '/fake/project');
+
+    expect(result.status).toBe('completed');
+    expect(result.suspiciousFast).toBeUndefined();
+    // 2 calls only: improvement + doc update (no retry)
+    expect(runPrompt).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not check fast completion on failed improvement', async () => {
+    const step = makeStep(1, 'Lint');
+
+    runPrompt.mockResolvedValue({
+      success: false, output: '', error: 'crash', exitCode: 1,
+      attempts: 4, duration: 5_000,
+    });
+
+    const result = await executeSingleStep(step, '/fake/project');
+
+    expect(result.status).toBe('failed');
+    // Only 1 call (the failed improvement) — no retry, no doc update
+    expect(runPrompt).toHaveBeenCalledTimes(1);
+    expect(result.suspiciousFast).toBeUndefined();
+  });
+
+  it('falls back to original result when fast-retry fails', async () => {
+    const step = makeStep(1, 'Lint');
+
+    runPrompt
+      // Original: fast success
+      .mockResolvedValueOnce({
+        success: true, output: 'quick but valid', error: null, exitCode: 0,
+        attempts: 1, duration: 15_000,
+        cost: { costUSD: 0.01, numTurns: 1, durationApiMs: 300, sessionId: 's1' },
+      })
+      // Retry: fails
+      .mockResolvedValueOnce({
+        success: false, output: '', error: 'timeout', exitCode: -1,
+        attempts: 4, duration: 180_000,
+        cost: { costUSD: 0.05, numTurns: 3, durationApiMs: 2000, sessionId: 's2' },
+      })
+      // Doc update still runs (using original session)
+      .mockResolvedValueOnce({
+        success: true, output: 'docs ok', error: null, exitCode: 0,
+        attempts: 1, cost: null,
+      });
+
+    const result = await executeSingleStep(step, '/fake/project');
+
+    expect(result.status).toBe('completed');
+    expect(result.suspiciousFast).toBe(true);
+    // Falls back to original output
+    expect(result.output).toBe('quick but valid');
+    // Warning logged about fallback
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('fast-retry failed'));
+  });
+
+  it('sums costs from fast attempt and retry attempt', async () => {
+    const step = makeStep(1, 'Lint');
+    const fastCost = { costUSD: 0.01, numTurns: 1, durationApiMs: 500, sessionId: 's1' };
+    const retryCost = { costUSD: 0.08, numTurns: 5, durationApiMs: 4000, sessionId: 's2' };
+    const docCost = { costUSD: 0.02, numTurns: 1, durationApiMs: 300, sessionId: 's2' };
+
+    runPrompt
+      .mockResolvedValueOnce({ success: true, output: 'fast', error: null, exitCode: 0, attempts: 1, duration: 10_000, cost: fastCost })
+      .mockResolvedValueOnce({ success: true, output: 'thorough', error: null, exitCode: 0, attempts: 1, duration: 300_000, cost: retryCost })
+      .mockResolvedValueOnce({ success: true, output: 'docs', error: null, exitCode: 0, attempts: 1, cost: docCost });
+
+    const result = await executeSingleStep(step, '/fake/project');
+
+    // Total cost = fast + retry + doc = 0.01 + 0.08 + 0.02 = 0.11
+    expect(result.cost.costUSD).toBeCloseTo(0.11);
+    expect(result.cost.numTurns).toBe(7);
+    expect(result.cost.durationApiMs).toBe(4800);
+  });
+
+  it('attempts count includes both fast attempt and retry', async () => {
+    const step = makeStep(1, 'Lint');
+
+    runPrompt
+      .mockResolvedValueOnce({ success: true, output: 'fast', error: null, exitCode: 0, attempts: 1, duration: 10_000 })
+      .mockResolvedValueOnce({ success: true, output: 'thorough', error: null, exitCode: 0, attempts: 1, duration: 300_000 })
+      .mockResolvedValueOnce({ success: true, output: 'docs', error: null, exitCode: 0, attempts: 1 });
+
+    const result = await executeSingleStep(step, '/fake/project');
+
+    // 1 (fast) + 1 (retry) = 2 attempts for the improvement phase
+    expect(result.attempts).toBe(2);
   });
 });

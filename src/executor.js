@@ -10,6 +10,20 @@ import { info, warn, error as logError } from './logger.js';
 // Claude Code with --dangerously-skip-permissions.
 const STEPS_HASH = '1578cc610e97618b4eacdbfb79be29b7aa2715b0c4fa32b960eaa21f8ef2ab6a';
 
+// A step completing under 2 minutes is suspicious — Claude likely bailed
+// without doing real work. Triggers one automatic retry with context.
+export const FAST_COMPLETION_THRESHOLD_MS = 120_000;
+
+const FAST_RETRY_PREFIX =
+  'IMPORTANT CONTEXT: You were asked to perform the task below previously, but you ' +
+  'completed it in under 2 minutes. For a codebase improvement step, this is too fast ' +
+  'and likely means you did not perform thorough work. This time, please:\n' +
+  '- Read and understand the relevant code before making changes\n' +
+  '- Make substantive, meaningful improvements\n' +
+  '- If truly no changes are needed, provide a detailed explanation of what you reviewed and why\n' +
+  '- Commit your changes when done\n\n' +
+  'Here is the original task:\n\n';
+
 function verifyStepsIntegrity(steps) {
   const content = steps.map(s => s.prompt).join('');
   const hash = createHash('sha256').update(content).digest('hex');
@@ -47,7 +61,7 @@ function sumCosts(a, b) {
   };
 }
 
-function makeStepResult(step, status, result, duration) {
+function makeStepResult(step, status, result, duration, extra = {}) {
   return {
     step: { number: step.number, name: step.name },
     status,
@@ -56,6 +70,7 @@ function makeStepResult(step, status, result, duration) {
     attempts: result.attempts,
     error: status === 'failed' ? result.error : null,
     cost: result.cost || null,
+    ...extra,
   };
 }
 
@@ -84,6 +99,35 @@ export async function executeSingleStep(step, projectDir, { signal, timeout, onO
     return makeStepResult(step, 'failed', result, duration);
   }
 
+  // Fast completion detection: retry once if suspiciously fast
+  let improvementResult = result;
+  let fastRetried = false;
+
+  if (result.duration < FAST_COMPLETION_THRESHOLD_MS) {
+    warn(
+      `${stepLabel}: completed in ${Math.round(result.duration / 1000)}s — ` +
+      `suspiciously fast (threshold: ${FAST_COMPLETION_THRESHOLD_MS / 1000}s). Retrying with context.`
+    );
+    fastRetried = true;
+
+    const retryResult = await runPrompt(
+      SAFETY_PREAMBLE + FAST_RETRY_PREFIX + step.prompt,
+      projectDir,
+      { label: `Step ${step.number} — ${step.name} (fast-retry)`, signal, timeout, onOutput },
+    );
+
+    if (retryResult.success) {
+      info(`${stepLabel}: fast-retry succeeded — using retry result`);
+      improvementResult = {
+        ...retryResult,
+        cost: sumCosts(result.cost, retryResult.cost),
+        attempts: result.attempts + retryResult.attempts,
+      };
+    } else {
+      warn(`${stepLabel}: fast-retry failed — falling back to original fast result`);
+    }
+  }
+
   // Run doc update in the same Claude session that made the changes
   const docResult = await runPrompt(SAFETY_PREAMBLE + DOC_UPDATE_PROMPT, projectDir, {
     label: `Step ${step.number} — doc update`,
@@ -98,7 +142,7 @@ export async function executeSingleStep(step, projectDir, { signal, timeout, onO
   }
 
   // Combine costs from improvement + doc-update calls
-  const combinedCost = sumCosts(result.cost, docResult.cost);
+  const combinedCost = sumCosts(improvementResult.cost, docResult.cost);
 
   // Commit verification
   const committed = await hasNewCommit(preStepHash);
@@ -115,7 +159,8 @@ export async function executeSingleStep(step, projectDir, { signal, timeout, onO
   const duration = Date.now() - stepStart;
   info(`${stepLabel} — completed (${Math.round(duration / 1000)}s)`);
 
-  return makeStepResult(step, 'completed', { ...result, cost: combinedCost }, duration);
+  const extra = fastRetried ? { suspiciousFast: true } : {};
+  return makeStepResult(step, 'completed', { ...improvementResult, cost: combinedCost }, duration, extra);
 }
 
 export async function executeSteps(selectedSteps, projectDir, { signal, timeout, onStepStart, onStepComplete, onStepFail, onOutput } = {}) {

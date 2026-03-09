@@ -63,7 +63,7 @@ test/
   checks.test.js           # 4 tests — mock subprocess, mock git
   checks-extended.test.js  # 23 tests — auth paths, disk space characterization, branch warnings, empty repo, dirty working tree
   claude.test.js           # 31 tests — fake child process, fake timers, abort signal, Windows shell mode, JSON output parsing
-  executor.test.js         # 16 tests — mocks claude, git, notifications, signal propagation, cost tracking
+  executor.test.js         # 22 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 7 tests — getGitInstance, getHeadHash, tag/branch collision
   notifications.test.js    # 2 tests — mock node-notifier
@@ -77,7 +77,7 @@ test/
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
-  orchestrator.test.js     # 34 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking
+  orchestrator.test.js     # 36 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough
   contracts.test.js        # 38 tests — module API contract verification against CLAUDE.md
   gui-logic.test.js        # 46 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, etc.)
   gui-server.test.js       # 29 tests — HTTP server, static files, config, run-command, kill-process, security headers, traversal
@@ -115,7 +115,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 |------|---------------|-------------|
 | `bin/nightytidy.js` | Entry point — calls `run()` | cli |
 | `src/cli.js` | Commander + Inquirer + full lifecycle | all modules |
-| `src/executor.js` | Core step loop + single-step execution, prompt integrity check | crypto, claude, git, notifications, prompts |
+| `src/executor.js` | Core step loop + single-step execution, prompt integrity check, fast-completion detection | crypto, claude, git, notifications, prompts |
 | `src/orchestrator.js` | Claude Code orchestrator mode (JSON API for step-by-step runs) + dashboard | logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone |
 | `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue) | logger, env |
 | `src/git.js` | Git operations via simple-git | logger |

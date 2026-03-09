@@ -336,7 +336,7 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
 
     // Update state
     const output = result.status === 'completed' ? (result.output || '').slice(0, 6000) : '';
-    const entry = { number: step.number, name: step.name, status: result.status, duration: result.duration, attempts: result.attempts, output, cost: result.cost || null };
+    const entry = { number: step.number, name: step.name, status: result.status, duration: result.duration, attempts: result.attempts, output, cost: result.cost || null, suspiciousFast: result.suspiciousFast || false };
     if (result.status === 'completed') {
       state.completedSteps.push(entry);
     } else {
@@ -362,6 +362,7 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
       durationFormatted: formatDuration(result.duration),
       attempts: result.attempts,
       costUSD: result.cost?.costUSD ?? null,
+      suspiciousFast: result.suspiciousFast || false,
       remainingSteps: remaining,
     });
   } catch (err) {

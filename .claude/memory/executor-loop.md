@@ -5,7 +5,9 @@ Assumes CLAUDE.md loaded. Core loop in `src/executor.js`.
 ## Exports
 
 - `executeSteps(selectedSteps, projectDir, options)` — main loop
+- `executeSingleStep(step, projectDir, options)` — single step with fast-completion detection
 - `SAFETY_PREAMBLE` — constraint string prepended to every prompt
+- `FAST_COMPLETION_THRESHOLD_MS` — 120,000ms (2 min); steps completing faster trigger auto-retry
 
 ## Safety Preamble
 
@@ -26,18 +28,23 @@ For each step in `selectedSteps`:
 3. Capture pre-step HEAD hash via getHeadHash()
 4. Run improvement: runPrompt(SAFETY_PREAMBLE + step.prompt, projectDir, { signal, label })
 5. If failed → log, notify, push failed result, onStepFail, continue
-6. Run doc update: runPrompt(SAFETY_PREAMBLE + DOC_UPDATE_PROMPT, ...)
-7. If doc update failed → warn (non-fatal, step still completed)
-8. Check commits: hasNewCommit(preStepHash)
-9. If no new commit → fallbackCommit(step.number, step.name)
-10. Push completed result, onStepComplete
+6. **Fast-completion check**: if improvement succeeded in < FAST_COMPLETION_THRESHOLD_MS (2 min):
+   - Log warning, run ONE retry with FAST_RETRY_PREFIX + original prompt
+   - If retry succeeds → use retry result (costs/attempts summed with original)
+   - If retry fails → fall back to original fast result
+   - Set `suspiciousFast: true` on result either way
+7. Run doc update: runPrompt(SAFETY_PREAMBLE + DOC_UPDATE_PROMPT, ...)
+8. If doc update failed → warn (non-fatal, step still completed)
+9. Check commits: hasNewCommit(preStepHash)
+10. If no new commit → fallbackCommit(step.number, step.name)
+11. Push completed result, onStepComplete
 ```
 
 ## Result Object
 
 ```js
 {
-  results: [{ step: { number, name }, status, output, duration, attempts, error, cost }],
+  results: [{ step: { number, name }, status, output, duration, attempts, error, cost, suspiciousFast? }],
   totalDuration: number,
   completedCount: number,
   failedCount: number,
@@ -53,6 +60,7 @@ Each step's cost = improvement cost + doc-update cost (summed via `sumCosts()`).
 - **Failed doc update → step still completed** — only logs warning
 - **No parallel execution** — strictly sequential, one step at a time
 - **Notifications** — sent for failed steps only
+- **Fast completion → auto-retry once** — if improvement succeeds in < 2 min, retry with augmented prompt. No recursive retry (if retry is also fast, `suspiciousFast: true` flags it for the orchestrator/user). The retry is a separate `runPrompt` call, not consuming the normal retry budget.
 
 ## Abort Signal Threading
 

@@ -376,6 +376,40 @@ describe('runStep', () => {
 
     expect(result.costUSD).toBeNull();
   });
+
+  it('passes suspiciousFast flag through from executeSingleStep', async () => {
+    executeSingleStep.mockResolvedValue({
+      step: { number: 1, name: 'Documentation' },
+      status: 'completed',
+      output: 'done',
+      duration: 120000,
+      attempts: 2,
+      error: null,
+      cost: { costUSD: 0.05, numTurns: 3, durationApiMs: 2000, sessionId: 'sess-1' },
+      suspiciousFast: true,
+    });
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.success).toBe(true);
+    expect(result.suspiciousFast).toBe(true);
+  });
+
+  it('returns suspiciousFast: false when step completes normally', async () => {
+    executeSingleStep.mockResolvedValue({
+      step: { number: 1, name: 'Documentation' },
+      status: 'completed',
+      output: 'done',
+      duration: 300000,
+      attempts: 1,
+      error: null,
+    });
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.success).toBe(true);
+    expect(result.suspiciousFast).toBe(false);
+  });
 });
 
 describe('finishRun', () => {
