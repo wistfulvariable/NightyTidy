@@ -176,8 +176,8 @@ function spawnDashboardServer(projectDir) {
           child.stdout.removeAllListeners();
           child.unref();
           try {
-            const info = JSON.parse(output.trim());
-            return resolve({ url: info.url, pid: info.pid });
+            const parsed = JSON.parse(output.trim());
+            return resolve({ url: parsed.url, pid: parsed.pid });
           } catch {
             resolve(null);
           }

@@ -119,3 +119,16 @@ First SIGINT aborts the current Claude subprocess and sets `abortController.abor
 
 ### fs Mock Must Include renameSync
 Orchestrator tests mock `fs`. Since `writeState()` uses `renameSync`, the mock must include it: `renameSync: vi.fn()`. Without it, the try/catch in orchestrator functions catches the error and returns `{ success: false }`.
+
+## HTTP Response Double-Write (Audit #22)
+
+### spawn error+close Double Settlement
+When `spawn()` fails (ENOENT), Node emits both `error` and `close`. If both handlers write to the same HTTP response (`sendJson(res, ...)`), the second call throws "Cannot set headers after they are sent". Pattern: use a `settled` flag (as in `claude.js`). Found in `gui/server.js` `handleRunCommand`.
+
+### req.destroy() Does Not Suppress `end` Event
+`dashboard.js` `handleStop` calls `req.destroy()` on oversized bodies but still has an `end` handler that may fire after the 413 response is sent. Guard with a flag or `return` from `end` if already responded.
+
+## GUI Pitfalls (Audit #22)
+
+### Hardcoded Windows Platform in app.js
+`runCli()` passes `'Windows'` to `buildCommand()`. GUI on macOS/Linux generates wrong `cd /d` command. Must detect platform via server API if cross-platform GUI is desired.
