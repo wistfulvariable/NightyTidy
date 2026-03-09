@@ -9,29 +9,29 @@
 <body>
 
   <!-- ═══ Screen 1: Setup ═══ -->
-  <section id="screen-setup" class="screen active">
+  <section id="screen-setup" class="screen active" aria-labelledby="setup-heading">
     <div class="setup-hero">
-      <h1>NightyTidy</h1>
+      <h1 id="setup-heading">NightyTidy</h1>
       <p>Automated overnight codebase improvement</p>
       <button class="btn btn-primary" id="btn-select-folder">Select Project Folder</button>
       <div class="folder-display" id="folder-display" style="display:none">
         <span class="path" id="folder-path"></span>
         <button class="link-btn" id="btn-change-folder">Change</button>
       </div>
-      <div id="setup-loading" style="display:none; margin-top:12px; color:var(--text-dim); font-size:0.85rem;">
-        <span class="spinner" style="vertical-align:middle;margin-right:8px;"></span>
+      <div id="setup-loading" role="status" aria-live="polite" style="display:none; margin-top:12px; color:var(--text-dim); font-size:0.85rem;">
+        <span class="spinner" aria-hidden="true" style="vertical-align:middle;margin-right:8px;"></span>
         Loading steps...
       </div>
     </div>
-    <div class="error-msg" id="setup-error"></div>
+    <div class="error-msg" id="setup-error" role="alert"></div>
   </section>
 
   <!-- ═══ Screen 2: Step Selection ═══ -->
-  <section id="screen-steps" class="screen">
-    <div class="header">
-      <h1>NightyTidy</h1>
+  <section id="screen-steps" class="screen" aria-labelledby="steps-heading">
+    <header class="header">
+      <h1 id="steps-heading">NightyTidy</h1>
       <span class="subtitle">Select Steps</span>
-    </div>
+    </header>
 
     <div class="steps-header">
       <span class="project-path" id="steps-project-path"></span>
@@ -57,24 +57,24 @@
       <button class="btn btn-primary" id="btn-start-run">Start Run</button>
     </div>
 
-    <div class="error-msg" id="steps-error"></div>
+    <div class="error-msg" id="steps-error" role="alert"></div>
   </section>
 
   <!-- ═══ Screen 3: Running ═══ -->
-  <section id="screen-running" class="screen">
-    <div class="header">
-      <h1>NightyTidy</h1>
+  <section id="screen-running" class="screen" aria-labelledby="running-heading">
+    <header class="header">
+      <h1 id="running-heading">NightyTidy</h1>
       <span class="subtitle" id="running-subtitle">Running</span>
-    </div>
+    </header>
 
-    <div class="status-badge status-running" id="running-status-badge">Running</div>
+    <div class="status-badge status-running" id="running-status-badge" role="status" aria-live="polite">Running</div>
 
     <div class="card">
       <div class="progress-stats">
         <span id="progress-counter">0 / 0 steps</span>
         <span class="elapsed" id="progress-elapsed">0m 0s</span>
       </div>
-      <div class="progress-bar-track">
+      <div class="progress-bar-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Step completion progress" id="progress-bar-track">
         <div class="progress-bar-fill" id="progress-bar-fill" style="width:0%"></div>
       </div>
       <div class="progress-stats">
@@ -93,36 +93,36 @@
     <div class="step-list" id="running-step-list"></div>
 
     <div class="output-panel" id="output-panel">
-      <h3>Claude Output</h3>
-      <div class="output-content" id="output-content"></div>
+      <h2>Claude Output</h2>
+      <div class="output-content" id="output-content" aria-live="off"></div>
     </div>
 
     <div class="actions">
       <button class="btn btn-danger" id="btn-stop-run">Stop Run</button>
     </div>
 
-    <div class="error-msg" id="running-error"></div>
+    <div class="error-msg" id="running-error" role="alert"></div>
   </section>
 
   <!-- ═══ Screen 4: Finishing ═══ -->
-  <section id="screen-finishing" class="screen">
-    <div class="header">
-      <h1>NightyTidy</h1>
+  <section id="screen-finishing" class="screen" aria-labelledby="finishing-heading">
+    <header class="header">
+      <h1 id="finishing-heading">NightyTidy</h1>
       <span class="subtitle">Finishing</span>
-    </div>
-    <div class="finishing-content">
-      <div class="big-spinner"></div>
+    </header>
+    <div class="finishing-content" role="status" aria-live="polite">
+      <div class="big-spinner" aria-hidden="true"></div>
       <p>Generating report and merging changes...</p>
     </div>
-    <div class="error-msg" id="finishing-error"></div>
+    <div class="error-msg" id="finishing-error" role="alert"></div>
   </section>
 
   <!-- ═══ Screen 5: Summary ═══ -->
-  <section id="screen-summary" class="screen">
-    <div class="header">
-      <h1>NightyTidy</h1>
+  <section id="screen-summary" class="screen" aria-labelledby="summary-heading">
+    <header class="header">
+      <h1 id="summary-heading">NightyTidy</h1>
       <span class="subtitle">Summary</span>
-    </div>
+    </header>
 
     <div class="summary-result" id="summary-result">
       <h2 id="summary-title">Run Complete</h2>

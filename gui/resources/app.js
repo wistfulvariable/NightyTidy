@@ -266,6 +266,7 @@ function updateProgressBar() {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
   document.getElementById('progress-bar-fill').style.width = `${pct}%`;
+  document.getElementById('progress-bar-track').setAttribute('aria-valuenow', String(pct));
   document.getElementById('progress-counter').textContent = `${done} / ${total} steps`;
   document.getElementById('progress-pct').textContent = `${pct}%`;
 
@@ -557,6 +558,7 @@ function resetApp() {
   document.getElementById('btn-stop-run').disabled = false;
   document.getElementById('btn-stop-run').textContent = 'Stop Run';
   document.getElementById('progress-bar-fill').style.width = '0%';
+  document.getElementById('progress-bar-track').setAttribute('aria-valuenow', '0');
 
   showScreen(SCREENS.SETUP);
 }

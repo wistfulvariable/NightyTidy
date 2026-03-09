@@ -136,3 +136,16 @@ See `audit-reports/06_TEST_QUALITY_REPORT.md` for full report (6-phase analysis)
 - `dashboard.js` has 5 untested non-critical catch blocks (progress write, URL write, TUI spawn, buffer overflow, server error)
 
 **Module ratings**: claude.js, executor.js, checks.js, lock.js, orchestrator.js, report.js, notifications.js = Strong. dashboard.js, setup.js = Weak. gui/server.js = Decorative. gui/resources/app.js = None (zero coverage).
+
+## Frontend Quality Audit (2026-03-09)
+
+See `audit-reports/23_FRONTEND_QUALITY_REPORT_1_2026-03-09.md` for full 4-phase report.
+
+**Accessibility fixes applied**: focus-visible styles, ARIA roles (progressbar, alert, status), semantic `<header>` elements, heading hierarchy fix (h3->h2), `aria-labelledby` on sections, `aria-live` regions. Both `gui/resources/index.html` and `src/dashboard-html.js` updated.
+
+**Frontend patterns**:
+- GUI and dashboard share CSS custom properties but are separate files (no shared stylesheet)
+- `dashboard-html.js` is a template function returning HTML strings — ARIA attributes go inside template literals
+- All dynamic content uses `NtLogic.escapeHtml()` (GUI) or `escapeHtml()` (dashboard) before DOM insertion
+- Dynamic ARIA updates (progressbar values) must be done in JS, not just in static HTML
+- 58 hardcoded user-facing strings across 5 files — no i18n framework warranted

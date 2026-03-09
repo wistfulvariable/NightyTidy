@@ -27,6 +27,11 @@ export function getHTML(csrfToken) {
     padding: 24px;
   }
 
+  :focus-visible {
+    outline: 2px solid var(--cyan);
+    outline-offset: 2px;
+  }
+
   .header {
     display: flex;
     align-items: center;
@@ -241,21 +246,21 @@ export function getHTML(csrfToken) {
 </head>
 <body>
 
-<div class="reconnecting" id="reconnecting">Reconnecting...</div>
+<div class="reconnecting" id="reconnecting" role="alert">Reconnecting...</div>
 
-<div class="header">
+<header class="header">
   <h1>NightyTidy</h1>
   <span class="version">Live Dashboard</span>
-</div>
+</header>
 
-<div id="status-badge" class="status-badge status-starting">Starting</div>
+<div id="status-badge" class="status-badge status-starting" role="status" aria-live="polite">Starting</div>
 
 <div class="progress-section">
   <div class="progress-stats">
     <span id="progress-text">0 / 0 steps</span>
     <span class="elapsed" id="elapsed">0m 00s</span>
   </div>
-  <div class="progress-bar-track">
+  <div class="progress-bar-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Step completion progress" id="progress-bar-track">
     <div class="progress-bar-fill" id="progress-fill" style="width: 0%"></div>
   </div>
   <div class="progress-stats">
@@ -272,7 +277,7 @@ export function getHTML(csrfToken) {
   </div>
 </div>
 
-<div class="error-msg" id="error-msg"></div>
+<div class="error-msg" id="error-msg" role="alert"></div>
 
 <div class="step-list" id="step-list"></div>
 
@@ -360,6 +365,7 @@ function render(s) {
   const pct = s.totalSteps > 0 ? Math.round(((done + active * 0.5) / s.totalSteps) * 100) : 0;
   document.getElementById('progress-text').textContent = done + ' / ' + s.totalSteps + ' steps';
   document.getElementById('progress-fill').style.width = pct + '%';
+  document.getElementById('progress-bar-track').setAttribute('aria-valuenow', String(pct));
   document.getElementById('percentage').textContent = pct + '%';
 
   const parts = [];
