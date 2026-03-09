@@ -8,6 +8,7 @@ import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, crea
 import { runPrompt } from './claude.js';
 import { STEPS, CHANGELOG_PROMPT } from './prompts/loader.js';
 import { executeSteps, SAFETY_PREAMBLE } from './executor.js';
+import { generateActionPlan } from './consolidation.js';
 import { notify } from './notifications.js';
 import { generateReport, formatDuration, getVersion } from './report.js';
 import { setupProject } from './setup.js';
@@ -364,6 +365,18 @@ async function finalizeRun(executionResults, projectDir, ctx) {
 
   ctx.spinner.stop();
 
+  // Consolidated action plan
+  ctx.spinner = ora({ text: 'Generating action plan...', color: 'cyan' }).start();
+  const actionPlan = await generateActionPlan(executionResults, projectDir, {
+    timeout: ctx.timeoutMs,
+  });
+  ctx.spinner.stop();
+  if (actionPlan) {
+    console.log(chalk.green('Action plan generated: NIGHTYTIDY-ACTIONS.md'));
+  } else {
+    console.log(chalk.dim('Action plan skipped (no data or generation failed).'));
+  }
+
   // Generate report
   const startTime = Date.now() - executionResults.totalDuration;
   await generateReport(executionResults, narration, {
@@ -373,12 +386,14 @@ async function finalizeRun(executionResults, projectDir, ctx) {
     originalBranch: ctx.originalBranch,
     startTime,
     endTime: Date.now(),
-  });
+  }, { actionPlan: !!actionPlan });
 
   // Commit report on run branch
   const gitInstance = getGitInstance();
   try {
-    await gitInstance.add(['NIGHTYTIDY-REPORT.md', 'CLAUDE.md']);
+    const filesToCommit = ['NIGHTYTIDY-REPORT.md', 'CLAUDE.md'];
+    if (actionPlan) filesToCommit.push('NIGHTYTIDY-ACTIONS.md');
+    await gitInstance.add(filesToCommit);
     await gitInstance.commit('NightyTidy: Add run report and update CLAUDE.md');
   } catch (err) {
     warn(`Failed to commit report: ${err.message}`);

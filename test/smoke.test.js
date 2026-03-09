@@ -95,7 +95,7 @@ describe('smoke tests', () => {
   // 4. Steps data is structurally valid (critical path for execution)
   // -------------------------------------------------------------------------
   it('steps data exports 33 valid steps and special prompts', async () => {
-    const { STEPS, DOC_UPDATE_PROMPT, CHANGELOG_PROMPT } = await import('../src/prompts/loader.js');
+    const { STEPS, DOC_UPDATE_PROMPT, CHANGELOG_PROMPT, CONSOLIDATION_PROMPT } = await import('../src/prompts/loader.js');
 
     // Must have exactly 33 steps
     expect(STEPS).toHaveLength(33);
@@ -115,6 +115,7 @@ describe('smoke tests', () => {
     // Special prompts exist and are non-trivial
     expect(DOC_UPDATE_PROMPT.length).toBeGreaterThan(100);
     expect(CHANGELOG_PROMPT.length).toBeGreaterThan(100);
+    expect(CONSOLIDATION_PROMPT.length).toBeGreaterThan(100);
   });
 
   // -------------------------------------------------------------------------

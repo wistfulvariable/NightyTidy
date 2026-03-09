@@ -49,7 +49,7 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
 6. **`setupGitAndPreChecks()`**: `initGit()` → `excludeEphemeralFiles()` → spinner + `runPreChecks()`
 7. **Step selection**: `@inquirer/checkbox` or `--all`/`--steps` parsing
 8. **`executeRunFlow()`**: dashboard → git branching → notify → spinner + `executeSteps()` → abort handling
-9. **`finalizeRun()`**: changelog → report → commit → merge → summary → dashboard shutdown
+9. **`finalizeRun()`**: changelog → action plan → report → commit → merge → summary → dashboard shutdown
 
 ## Abort Handling (SIGINT)
 

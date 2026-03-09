@@ -6,7 +6,7 @@ Assumes CLAUDE.md loaded. Report logic in `src/report.js`.
 
 | Function | Purpose |
 |----------|---------|
-| `generateReport(results, narration, metadata)` | Writes NIGHTYTIDY-REPORT.md + updates CLAUDE.md |
+| `generateReport(results, narration, metadata, { actionPlan })` | Writes NIGHTYTIDY-REPORT.md + updates CLAUDE.md. Optional `actionPlan` flag adds link to NIGHTYTIDY-ACTIONS.md |
 | `formatDuration(ms)` | Format milliseconds to human-readable string |
 | `getVersion()` | Returns version from package.json (lazy-cached, defaults to '0.1.0' on error) |
 
@@ -28,6 +28,9 @@ Assumes CLAUDE.md loaded. Report logic in `src/report.js`.
 ## Failed Steps          ← Only if failedCount > 0
 ### Step N: Name
 - Error, Attempts, Suggestion
+
+## Action Plan           ← Only if actionPlan generated
+- Link to NIGHTYTIDY-ACTIONS.md
 
 ## How to Undo This Run
 - Claude Code instruction + git command

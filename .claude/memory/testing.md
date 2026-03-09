@@ -1,6 +1,6 @@
 # Testing — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. 447 tests, 28 files, Vitest v3.
+Assumes CLAUDE.md loaded. 466 tests, 29 files, Vitest v3.
 
 ## Test File -> Module Coverage
 
@@ -17,9 +17,10 @@ Assumes CLAUDE.md loaded. 447 tests, 28 files, Vitest v3.
 | `git.test.js` | `git.js` | 16 |
 | `git-extended.test.js` | `git.js` | 7 |
 | `notifications.test.js` | `notifications.js` | 2 |
-| `report.test.js` | `report.js` | 7 |
+| `report.test.js` | `report.js` | 9 |
 | `report-extended.test.js` | `report.js` | 15 |
-| `steps.test.js` | `prompts/loader.js` | 8 |
+| `consolidation.test.js` | `consolidation.js` | 16 |
+| `steps.test.js` | `prompts/loader.js` | 9 |
 | `integration.test.js` | Multi-module | 5 |
 | `setup.test.js` | `setup.js` | 7 |
 | `cli-extended.test.js` | `cli.js` | 31 |

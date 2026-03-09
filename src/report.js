@@ -100,7 +100,7 @@ function buildUndoSection(metadata) {
   );
 }
 
-export function generateReport(results, narration, metadata) {
+export function generateReport(results, narration, metadata, { actionPlan = false } = {}) {
   const date = formatDate(metadata.startTime);
 
   let report = `# NightyTidy Report \u2014 ${date}\n\n`;
@@ -116,6 +116,10 @@ export function generateReport(results, narration, metadata) {
 
   if (results.failedCount > 0) {
     report += buildFailedSection(results);
+  }
+
+  if (actionPlan) {
+    report += `## Action Plan\n\nA prioritized action plan has been generated: [\`NIGHTYTIDY-ACTIONS.md\`](./NIGHTYTIDY-ACTIONS.md)\n\n`;
   }
 
   report += buildUndoSection(metadata);

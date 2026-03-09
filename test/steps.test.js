@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
-import { STEPS, DOC_UPDATE_PROMPT, CHANGELOG_PROMPT } from '../src/prompts/loader.js';
+import { STEPS, DOC_UPDATE_PROMPT, CHANGELOG_PROMPT, CONSOLIDATION_PROMPT } from '../src/prompts/loader.js';
 
 describe('STEPS', () => {
   it('has exactly 33 entries', () => {
@@ -63,5 +63,12 @@ describe('CHANGELOG_PROMPT', () => {
   it('is a non-empty string', () => {
     expect(typeof CHANGELOG_PROMPT).toBe('string');
     expect(CHANGELOG_PROMPT.trim().length).toBeGreaterThan(0);
+  });
+});
+
+describe('CONSOLIDATION_PROMPT', () => {
+  it('is a non-empty string', () => {
+    expect(typeof CONSOLIDATION_PROMPT).toBe('string');
+    expect(CONSOLIDATION_PROMPT.trim().length).toBeGreaterThan(0);
   });
 });

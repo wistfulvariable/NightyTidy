@@ -4,7 +4,7 @@
  * Reads manifest.json for step ordering and display names,
  * then loads each prompt's content from steps/*.md files.
  * Exports the same interface as the old steps.js: STEPS array
- * of { number, name, prompt } plus DOC_UPDATE_PROMPT and CHANGELOG_PROMPT.
+ * of { number, name, prompt } plus DOC_UPDATE_PROMPT, CHANGELOG_PROMPT, and CONSOLIDATION_PROMPT.
  */
 
 import { readFileSync } from 'fs';
@@ -28,3 +28,5 @@ export const STEPS = manifest.steps.map((entry, index) => ({
 export const DOC_UPDATE_PROMPT = loadFile('specials', 'doc-update.md');
 
 export const CHANGELOG_PROMPT = loadFile('specials', 'changelog.md');
+
+export const CONSOLIDATION_PROMPT = loadFile('specials', 'consolidation.md');

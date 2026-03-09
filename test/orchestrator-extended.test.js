@@ -77,6 +77,10 @@ vi.mock('../src/lock.js', () => ({
   releaseLock: vi.fn(),
 }));
 
+vi.mock('../src/consolidation.js', () => ({
+  generateActionPlan: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock('../src/prompts/loader.js', () => ({
   STEPS: [
     { number: 1, name: 'Documentation', prompt: 'Fix docs' },
@@ -85,6 +89,7 @@ vi.mock('../src/prompts/loader.js', () => ({
   ],
   DOC_UPDATE_PROMPT: 'Update docs',
   CHANGELOG_PROMPT: 'Generate changelog',
+  CONSOLIDATION_PROMPT: 'Consolidate actions',
 }));
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';

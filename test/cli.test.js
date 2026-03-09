@@ -80,6 +80,11 @@ vi.mock('../src/prompts/loader.js', () => ({
     { number: 2, name: 'Format', prompt: 'format the code' },
   ],
   CHANGELOG_PROMPT: 'generate changelog',
+  CONSOLIDATION_PROMPT: 'consolidate actions',
+}));
+
+vi.mock('../src/consolidation.js', () => ({
+  generateActionPlan: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../src/executor.js', () => ({
@@ -282,6 +287,7 @@ describe('cli.js run()', () => {
     expect(generateReport).toHaveBeenCalledWith(
       expect.any(Object),
       null,
+      expect.any(Object),
       expect.any(Object),
     );
   });

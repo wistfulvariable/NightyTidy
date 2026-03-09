@@ -47,6 +47,7 @@ src/
   lock.js                  # Atomic lock file to prevent concurrent runs (async with TTY prompt)
   logger.js                # File + stdout logger with chalk coloring
   report.js                # NIGHTYTIDY-REPORT.md generation + CLAUDE.md update
+  consolidation.js         # Post-run action plan — consolidates step recommendations into NIGHTYTIDY-ACTIONS.md
   setup.js                 # --setup command: generates CLAUDE.md integration snippet for target projects
   prompts/
     manifest.json          # Step ordering + display names (33 entries)
@@ -65,9 +66,10 @@ test/
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 7 tests — getGitInstance, getHeadHash, tag/branch collision
   notifications.test.js    # 2 tests — mock node-notifier
-  report.test.js           # 7 tests — mock fs, verify report format
+  report.test.js           # 9 tests — mock fs, verify report format, actionPlan option
   report-extended.test.js  # 15 tests — updateClaudeMd, formatDuration edge cases
-  steps.test.js            # 8 tests — structural integrity of prompt data + manifest validation
+  consolidation.test.js    # 16 tests — buildConsolidationPrompt, generateActionPlan, error handling
+  steps.test.js            # 9 tests — structural integrity of prompt data + manifest validation
   integration.test.js      # 5 tests — multi-module integration with real git repos
   setup.test.js            # 7 tests — integration snippet generation, idempotent setup
   dashboard-tui.test.js    # 29 tests — formatMs, progressBar, render with chalk proxy mock
@@ -123,8 +125,9 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/lock.js` | Atomic lock file — prevents concurrent runs (async, TTY override prompt) | readline, logger |
 | `src/logger.js` | File + stdout logger (universal dep) | none |
 | `src/report.js` | Report generation + CLAUDE.md update + `getVersion()` | logger |
+| `src/consolidation.js` | Post-run action plan — consolidates step outputs into tiered recommendations | claude, logger, executor, prompts/loader, report |
 | `src/setup.js` | `--setup` command: CLAUDE.md integration for target projects | logger, prompts/loader |
-| `src/prompts/loader.js` | Loads 33 prompts from markdown files via manifest.json | fs (data loader) |
+| `src/prompts/loader.js` | Loads 33 prompts + special prompts (doc-update, changelog, consolidation) from markdown files via manifest.json | fs (data loader) |
 | `gui/server.js` | Desktop GUI backend — HTTP server + native folder dialog + Chrome launcher | node:http, node:fs, node:child_process |
 | `gui/resources/logic.js` | GUI pure logic — command building, JSON parsing, formatting | none (browser + Node.js dual) |
 | `gui/resources/app.js` | GUI state machine — screen transitions, process spawning, progress polling | logic.js, server.js (via fetch) |
@@ -203,6 +206,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | `nightytidy-progress.json` | Live progress state (read by TUI window) | No (deleted on stop) |
 | `nightytidy-dashboard.url` | Dashboard URL — Claude reads this and shares with user | No (deleted on stop) |
 | `NIGHTYTIDY-REPORT.md` | Run summary with step results | Yes (on run branch) |
+| `NIGHTYTIDY-ACTIONS.md` | Consolidated prioritized action plan from all step recommendations | Yes (on run branch) |
 | `CLAUDE.md` (appended section) | "NightyTidy — Last Run" with undo tag | Yes (on run branch) |
 | `nightytidy.lock` | Prevents concurrent runs (PID + timestamp) | No (auto-removed on exit; persistent in orchestrator mode) |
 | `nightytidy-run-state.json` | Orchestrator run state (steps, results, branch info) | No (deleted by --finish-run) |
@@ -212,7 +216,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 ## What NOT to Do
 
 - **Don't add `require()`** — ESM only, no CommonJS
-- **Don't throw from `claude.js`, `executor.js`, or `orchestrator.js`** — they must return result objects
+- **Don't throw from `claude.js`, `executor.js`, `orchestrator.js`, or `consolidation.js`** — they must return result objects (consolidation returns `null` on failure)
 - **Don't change loader.js export shape** — 33 steps with `{ number, name, prompt }` validated by tests. Edit prompt content in `src/prompts/steps/*.md`, not in loader.js
 - **Don't remove the logger mock** from any test — it will crash trying to write log files
 - **Don't make notifications blocking** — they must be fire-and-forget
@@ -252,6 +256,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | `notifications.js` | **Swallows all errors** silently (try/catch in `notify()`) |
 | `dashboard.js` | **Swallows all errors** silently — dashboard failure must not crash a run |
 | `report.js` | **Warns but never throws** (report failure must not crash a run) |
+| `consolidation.js` | **Warns but never throws** → returns `null` on failure (action plan is optional) |
 | `orchestrator.js` | **Never throws** → returns `{ success: false, error }` on failure |
 | `setup.js` | **Writes to filesystem** → returns `'created'`/`'appended'`/`'updated'` |
 | `cli.js` `run()` | **Top-level try/catch** catches everything |
@@ -273,8 +278,9 @@ bin/nightytidy.js
         ├── src/dashboard.js         → crypto, logger, child_process, dashboard-html
         │     └── src/dashboard-html.js  (no deps — HTML template only)
         ├── src/dashboard-tui.js     (standalone — chalk only, spawned by dashboard.js)
+        ├── src/consolidation.js     → claude, logger, executor, prompts/loader, report
         ├── src/setup.js             → logger, prompts/loader
-        ├── src/orchestrator.js      → logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone
+        ├── src/orchestrator.js      → logger, checks, git, claude, executor, lock, report, consolidation, notifications, prompts, dashboard-standalone
         │     └── src/dashboard-standalone.js → dashboard-html (standalone detached process)
         └── src/report.js            → logger  (cli.js imports formatDuration + getVersion)
 ```
@@ -291,7 +297,7 @@ bin/nightytidy.js
 4. **Git setup**: Save branch → safety tag → run branch
 5. **Execution**: Run each step (improvement + doc update in same session via `--continue`), with fallback commits
 6. **Abort handling**: SIGINT generates partial report; second SIGINT force-exits
-7. **Reporting**: Changelog → NIGHTYTIDY-REPORT.md → commit → merge back to original branch
+7. **Reporting**: Changelog → action plan (NIGHTYTIDY-ACTIONS.md) → NIGHTYTIDY-REPORT.md → commit → merge back to original branch
 8. **Notifications**: Desktop notifications at start, on step failure, and on completion
 
 ### Orchestrator Mode (Claude Code)

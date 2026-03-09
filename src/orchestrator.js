@@ -11,6 +11,7 @@ import { STEPS, CHANGELOG_PROMPT } from './prompts/loader.js';
 import { executeSingleStep, SAFETY_PREAMBLE } from './executor.js';
 import { notify } from './notifications.js';
 import { generateReport, formatDuration, getVersion } from './report.js';
+import { generateActionPlan } from './consolidation.js';
 import { acquireLock, releaseLock } from './lock.js';
 
 const PROGRESS_FILENAME = 'nightytidy-progress.json';
@@ -75,7 +76,7 @@ function buildExecutionResults(state) {
     results: allStepResults.map(s => ({
       step: { number: s.number, name: s.name },
       status: s.status,
-      output: '',
+      output: s.output || '',
       duration: s.duration,
       attempts: s.attempts,
       error: s.status === 'failed' ? 'Step failed during orchestrated run' : null,
@@ -333,7 +334,8 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
     const result = await executeSingleStep(step, projectDir, { timeout: stepTimeout, onOutput });
 
     // Update state
-    const entry = { number: step.number, name: step.name, status: result.status, duration: result.duration, attempts: result.attempts };
+    const output = result.status === 'completed' ? (result.output || '').slice(0, 6000) : '';
+    const entry = { number: step.number, name: step.name, status: result.status, duration: result.duration, attempts: result.attempts, output };
     if (result.status === 'completed') {
       state.completedSteps.push(entry);
     } else {
@@ -392,6 +394,11 @@ export async function finishRun(projectDir) {
       if (!narration) warn('Orchestrator: narrated changelog generation failed — using fallback text');
     }
 
+    // Consolidated action plan
+    const actionPlan = await generateActionPlan(executionResults, projectDir, {
+      timeout: state.timeout || undefined,
+    });
+
     // Generate report
     generateReport(executionResults, narration, {
       projectDir,
@@ -400,12 +407,14 @@ export async function finishRun(projectDir) {
       originalBranch: state.originalBranch,
       startTime: state.startTime,
       endTime: Date.now(),
-    });
+    }, { actionPlan: !!actionPlan });
 
     // Commit report
     const gitInstance = getGitInstance();
     try {
-      await gitInstance.add(['NIGHTYTIDY-REPORT.md', 'CLAUDE.md']);
+      const filesToCommit = ['NIGHTYTIDY-REPORT.md', 'CLAUDE.md'];
+      if (actionPlan) filesToCommit.push('NIGHTYTIDY-ACTIONS.md');
+      await gitInstance.add(filesToCommit);
       await gitInstance.commit('NightyTidy: Add run report and update CLAUDE.md');
     } catch (err) {
       warn(`Failed to commit report: ${err.message}`);
@@ -440,6 +449,7 @@ export async function finishRun(projectDir) {
       merged: mergeResult.success,
       mergeConflict: mergeResult.conflict || false,
       reportPath: 'NIGHTYTIDY-REPORT.md',
+      actionsPath: actionPlan ? 'NIGHTYTIDY-ACTIONS.md' : null,
       tagName: state.tagName,
       runBranch: state.runBranch,
     });

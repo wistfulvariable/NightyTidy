@@ -69,6 +69,27 @@ describe('generateReport', () => {
     expect(reportContent).toContain('2 steps completed successfully');
     expect(reportContent).toContain('Try re-running the changelog step individually');
   });
+
+  it('includes Action Plan section when actionPlan option is true', async () => {
+    const results = makeResults({ completedCount: 2, failedCount: 0 });
+    const metadata = makeMetadata();
+
+    await generateReport(results, 'Narration.', metadata, { actionPlan: true });
+
+    const reportContent = writeFileSync.mock.calls[0][1];
+    expect(reportContent).toContain('## Action Plan');
+    expect(reportContent).toContain('NIGHTYTIDY-ACTIONS.md');
+  });
+
+  it('omits Action Plan section when actionPlan option is false or absent', async () => {
+    const results = makeResults({ completedCount: 2, failedCount: 0 });
+    const metadata = makeMetadata();
+
+    await generateReport(results, 'Narration.', metadata);
+
+    const reportContent = writeFileSync.mock.calls[0][1];
+    expect(reportContent).not.toContain('## Action Plan');
+  });
 });
 
 describe('formatDuration', () => {

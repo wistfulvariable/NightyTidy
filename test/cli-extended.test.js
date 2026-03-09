@@ -81,6 +81,11 @@ vi.mock('../src/prompts/loader.js', () => ({
     { number: 3, name: 'Test', prompt: 'test the code' },
   ],
   CHANGELOG_PROMPT: 'generate changelog',
+  CONSOLIDATION_PROMPT: 'consolidate actions',
+}));
+
+vi.mock('../src/consolidation.js', () => ({
+  generateActionPlan: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock('../src/executor.js', () => ({

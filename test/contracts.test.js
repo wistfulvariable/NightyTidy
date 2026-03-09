@@ -266,6 +266,7 @@ describe('contract: executor.js — never throws, returns result object', () => 
     vi.doMock('../src/prompts/loader.js', () => ({
       STEPS: [],
       DOC_UPDATE_PROMPT: 'mock doc update',
+      CONSOLIDATION_PROMPT: 'mock consolidation',
     }));
   });
 
@@ -474,14 +475,17 @@ describe('contract: steps.js — data shape', () => {
     }
   });
 
-  it('exports DOC_UPDATE_PROMPT and CHANGELOG_PROMPT as non-empty strings', async () => {
-    const { DOC_UPDATE_PROMPT, CHANGELOG_PROMPT } = await import('../src/prompts/loader.js');
+  it('exports DOC_UPDATE_PROMPT, CHANGELOG_PROMPT, and CONSOLIDATION_PROMPT as non-empty strings', async () => {
+    const { DOC_UPDATE_PROMPT, CHANGELOG_PROMPT, CONSOLIDATION_PROMPT } = await import('../src/prompts/loader.js');
 
     expect(typeof DOC_UPDATE_PROMPT).toBe('string');
     expect(DOC_UPDATE_PROMPT.length).toBeGreaterThan(50);
 
     expect(typeof CHANGELOG_PROMPT).toBe('string');
     expect(CHANGELOG_PROMPT.length).toBeGreaterThan(50);
+
+    expect(typeof CONSOLIDATION_PROMPT).toBe('string');
+    expect(CONSOLIDATION_PROMPT.length).toBeGreaterThan(50);
   });
 });
 
@@ -693,6 +697,7 @@ describe('contract: executor.js — callbacks are optional and receive correct a
     vi.doMock('../src/prompts/loader.js', () => ({
       STEPS: [],
       DOC_UPDATE_PROMPT: 'mock doc update',
+      CONSOLIDATION_PROMPT: 'mock consolidation',
     }));
   });
 
@@ -914,10 +919,15 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
       releaseLock: vi.fn(),
     }));
 
+    vi.doMock('../src/consolidation.js', () => ({
+      generateActionPlan: vi.fn().mockResolvedValue(null),
+    }));
+
     vi.doMock('../src/prompts/loader.js', () => ({
       STEPS: [{ number: 1, name: 'Test', prompt: 'test' }],
       DOC_UPDATE_PROMPT: 'doc',
       CHANGELOG_PROMPT: 'log',
+      CONSOLIDATION_PROMPT: 'consolidate',
     }));
   });
 
@@ -932,6 +942,7 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
     vi.doUnmock('../src/notifications.js');
     vi.doUnmock('../src/report.js');
     vi.doUnmock('../src/lock.js');
+    vi.doUnmock('../src/consolidation.js');
     vi.doUnmock('../src/prompts/loader.js');
     vi.restoreAllMocks();
   });
