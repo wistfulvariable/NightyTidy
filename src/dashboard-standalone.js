@@ -11,6 +11,7 @@ import { randomBytes } from 'crypto';
 import { getHTML } from './dashboard-html.js';
 
 const POLL_INTERVAL = 500;
+const MAX_BODY_BYTES = 1024; // 1 KB — stop endpoint only needs a small JSON body
 
 const projectDir = process.argv[2];
 if (!projectDir) {
@@ -86,7 +87,15 @@ function handleRequest(req, res) {
   } else if (req.method === 'POST' && req.url === '/stop') {
     // CSRF-protected stop endpoint — no-op in orchestrator mode (abort is handled externally)
     let body = '';
-    req.on('data', chunk => { body += chunk; });
+    req.on('data', chunk => {
+      body += chunk;
+      if (body.length > MAX_BODY_BYTES) {
+        req.destroy();
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Request body too large' }));
+        return;
+      }
+    });
     req.on('end', () => {
       try {
         const parsed = JSON.parse(body || '{}');

@@ -12,6 +12,7 @@ const URL_FILENAME = 'nightytidy-dashboard.url';
 const PROGRESS_FILENAME = 'nightytidy-progress.json';
 const OUTPUT_BUFFER_SIZE = 100 * 1024; // 100KB rolling buffer per step
 const OUTPUT_WRITE_INTERVAL = 500; // ms — throttle disk writes for output
+const MAX_BODY_BYTES = 1024; // 1 KB — stop endpoint only needs a small JSON body
 
 let server = null;
 let sseClients = new Set();
@@ -61,7 +62,15 @@ function handleSSE(res) {
 
 function handleStop(req, res, onStop) {
   let body = '';
-  req.on('data', chunk => { body += chunk; });
+  req.on('data', chunk => {
+    body += chunk;
+    if (body.length > MAX_BODY_BYTES) {
+      req.destroy();
+      res.writeHead(413, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Request body too large' }));
+      return;
+    }
+  });
   req.on('end', () => {
     // Verify CSRF token to prevent cross-origin stop requests
     try {

@@ -8,7 +8,7 @@ import { createServer } from 'node:http';
 import { readFile, stat } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import { spawn, execSync } from 'node:child_process';
-import { join, extname, resolve } from 'node:path';
+import { join, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -41,8 +41,10 @@ async function serveStatic(res, urlPath) {
   const safePath = urlPath === '/' ? '/index.html' : urlPath;
   const filePath = join(RESOURCES_DIR, safePath);
 
-  // Prevent directory traversal
-  if (!filePath.startsWith(RESOURCES_DIR)) {
+  // Prevent directory traversal — use trailing separator to avoid prefix
+  // confusion (e.g. "resources-extra" matching "resources")
+  const boundary = RESOURCES_DIR.endsWith(sep) ? RESOURCES_DIR : RESOURCES_DIR + sep;
+  if (!filePath.startsWith(boundary) && filePath !== RESOURCES_DIR) {
     res.writeHead(403);
     res.end('Forbidden');
     return;
@@ -246,6 +248,7 @@ function readBody(req) {
 function sendJson(res, data, status = 200) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
+    ...SECURITY_HEADERS,
   });
   res.end(JSON.stringify(data));
 }

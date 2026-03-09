@@ -7,6 +7,7 @@ Assumes CLAUDE.md loaded. Progress display in `src/dashboard.js` + `src/dashboar
 | Constant | Value | File |
 |----------|-------|------|
 | `SHUTDOWN_DELAY` | 3,000 ms | dashboard.js |
+| `MAX_BODY_BYTES` | 1,024 bytes | dashboard.js, dashboard-standalone.js |
 | `POLL_INTERVAL` | 1,000 ms | dashboard-tui.js |
 | `POLL_INTERVAL` | 500 ms | dashboard-standalone.js |
 | `EXIT_DELAY` | 5,000 ms | dashboard-tui.js |
@@ -51,7 +52,7 @@ Updated by `cli.js` callbacks -> passed to `updateDashboard()` -> written to JSO
 
 - `GET /` -> HTML dashboard (inline CSS/JS, dark theme, real-time updates). Security headers: CSP, X-Frame-Options: DENY, X-Content-Type-Options: nosniff
 - `GET /events` -> SSE stream (text/event-stream, no-cache). No security headers (SSE streams).
-- `POST /stop` -> CSRF-protected. Requires `{ token }` body matching server-generated token. Returns 403 on invalid token, 200 with `{ ok: true }` on valid. Dashboard calls `onStop` callback; standalone returns `{ ok: true, message: 'Stop not supported in orchestrator mode' }`.
+- `POST /stop` -> CSRF-protected. Requires `{ token }` body matching server-generated token. Returns 403 on invalid token, 413 if body exceeds 1 KB, 200 with `{ ok: true }` on valid. Dashboard calls `onStop` callback; standalone returns `{ ok: true, message: 'Stop not supported in orchestrator mode' }`.
 - Unknown routes -> 404 plain text (no security headers)
 - Error responses on `/stop` use `{ error: string }` shape (no `ok` field). This differs from GUI server which always includes `ok: false`.
 

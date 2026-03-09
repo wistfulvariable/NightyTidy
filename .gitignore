@@ -3,11 +3,16 @@ coverage/
 nightytidy-run.log
 nightytidy-progress.json
 nightytidy-dashboard.url
+nightytidy-run-state.json
 nightytidy.lock
 *.log
 .env
 .env.*
 .DS_Store
+Thumbs.db
+
+# Repomix output (generated packing files)
+repomix-output.*
 
 # Secrets and credentials
 *.pem
