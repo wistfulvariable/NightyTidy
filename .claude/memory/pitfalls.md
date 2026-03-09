@@ -22,7 +22,7 @@ Tries PowerShell `Get-PSDrive` first, falls back to `wmic logicaldisk`. Unix use
 ## Subprocess
 
 ### CLAUDECODE Env Var Blocks Nesting
-Claude Code sets `CLAUDECODE` to prevent nested sessions. Must strip via `cleanEnv()` in both `claude.js` and `checks.js` before spawning.
+Claude Code sets `CLAUDECODE` to prevent nested sessions. Must strip via `cleanEnv()` from `src/env.js` (shared utility imported by both `claude.js` and `checks.js`) before spawning.
 
 ### spawn stdin Defaults to Pipe
 Node.js `spawn()` defaults stdin to `'pipe'`. If piped but never written to, `claude` hangs. Use `stdio: ['ignore', 'pipe', 'pipe']` when not sending via stdin.

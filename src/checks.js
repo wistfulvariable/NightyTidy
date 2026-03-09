@@ -1,18 +1,11 @@
 import { spawn } from 'child_process';
 import { platform } from 'os';
 import { info, debug, warn } from './logger.js';
+import { cleanEnv } from './env.js';
 
 const AUTH_TIMEOUT_MS = 30000;
 const CRITICAL_DISK_MB = 100;
 const LOW_DISK_MB = 1024;
-
-// Remove CLAUDECODE env var so subprocess doesn't refuse to start
-// when NightyTidy is invoked from within a Claude Code session.
-function cleanEnv() {
-  const env = { ...process.env };
-  delete env.CLAUDECODE;
-  return env;
-}
 
 function runCommand(cmd, args, { timeoutMs, ...spawnOptions } = {}) {
   return new Promise((resolve, reject) => {

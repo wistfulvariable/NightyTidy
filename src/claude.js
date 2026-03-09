@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import { platform } from 'os';
 import { info, debug, warn, error as logError } from './logger.js';
+import { cleanEnv } from './env.js';
 
 const DEFAULT_TIMEOUT = 45 * 60 * 1000; // 45 minutes
 const DEFAULT_RETRIES = 3;
@@ -18,15 +19,6 @@ function forceKillChild(child) {
 function timeoutMessage(ms) {
   const minutes = Math.round(ms / 60000);
   return `Claude Code timed out after ${minutes} minutes`;
-}
-
-// Remove CLAUDECODE env var so subprocess doesn't refuse to start
-// when NightyTidy is invoked from within a Claude Code session.
-// Safe because NightyTidy only uses non-interactive `claude -p` calls.
-function cleanEnv() {
-  const env = { ...process.env };
-  delete env.CLAUDECODE;
-  return env;
 }
 
 function sleep(ms, signal) {

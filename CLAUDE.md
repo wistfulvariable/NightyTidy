@@ -36,6 +36,7 @@ src/
   executor.js              # Core step loop — runs prompts sequentially, handles failures + executeSingleStep
   orchestrator.js          # Claude Code orchestrator mode — initRun, runStep, finishRun + dashboard
   claude.js                # Claude Code subprocess wrapper (spawn, retry, timeout, session continue)
+  env.js                   # Shared environment helpers (cleanEnv for CLAUDECODE stripping)
   git.js                   # Git operations — branches, tags, commits, merges
   checks.js                # Pre-run validation (git, Claude CLI, disk space)
   notifications.js         # Desktop notifications (silent on failure)
@@ -109,9 +110,10 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/cli.js` | Commander + Inquirer + full lifecycle | all modules |
 | `src/executor.js` | Core step loop + single-step execution, prompt integrity check | crypto, claude, git, notifications, prompts |
 | `src/orchestrator.js` | Claude Code orchestrator mode (JSON API for step-by-step runs) + dashboard | logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone |
-| `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue) | logger |
+| `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue) | logger, env |
 | `src/git.js` | Git operations via simple-git | logger |
-| `src/checks.js` | Pre-run validation (7 checks) | logger |
+| `src/checks.js` | Pre-run validation (7 checks) | logger, env |
+| `src/env.js` | Shared environment helpers (cleanEnv for CLAUDECODE stripping) | none |
 | `src/notifications.js` | Desktop notifications | logger |
 | `src/dashboard.js` | Progress file + TUI window spawner + HTTP server (CSRF, security headers) | crypto, logger, dashboard-html |
 | `src/dashboard-html.js` | Dashboard HTML template (CSS + client-side JS) | none (data only) |
@@ -256,9 +258,10 @@ NightyTidy creates these files/artifacts in the project it runs against:
 bin/nightytidy.js
   └── src/cli.js
         ├── src/logger.js            (no deps — universal dependency)
-        ├── src/checks.js            → logger
+        ├── src/env.js               (no deps — shared env helpers)
+        ├── src/checks.js            → logger, env
         ├── src/git.js               → logger
-        ├── src/claude.js            → logger
+        ├── src/claude.js            → logger, env
         ├── src/executor.js          → crypto, claude, git, notifications, logger, prompts/loader
         ├── src/prompts/loader.js    → fs (reads manifest.json + markdown files at load time)
         ├── src/lock.js              → readline, logger

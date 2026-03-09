@@ -54,4 +54,6 @@ Two-phase: silent `claude -p "Say OK"` (30s timeout) → interactive `stdio: 'in
 
 Export: `runPrompt(prompt, cwd, { timeout?, retries?, label?, signal? })`
 
-Internal: `cleanEnv()`, `sleep(ms, signal)`, `spawnClaude()`, `waitForChild()`, `runOnce()`
+Internal: `sleep(ms, signal)`, `spawnClaude()`, `waitForChild()`, `runOnce()`
+
+Shared: `cleanEnv()` from `src/env.js` — imported by both `claude.js` and `checks.js`
