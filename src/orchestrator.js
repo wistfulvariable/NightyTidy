@@ -18,6 +18,8 @@ const URL_FILENAME = 'nightytidy-dashboard.url';
 
 const STATE_FILENAME = 'nightytidy-run-state.json';
 const STATE_VERSION = 1;
+const DASHBOARD_STARTUP_TIMEOUT = 5000; // ms — max wait for dashboard server to respond
+const SSE_FLUSH_DELAY = 500; // ms — brief delay to let last SSE event reach clients
 
 function statePath(projectDir) {
   return path.join(projectDir, STATE_FILENAME);
@@ -160,7 +162,7 @@ function spawnDashboardServer(projectDir) {
         child.unref();
         warn('Dashboard server did not respond in time — continuing without dashboard');
         resolve(null);
-      }, 5000);
+      }, DASHBOARD_STARTUP_TIMEOUT);
 
       child.stdout.on('data', (chunk) => {
         output += chunk.toString();
@@ -401,8 +403,7 @@ export async function finishRun(projectDir) {
 
     // Stop dashboard server and clean up
     stopDashboardServer(state.dashboardPid);
-    // Brief delay to let last SSE event reach clients
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, SSE_FLUSH_DELAY));
     cleanupDashboard(projectDir);
     releaseLock(projectDir);
     deleteState(projectDir);
