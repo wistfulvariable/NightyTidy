@@ -74,6 +74,19 @@ Suite passed 3/3 consecutive runs, 0 flaky tests. Key timing patterns are safe:
 - `dashboard.test.js`: polling-based SSE event waits (no fixed delays, proper timeouts)
 - `lock.test.js`: 5-second tolerance for timestamp freshness check (generous)
 
+## Test Architecture Audit Findings (2026-03-09)
+
+See `audit-reports/04_TEST_ARCHITECTURE_REPORT.md` for full report (404 tests, 27 files).
+
+**Antipatterns found**:
+- `gui-server.test.js`: decorative — re-implements routing (~120 LOC) instead of testing actual `gui/server.js` (side-effect imports block direct testing)
+- Duplicated `makeInitialState()` in `dashboard.test.js`, `dashboard-extended.test.js`, `dashboard-broadcastoutput.test.js` — extract to `test/helpers/testdata.js`
+- Duplicated `createMockChildProcess()` in `orchestrator.test.js` + `orchestrator-extended.test.js` — extract to `test/helpers/mocks.js`
+- Duplicated mock block + `makeExecutionResults()` in `cli.test.js` + `cli-extended.test.js` — shared via extended importing from base
+- `gui/resources/app.js` has zero test coverage (state machine, ~400 LOC)
+
+**Strengths confirmed**: contract tests, real git integration tests, testing pyramid ratio (61% unit, 24% integration, 9% contract, 6% smoke+structural)
+
 ## Contract Test Coverage
 
 `contracts.test.js` verifies documented error handling contracts from CLAUDE.md:

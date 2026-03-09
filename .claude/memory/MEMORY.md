@@ -15,7 +15,7 @@ NightyTidy: automated overnight codebase improvement via Claude Code subprocess 
 - Orchestrator mode: `--init-run`, `--run-step`, `--finish-run` for Claude Code-driven workflows
 - Prompt refactor: monolithic `steps.js` replaced with `manifest.json` + individual markdown files in `src/prompts/`
 - Dashboard standalone server for orchestrator mode (`dashboard-standalone.js`)
-- GUI test coverage: `gui-logic.test.js` (39 tests), `gui-server.test.js` (13 tests)
+- GUI test coverage: `gui-logic.test.js` (39 tests), `gui-server.test.js` (26 tests)
 
 ## Topic Files
 
