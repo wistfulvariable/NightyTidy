@@ -49,10 +49,10 @@ For each step in `selectedSteps`:
   completedCount: number,
   failedCount: number,
 }
-// cost: { costUSD, numTurns, durationApiMs, sessionId } | null
+// cost: { costUSD, inputTokens, outputTokens, numTurns, durationApiMs, sessionId } | null
 ```
 
-Each step's cost = improvement cost + doc-update cost (summed via `sumCosts()`). Failed steps have `cost: null`.
+Each step's cost = improvement cost + doc-update cost (summed via `sumCosts()`). `sumCosts()` adds all numeric fields; token fields are `null` when both inputs lack them. Failed steps have `cost: null`.
 
 ## Key Behaviors
 

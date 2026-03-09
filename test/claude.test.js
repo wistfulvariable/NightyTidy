@@ -716,6 +716,7 @@ describe('runPrompt', () => {
         num_turns: 5,
         result: 'Refactored the authentication module.',
         session_id: 'sess-abc-123',
+        usage: { input_tokens: 100, cache_creation_input_tokens: 500, cache_read_input_tokens: 200, output_tokens: 50 },
       });
 
       setupSpawnSequence((child) => {
@@ -729,6 +730,8 @@ describe('runPrompt', () => {
       expect(result.output).toBe('Refactored the authentication module.');
       expect(result.cost).toEqual({
         costUSD: 0.0512,
+        inputTokens: 800,
+        outputTokens: 50,
         numTurns: 5,
         durationApiMs: 2100,
         sessionId: 'sess-abc-123',
@@ -741,7 +744,7 @@ describe('runPrompt', () => {
         JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Step 1' }] } }),
         JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/src/main.js' } }] } }),
         JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', content: 'file data' }] } }),
-        JSON.stringify({ type: 'result', result: 'All done.', total_cost_usd: 0.10, num_turns: 3, duration_api_ms: 5000, session_id: 'sess-1' }),
+        JSON.stringify({ type: 'result', result: 'All done.', total_cost_usd: 0.10, num_turns: 3, duration_api_ms: 5000, session_id: 'sess-1', usage: { input_tokens: 50, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 30 } }),
       ].join('\n') + '\n';
 
       setupSpawnSequence((child) => {
@@ -755,6 +758,8 @@ describe('runPrompt', () => {
       expect(result.output).toBe('All done.');
       expect(result.cost).toEqual({
         costUSD: 0.10,
+        inputTokens: 50,
+        outputTokens: 30,
         numTurns: 3,
         durationApiMs: 5000,
         sessionId: 'sess-1',
@@ -782,6 +787,7 @@ describe('runPrompt', () => {
         duration_api_ms: 500,
         result: '',
         session_id: 'sess-empty',
+        usage: { input_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 5 },
       });
 
       setupSpawnSequence((child) => {
@@ -795,6 +801,8 @@ describe('runPrompt', () => {
       // Parsed successfully, but empty result = empty output = failure
       expect(result.cost).toEqual({
         costUSD: 0.001,
+        inputTokens: 10,
+        outputTokens: 5,
         numTurns: 1,
         durationApiMs: 500,
         sessionId: 'sess-empty',
@@ -829,6 +837,8 @@ describe('runPrompt', () => {
       expect(result.output).toBe('Done.');
       expect(result.cost).toEqual({
         costUSD: null,
+        inputTokens: null,
+        outputTokens: null,
         numTurns: null,
         durationApiMs: null,
         sessionId: null,
@@ -844,6 +854,7 @@ describe('runPrompt', () => {
         num_turns: 2,
         duration_api_ms: 1000,
         session_id: 'sess-legacy',
+        usage: { input_tokens: 20, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 15 },
       });
 
       setupSpawnSequence((child) => {
@@ -857,6 +868,8 @@ describe('runPrompt', () => {
       expect(result.output).toBe('Legacy output.');
       expect(result.cost).toEqual({
         costUSD: 0.02,
+        inputTokens: 20,
+        outputTokens: 15,
         numTurns: 2,
         durationApiMs: 1000,
         sessionId: 'sess-legacy',

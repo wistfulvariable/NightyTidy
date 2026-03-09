@@ -169,6 +169,32 @@ describe('formatCost', () => {
   });
 });
 
+// ── formatTokens ─────────────────────────────────────────────────
+
+describe('formatTokens', () => {
+  it.each([
+    [30500, '30.5k', 'thousands with decimal'],
+    [1000, '1k', 'exactly 1000 drops .0'],
+    [1500, '1.5k', 'thousands with one decimal'],
+    [142, '142', 'below 1000 raw number'],
+    [999, '999', 'just under 1000'],
+    [100000, '100k', 'large number drops .0'],
+    [1234567, '1234.6k', 'very large rounds'],
+  ])('formats %s -> "%s" (%s)', (input, expected, _desc) => {
+    expect(NtLogic.formatTokens(input)).toBe(expected);
+  });
+
+  it.each([
+    [null, 'null'],
+    [undefined, 'undefined'],
+    [NaN, 'NaN'],
+    [0, 'zero'],
+    [Infinity, 'Infinity'],
+  ])('returns null for %s (%s)', (input, _desc) => {
+    expect(NtLogic.formatTokens(input)).toBeNull();
+  });
+});
+
 // ── buildStepArgs ──────────────────────────────────────────────────
 
 describe('buildStepArgs', () => {

@@ -275,6 +275,8 @@ describe('cost tracking', () => {
 
     expect(result.results[0].cost).toEqual({
       costUSD: 0.10,
+      inputTokens: null,
+      outputTokens: null,
       numTurns: 5,
       durationApiMs: 3500,
       sessionId: 'sess-a',

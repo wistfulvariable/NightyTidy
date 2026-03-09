@@ -55,6 +55,8 @@ function sumCosts(a, b) {
   if (!b) return a;
   return {
     costUSD: (a.costUSD || 0) + (b.costUSD || 0),
+    inputTokens: (a.inputTokens || 0) + (b.inputTokens || 0) || null,
+    outputTokens: (a.outputTokens || 0) + (b.outputTokens || 0) || null,
     numTurns: (a.numTurns || 0) + (b.numTurns || 0),
     durationApiMs: (a.durationApiMs || 0) + (b.durationApiMs || 0),
     sessionId: b.sessionId || a.sessionId,

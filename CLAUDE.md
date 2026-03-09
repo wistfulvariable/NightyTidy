@@ -80,7 +80,7 @@ test/
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
   orchestrator.test.js     # 36 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough
   contracts.test.js        # 38 tests — module API contract verification against CLAUDE.md
-  gui-logic.test.js        # 67 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, detectGitError, detectStaleState, etc.)
+  gui-logic.test.js        # 79 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, detectGitError, detectStaleState, etc.)
   gui-server.test.js       # 36 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, security headers, traversal
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks

@@ -34,16 +34,19 @@ Exit 0 with empty stdout → failure → retry. Non-zero exit → failure → re
 
 ## Output Format
 
-All calls include `--output-format stream-json --verbose`. Claude CLI v2.1.29+ requires `--verbose` when combining `--print` with `--output-format stream-json` (without it, CLI exits 1 immediately). NDJSON events stream in real-time; final line is a `result` event with `total_cost_usd`, `num_turns`, `duration_api_ms`. `parseJsonOutput()` extracts these into the result object. Falls back gracefully if output isn't valid JSON (old CLI → `cost: null`).
+All calls include `--output-format stream-json --verbose`. Claude CLI v2.1.29+ requires `--verbose` when combining `--print` with `--output-format stream-json` (without it, CLI exits 1 immediately). NDJSON events stream in real-time; final line is a `result` event with `total_cost_usd`, `num_turns`, `duration_api_ms`, and `usage` (token counts). `parseJsonOutput()` extracts these into the result object. Falls back gracefully if output isn't valid JSON (old CLI → `cost: null`).
 
 ## Result Object
 
 ```js
 { success, output, error, exitCode, duration, attempts, cost }
-// cost: { costUSD, numTurns, durationApiMs, sessionId } | null
+// cost: { costUSD, inputTokens, outputTokens, numTurns, durationApiMs, sessionId } | null
 ```
 
-`exitCode: -1` for internal errors. `attempts`: 1-based count. `cost: null` on failure, abort, or when CLI doesn't support JSON output.
+- `costUSD`: server-computed total cost (not calculated locally — no model pricing needed)
+- `inputTokens`: sum of `usage.input_tokens + cache_creation_input_tokens + cache_read_input_tokens` (total input context)
+- `outputTokens`: `usage.output_tokens`
+- `exitCode: -1` for internal errors. `attempts`: 1-based count. `cost: null` on failure, abort, or when CLI doesn't support JSON output.
 
 ## Timeout → Retry → Abort
 

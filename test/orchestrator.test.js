@@ -333,13 +333,15 @@ describe('runStep', () => {
       duration: 120000,
       attempts: 1,
       error: null,
-      cost: { costUSD: 0.0512, numTurns: 5, durationApiMs: 2100, sessionId: 'sess-1' },
+      cost: { costUSD: 0.0512, inputTokens: 800, outputTokens: 50, numTurns: 5, durationApiMs: 2100, sessionId: 'sess-1' },
     });
 
     const result = await runStep('/fake/project', 1);
 
     expect(result.success).toBe(true);
     expect(result.costUSD).toBe(0.0512);
+    expect(result.inputTokens).toBe(800);
+    expect(result.outputTokens).toBe(50);
   });
 
   it('stores cost in state file entry', async () => {
@@ -350,7 +352,7 @@ describe('runStep', () => {
       duration: 120000,
       attempts: 1,
       error: null,
-      cost: { costUSD: 0.03, numTurns: 2, durationApiMs: 1500, sessionId: 'sess-x' },
+      cost: { costUSD: 0.03, inputTokens: 600, outputTokens: 40, numTurns: 2, durationApiMs: 1500, sessionId: 'sess-x' },
     });
 
     await runStep('/fake/project', 1);
@@ -358,7 +360,7 @@ describe('runStep', () => {
     const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
     const updatedState = JSON.parse(stateCall[1]);
     expect(updatedState.completedSteps[0].cost).toEqual({
-      costUSD: 0.03, numTurns: 2, durationApiMs: 1500, sessionId: 'sess-x',
+      costUSD: 0.03, inputTokens: 600, outputTokens: 40, numTurns: 2, durationApiMs: 1500, sessionId: 'sess-x',
     });
   });
 
@@ -375,6 +377,8 @@ describe('runStep', () => {
     const result = await runStep('/fake/project', 1);
 
     expect(result.costUSD).toBeNull();
+    expect(result.inputTokens).toBeNull();
+    expect(result.outputTokens).toBeNull();
   });
 
   it('passes suspiciousFast flag through from executeSingleStep', async () => {
@@ -385,7 +389,7 @@ describe('runStep', () => {
       duration: 120000,
       attempts: 2,
       error: null,
-      cost: { costUSD: 0.05, numTurns: 3, durationApiMs: 2000, sessionId: 'sess-1' },
+      cost: { costUSD: 0.05, inputTokens: 500, outputTokens: 30, numTurns: 3, durationApiMs: 2000, sessionId: 'sess-1' },
       suspiciousFast: true,
     });
 
