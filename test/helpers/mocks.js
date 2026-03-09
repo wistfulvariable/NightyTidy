@@ -53,10 +53,12 @@ export function createTimeoutProcess() {
 /**
  * Creates a mock simple-git instance for checks.js tests.
  */
-export function createMockGit({ isRepo = true, branches = [], hasCommits = true } = {}) {
+export function createMockGit({ isRepo = true, branches = [], hasCommits = true, status = null } = {}) {
+  const defaultStatus = { modified: [], not_added: [], deleted: [], renamed: [], staged: [] };
   return {
     checkIsRepo: vi.fn().mockResolvedValue(isRepo),
     branch: vi.fn().mockResolvedValue({ all: branches }),
     log: vi.fn().mockResolvedValue({ latest: hasCommits ? { hash: 'abc123' } : null }),
+    status: vi.fn().mockResolvedValue(status || defaultStatus),
   };
 }

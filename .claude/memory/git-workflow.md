@@ -12,7 +12,7 @@ Assumes CLAUDE.md loaded. All git ops in `src/git.js` via `simple-git`.
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| `EPHEMERAL_FILES` | `['nightytidy-run.log', 'nightytidy-progress.json', 'nightytidy-dashboard.url', 'nightytidy-run-state.json']` | Excluded from git tracking |
+| `EPHEMERAL_FILES` | `['nightytidy-run.log', 'nightytidy-progress.json', 'nightytidy-dashboard.url', 'nightytidy-run-state.json', 'nightytidy-run-state.json.tmp']` | Excluded from git tracking |
 | `MAX_NAME_RETRIES` | 10 | Max collision retry attempts for tags/branches |
 
 ## Ephemeral File Exclusion
@@ -47,6 +47,10 @@ After each step:
 1. `git.checkout(originalBranch)` — switch back
 2. `git.merge([runBranch, '--no-ff'])` — always create merge commit
 3. On conflict: `git.merge(['--abort'])`, return `{ success: false, conflict: true }`
+
+## Dirty Working Tree Warning
+
+`checks.js` warns if the user's working tree has uncommitted changes before starting a run. This matters because `createRunBranch()` carries uncommitted changes to the run branch, and `git reset --hard <tag>` to undo would discard them. Added in audit #30.
 
 ## Exported Functions
 

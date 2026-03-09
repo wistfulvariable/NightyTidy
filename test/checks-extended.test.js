@@ -268,6 +268,49 @@ describe('runPreChecks — extended coverage', () => {
     });
   });
 
+  describe('dirty working tree warning', () => {
+    it('warns when there are uncommitted changes', async () => {
+      const { warn } = await import('../src/logger.js');
+
+      mockSpawnForChecks();
+
+      const mockGit = createMockGit({
+        isRepo: true,
+        status: { modified: ['file1.js', 'file2.js'], not_added: [], deleted: [], renamed: [], staged: ['file3.js'] },
+      });
+
+      await runPreChecks('/fake/project', mockGit);
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('3 uncommitted change(s)')
+      );
+    });
+
+    it('does not warn when working tree is clean', async () => {
+      const { warn } = await import('../src/logger.js');
+
+      mockSpawnForChecks();
+
+      const mockGit = createMockGit({ isRepo: true });
+
+      await runPreChecks('/fake/project', mockGit);
+
+      expect(warn).not.toHaveBeenCalledWith(
+        expect.stringContaining('uncommitted change')
+      );
+    });
+
+    it('continues gracefully when status check fails', async () => {
+      mockSpawnForChecks();
+
+      const mockGit = createMockGit({ isRepo: true });
+      mockGit.status.mockRejectedValue(new Error('git status failed'));
+
+      // Should NOT throw — working tree check is non-critical
+      await expect(runPreChecks('/fake/project', mockGit)).resolves.toBeUndefined();
+    });
+  });
+
   describe('git --version non-zero exit', () => {
     it('throws when git --version exits with non-zero code', async () => {
       spawn.mockImplementation((cmd) => {

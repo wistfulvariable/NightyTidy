@@ -206,6 +206,26 @@ async function checkDiskSpace(projectDir) {
   info(`Pre-check: disk space OK (${freeGB} GB free) \u2713`);
 }
 
+async function checkCleanWorkingTree(git) {
+  try {
+    const status = await git.status();
+    const dirtyCount = status.modified.length + status.not_added.length +
+      status.deleted.length + status.renamed.length + status.staged.length;
+    if (dirtyCount > 0) {
+      warn(
+        `You have ${dirtyCount} uncommitted change(s). NightyTidy will carry these to the run branch. ` +
+        'If you undo the run later with git reset --hard, uncommitted changes will be lost. ' +
+        'Consider committing or stashing your work first.'
+      );
+    } else {
+      info('Pre-check: clean working tree \u2713');
+    }
+  } catch {
+    // Non-critical — skip silently
+    debug('Working tree check failed — skipping');
+  }
+}
+
 async function checkExistingBranches(git) {
   try {
     const branches = await git.branch();
@@ -230,6 +250,7 @@ export async function runPreChecks(projectDir, git) {
   const gitChain = async () => {
     await checkGitRepo(git);
     await checkHasCommits(git);
+    await checkCleanWorkingTree(git);
     await checkExistingBranches(git);
   };
   const claudeChain = async () => {

@@ -59,7 +59,7 @@ test/
   dashboard.test.js        # 20 tests — HTTP server start/stop, SSE events, CSRF, stop callback
   logger.test.js           # 10 tests — real file I/O, level filtering, stderr fallback
   checks.test.js           # 4 tests — mock subprocess, mock git
-  checks-extended.test.js  # 12 tests — auth paths, disk space, branch warnings, empty repo
+  checks-extended.test.js  # 15 tests — auth paths, disk space, branch warnings, empty repo, dirty working tree
   claude.test.js           # 25 tests — fake child process, fake timers, abort signal, Windows shell mode
   executor.test.js         # 11 tests — mocks claude, git, notifications, signal propagation
   git.test.js              # 16 tests — real git against temp dirs (integration)
@@ -112,7 +112,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/orchestrator.js` | Claude Code orchestrator mode (JSON API for step-by-step runs) + dashboard | logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone |
 | `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue) | logger, env |
 | `src/git.js` | Git operations via simple-git | logger |
-| `src/checks.js` | Pre-run validation (7 checks) | logger, env |
+| `src/checks.js` | Pre-run validation (8 checks) | logger, env |
 | `src/env.js` | Shared environment helpers (cleanEnv for CLAUDECODE stripping) | none |
 | `src/notifications.js` | Desktop notifications | logger |
 | `src/dashboard.js` | Progress file + TUI window spawner + HTTP server (CSRF, security headers) | crypto, logger, dashboard-html |
@@ -282,7 +282,7 @@ bin/nightytidy.js
 ### Interactive Mode (terminal)
 
 1. **Init**: Logger initialized, welcome screen shown
-2. **Pre-checks**: git installed → git repo → has commits → Claude CLI installed → Claude authenticated → disk space
+2. **Pre-checks**: git installed → git repo → has commits → clean working tree (warns) → Claude CLI installed → Claude authenticated → disk space
 3. **Step selection**: `--all` runs everything; `--steps 1,5,12` picks by number; non-TTY requires `--all` or `--steps` (exits with error otherwise); interactive checkbox otherwise
 4. **Git setup**: Save branch → safety tag → run branch
 5. **Execution**: Run each step (improvement + doc update in same session via `--continue`), with fallback commits
