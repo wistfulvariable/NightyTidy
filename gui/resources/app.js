@@ -536,6 +536,9 @@ function renderSummary(finishData) {
 // ── Reset ──────────────────────────────────────────────────────────
 
 function resetApp() {
+  stopProgressPolling();
+  stopElapsedTimer();
+
   state.steps = [];
   state.selectedSteps = [];
   state.timeout = 45;

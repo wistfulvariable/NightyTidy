@@ -240,6 +240,7 @@ export function stopDashboard() {
   }
 
   csrfToken = null;
+  tuiProcess = null;
 
   if (!server) {
     currentState = null;

@@ -69,13 +69,19 @@ Updated by `cli.js` callbacks -> passed to `updateDashboard()` -> written to JSO
 
 `dashboard-standalone.js` compares raw file content strings (`lastRawJson`) instead of double-`JSON.stringify` to detect changes. This avoids one `JSON.parse` + one `JSON.stringify` per poll cycle when the file hasn't changed (the common case at 500ms polling).
 
-## Shutdown
+## Shutdown & State Cleanup
 
-- `stopDashboard()`: clear broadcastOutput throttle timer -> delete ephemeral files -> close SSE clients -> close HTTP server -> reset state
+- `stopDashboard()`: clear broadcastOutput throttle timer -> delete ephemeral files -> close SSE clients -> close HTTP server -> reset state (`tuiProcess = null` added audit #25)
 - Throttle timer (`outputWriteTimer`) cleared in `stopDashboard()` to prevent stale writes after cleanup (audit #21)
 - Called directly on abort (not `scheduleShutdown()` — `process.exit` kills timers)
 - Orchestrator: `dashboard-standalone.js` killed via SIGTERM by `finishRun()` -> `stopDashboardServer(pid)`. Interval ID stored in `pollIntervalId` and cleared on SIGTERM (previously passed function reference to `clearInterval` by mistake).
 - `dashboard-standalone.js` SIGTERM has 10s force-exit timeout (audit #20). `server.close()` waits for connections; SSE connections never close on their own. Force timer is `.unref()`ed to not block Node's event loop if server closes cleanly.
+
+## Module-Level State (dashboard.js)
+
+11 mutable variables. All reset by `stopDashboard()` except `tuiProcess` (unref'd, self-terminating).
+SSE `outputBuffer` cleared by `clearOutputBuffer()` between steps and on stop.
+Client-side `elapsedInterval` persists across SSE reconnects (correct: reconnect does not clear it).
 
 ## Error Handling
 
