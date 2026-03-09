@@ -77,6 +77,9 @@ test/
   contracts.test.js        # 31 tests — module API contract verification against CLAUDE.md
   gui-logic.test.js        # 39 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, etc.)
   gui-server.test.js       # 13 tests — HTTP server, static file serving, read-file API, HTML structure
+  lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
+  orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks
+  dashboard-broadcastoutput.test.js # 5 tests — buffer overflow, throttled writes, clearOutputBuffer with state
   helpers/
     cleanup.js             # Shared temp directory cleanup with EBUSY retry for Windows
     mocks.js               # Shared mock factories: createMockProcess, createErrorProcess, createMockGit
@@ -297,7 +300,7 @@ Each command is a separate process invocation. State persists via `nightytidy-ru
 ## Testing
 
 - **Framework**: Vitest v2, `vitest.config.js` for coverage thresholds + strip-shebang plugin
-- **Tests** across 24 files — `npm test` to run, `npm run test:ci` for coverage enforcement
+- **Tests** across 27 files — `npm test` to run, `npm run test:ci` for coverage enforcement
 - **Coverage thresholds**: 90% statements, 80% branches, 80% functions — enforced by `test:ci`
 - **Philosophy**: Mock Claude Code subprocess, use real git against temp directories. Test failure paths harder than success paths
 - **Universal mock**: All test files mock `../src/logger.js` to prevent file I/O during tests (exception: `logger.test.js` tests the real logger)

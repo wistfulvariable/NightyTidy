@@ -1,0 +1,327 @@
+/**
+ * Extended tests for src/orchestrator.js — edge cases and error paths.
+ *
+ * Covers:
+ *   - finishRun: git commit failure (warn path)
+ *   - finishRun: unexpected exception → fail() result
+ *   - runStep: step not found in STEPS array
+ *   - initRun: timeout passed through to state
+ *   - state file with wrong version → ignored
+ *   - buildProgressState correctly marks step statuses
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { EventEmitter } from 'events';
+
+vi.mock('fs', () => ({
+  existsSync: vi.fn(),
+  readFileSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  unlinkSync: vi.fn(),
+  openSync: vi.fn(() => 99),
+  closeSync: vi.fn(),
+  appendFileSync: vi.fn(),
+}));
+
+const mockSpawn = vi.fn();
+vi.mock('child_process', () => ({
+  spawn: (...args) => mockSpawn(...args),
+}));
+
+vi.mock('../src/logger.js', () => ({
+  initLogger: vi.fn(),
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+
+vi.mock('../src/checks.js', () => ({
+  runPreChecks: vi.fn(),
+}));
+
+vi.mock('../src/git.js', () => ({
+  initGit: vi.fn(() => ({})),
+  excludeEphemeralFiles: vi.fn(),
+  getCurrentBranch: vi.fn(),
+  createPreRunTag: vi.fn(),
+  createRunBranch: vi.fn(),
+  mergeRunBranch: vi.fn(),
+  getGitInstance: vi.fn(() => ({
+    add: vi.fn(),
+    commit: vi.fn(),
+  })),
+  getHeadHash: vi.fn(),
+  hasNewCommit: vi.fn(),
+  fallbackCommit: vi.fn(),
+}));
+
+vi.mock('../src/claude.js', () => ({
+  runPrompt: vi.fn(),
+}));
+
+vi.mock('../src/executor.js', () => ({
+  executeSingleStep: vi.fn(),
+  SAFETY_PREAMBLE: 'MOCK_PREAMBLE\n',
+}));
+
+vi.mock('../src/notifications.js', () => ({
+  notify: vi.fn(),
+}));
+
+vi.mock('../src/report.js', () => ({
+  generateReport: vi.fn(),
+  formatDuration: vi.fn((ms) => `${Math.floor(ms / 60000)}m`),
+}));
+
+vi.mock('../src/lock.js', () => ({
+  acquireLock: vi.fn(),
+  releaseLock: vi.fn(),
+}));
+
+vi.mock('../src/prompts/loader.js', () => ({
+  STEPS: [
+    { number: 1, name: 'Documentation', prompt: 'Fix docs' },
+    { number: 2, name: 'Test Coverage', prompt: 'Add tests' },
+    { number: 3, name: 'Security Audit', prompt: 'Check security' },
+  ],
+  DOC_UPDATE_PROMPT: 'Update docs',
+  CHANGELOG_PROMPT: 'Generate changelog',
+}));
+
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
+import { initRun, runStep, finishRun } from '../src/orchestrator.js';
+import { warn } from '../src/logger.js';
+import { getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from '../src/git.js';
+import { executeSingleStep } from '../src/executor.js';
+import { runPrompt } from '../src/claude.js';
+
+function createMockChildProcess(jsonOutput) {
+  const stdout = new EventEmitter();
+  const child = new EventEmitter();
+  child.stdout = stdout;
+  child.unref = vi.fn();
+  if (jsonOutput !== undefined) {
+    process.nextTick(() => stdout.emit('data', JSON.stringify(jsonOutput) + '\n'));
+  }
+  return child;
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  existsSync.mockReturnValue(false);
+  mockSpawn.mockReturnValue(createMockChildProcess({ url: 'http://localhost:9999', port: 9999, pid: 12345 }));
+});
+
+describe('finishRun edge cases', () => {
+  const validState = {
+    version: 1,
+    originalBranch: 'main',
+    runBranch: 'nightytidy/run-2026-03-06-1430',
+    tagName: 'nightytidy-before-2026-03-06-1430',
+    selectedSteps: [1],
+    completedSteps: [
+      { number: 1, name: 'Documentation', status: 'completed', duration: 120000, attempts: 1 },
+    ],
+    failedSteps: [],
+    startTime: Date.now() - 300000,
+    timeout: null,
+    dashboardPid: null,
+    dashboardUrl: null,
+  };
+
+  it('warns but continues when git commit of report fails', async () => {
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify(validState));
+    mergeRunBranch.mockResolvedValue({ success: true });
+    runPrompt.mockResolvedValue({ success: true, output: 'changelog', attempts: 1 });
+
+    const mockGit = {
+      add: vi.fn().mockResolvedValue(),
+      commit: vi.fn().mockRejectedValue(new Error('nothing to commit')),
+    };
+    getGitInstance.mockReturnValue(mockGit);
+
+    const result = await finishRun('/fake/project');
+
+    expect(result.success).toBe(true);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Failed to commit report'));
+  });
+
+  it('returns fail result when unexpected error occurs during merge', async () => {
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify(validState));
+    // Force an error by making mergeRunBranch throw (not reject)
+    mergeRunBranch.mockImplementation(() => { throw new Error('catastrophic git failure'); });
+    runPrompt.mockResolvedValue({ success: true, output: 'changelog', attempts: 1 });
+    getGitInstance.mockReturnValue({ add: vi.fn(), commit: vi.fn() });
+
+    const result = await finishRun('/fake/project');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('catastrophic git failure');
+  });
+
+  it('returns fail result when generateReport throws', async () => {
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify(validState));
+    runPrompt.mockResolvedValue({ success: true, output: 'changelog', attempts: 1 });
+    getGitInstance.mockReturnValue({ add: vi.fn(), commit: vi.fn() });
+
+    const { generateReport } = await import('../src/report.js');
+    generateReport.mockImplementation(() => { throw new Error('cannot write report'); });
+
+    const result = await finishRun('/fake/project');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('cannot write report');
+  });
+
+  it('returns fail when state version is wrong', async () => {
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify({ version: 999, selectedSteps: [1] }));
+
+    const result = await finishRun('/fake/project');
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('No active orchestrator run');
+  });
+
+  it('sorts step results by selected order, not completion order', async () => {
+    const mixedState = {
+      ...validState,
+      selectedSteps: [1, 2, 3],
+      completedSteps: [
+        { number: 3, name: 'Security Audit', status: 'completed', duration: 30000, attempts: 1 },
+        { number: 1, name: 'Documentation', status: 'completed', duration: 60000, attempts: 1 },
+      ],
+      failedSteps: [
+        { number: 2, name: 'Test Coverage', status: 'failed', duration: 10000, attempts: 4 },
+      ],
+    };
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify(mixedState));
+    mergeRunBranch.mockResolvedValue({ success: true });
+    runPrompt.mockResolvedValue({ success: true, output: 'log', attempts: 1 });
+    getGitInstance.mockReturnValue({ add: vi.fn(), commit: vi.fn() });
+
+    const { generateReport } = await import('../src/report.js');
+    await finishRun('/fake/project');
+
+    const [results] = generateReport.mock.calls[0];
+    // Results should be sorted by selected order: 1, 2, 3
+    expect(results.results[0].step.number).toBe(1);
+    expect(results.results[1].step.number).toBe(2);
+    expect(results.results[2].step.number).toBe(3);
+  });
+});
+
+describe('runStep edge cases', () => {
+  it('passes timeout from state file to executeSingleStep', async () => {
+    const stateWithTimeout = {
+      version: 1,
+      originalBranch: 'main',
+      runBranch: 'branch',
+      tagName: 'tag',
+      selectedSteps: [1],
+      completedSteps: [],
+      failedSteps: [],
+      startTime: Date.now(),
+      timeout: 2700000, // 45 minutes in ms
+    };
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify(stateWithTimeout));
+    executeSingleStep.mockResolvedValue({
+      step: { number: 1, name: 'Documentation' },
+      status: 'completed',
+      output: 'done',
+      duration: 60000,
+      attempts: 1,
+      error: null,
+    });
+
+    await runStep('/fake/project', 1);
+
+    const callArgs = executeSingleStep.mock.calls[0];
+    const options = callArgs[2]; // third argument is options
+    expect(options.timeout).toBe(2700000);
+  });
+
+  it('prefers per-call timeout over state timeout', async () => {
+    const stateWithTimeout = {
+      version: 1,
+      originalBranch: 'main',
+      runBranch: 'branch',
+      tagName: 'tag',
+      selectedSteps: [1],
+      completedSteps: [],
+      failedSteps: [],
+      startTime: Date.now(),
+      timeout: 2700000,
+    };
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify(stateWithTimeout));
+    executeSingleStep.mockResolvedValue({
+      step: { number: 1, name: 'Documentation' },
+      status: 'completed',
+      output: 'done',
+      duration: 60000,
+      attempts: 1,
+      error: null,
+    });
+
+    await runStep('/fake/project', 1, { timeout: 1800000 });
+
+    const callArgs = executeSingleStep.mock.calls[0];
+    const options = callArgs[2];
+    expect(options.timeout).toBe(1800000);
+  });
+
+  it('returns fail when readState returns null due to corrupt JSON', async () => {
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue('not valid json');
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('No active orchestrator run');
+  });
+});
+
+describe('initRun edge cases', () => {
+  beforeEach(() => {
+    getCurrentBranch.mockResolvedValue('main');
+    createPreRunTag.mockResolvedValue('tag');
+    createRunBranch.mockResolvedValue('branch');
+  });
+
+  it('stores timeout in state file', async () => {
+    const result = await initRun('/fake/project', { steps: '1', timeout: 3600000 });
+
+    expect(result.success).toBe(true);
+
+    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json'));
+    const state = JSON.parse(stateCall[1]);
+    expect(state.timeout).toBe(3600000);
+  });
+
+  it('stores null timeout when not provided', async () => {
+    const result = await initRun('/fake/project', { steps: '1' });
+
+    expect(result.success).toBe(true);
+
+    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json'));
+    const state = JSON.parse(stateCall[1]);
+    expect(state.timeout).toBeNull();
+  });
+
+  it('handles lock acquisition failure', async () => {
+    const { acquireLock } = await import('../src/lock.js');
+    acquireLock.mockRejectedValueOnce(new Error('Lock held by another process'));
+
+    const result = await initRun('/fake/project', { steps: '1' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Lock held by another process');
+  });
+});

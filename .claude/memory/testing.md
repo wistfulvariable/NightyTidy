@@ -1,6 +1,6 @@
 # Testing — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. 359 tests, 24 files, Vitest v2.
+Assumes CLAUDE.md loaded. 384 tests, 27 files, Vitest v2.
 
 ## Test File -> Module Coverage
 
@@ -30,6 +30,9 @@ Assumes CLAUDE.md loaded. 359 tests, 24 files, Vitest v2.
 | `contracts.test.js` | All modules | 31 |
 | `gui-logic.test.js` | `gui/resources/logic.js` | 39 |
 | `gui-server.test.js` | `gui/server.js` | 13 |
+| `lock.test.js` | `lock.js` | 9 |
+| `orchestrator-extended.test.js` | `orchestrator.js` | 11 |
+| `dashboard-broadcastoutput.test.js` | `dashboard.js` | 5 |
 
 ## Test Helpers (`test/helpers/`)
 
@@ -58,3 +61,7 @@ Without this: tests crash writing `nightytidy-run.log`. Exception: `logger.test.
 - **Non-TTY stdin** — `process.stdin.isTTY` falsy in test envs; CLI tests need `--all` or `--steps`
 - **loader.js + mocked fs** — tests mocking `fs` must also mock `prompts/loader.js` or the loader breaks at import time
 - **vi.doMock() leaks** — registrations persist across `vi.resetModules()`. Must `vi.doUnmock()` in `afterEach`
+- **lock.js needs real filesystem** — uses `openSync('wx')` for atomic create; mock fs loses the semantics. Use real temp dirs with `robustCleanup()`
+- **broadcastOutput throttle** — uses real `setTimeout(500ms)`. Tests must `await` a real delay (700ms+) to verify the throttled write fires
+- **gui/resources/logic.js coverage** — loaded via `eval` in tests, so v8 coverage tool reports 0% despite 39 tests. Coverage config should exclude or handle this
+- **Coverage threshold gap** — `vitest.config.js` has no `include`/`exclude` for coverage. `gui/`, `bin/`, `scripts/` drag overall coverage below 90% even when `src/` is at ~90%. Consider adding `coverage.include: ['src/**']`

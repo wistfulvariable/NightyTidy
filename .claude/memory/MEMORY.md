@@ -5,8 +5,8 @@ NightyTidy: automated overnight codebase improvement via Claude Code subprocess 
 ## Current State
 
 - **Version**: 0.1.0
-- **Test count**: 359 (24 test files, all passing)
-- **Coverage**: above thresholds (90/80/80)
+- **Test count**: 384 (27 test files, all passing)
+- **Coverage**: src/ at 90% stmts, 90% branches, 95% functions. Overall 65% due to untested gui/bin/scripts dirs.
 - **Last major change**: Desktop GUI + orchestrator mode + markdown prompt refactor
 
 ## Recent Changes
