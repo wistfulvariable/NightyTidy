@@ -215,3 +215,24 @@ describe('detectGitError', () => {
     expect(NtLogic.detectGitError({})).toBeNull();
   });
 });
+
+describe('detectStaleState', () => {
+  it('detects "already in progress" error', () => {
+    expect(NtLogic.detectStaleState('A run is already in progress. Call --finish-run first, or delete nightytidy-run-state.json to reset.')).toBe(true);
+  });
+
+  it('detects error mentioning run-state.json', () => {
+    expect(NtLogic.detectStaleState('Delete nightytidy-run-state.json to reset')).toBe(true);
+  });
+
+  it('returns false for unrelated errors', () => {
+    expect(NtLogic.detectStaleState('Claude Code not detected.')).toBe(false);
+  });
+
+  it('returns false for null/empty/non-string values', () => {
+    expect(NtLogic.detectStaleState(null)).toBe(false);
+    expect(NtLogic.detectStaleState('')).toBe(false);
+    expect(NtLogic.detectStaleState(undefined)).toBe(false);
+    expect(NtLogic.detectStaleState(42)).toBe(false);
+  });
+});

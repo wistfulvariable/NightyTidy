@@ -24,6 +24,7 @@ Automated overnight codebase improvement through Claude Code. NightyTidy is an o
 | Git | simple-git | v3 |
 | AI Engine | Claude Code CLI (subprocess) | latest |
 | Notifications | node-notifier | v10 |
+| GUI Markdown | marked (vendored UMD) | v17 |
 | Testing | Vitest | v3 |
 
 ## Project Structure
@@ -79,8 +80,8 @@ test/
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
   orchestrator.test.js     # 36 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough
   contracts.test.js        # 38 tests — module API contract verification against CLAUDE.md
-  gui-logic.test.js        # 63 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, detectGitError, etc.)
-  gui-server.test.js       # 29 tests — HTTP server, static files, config, run-command, kill-process, security headers, traversal
+  gui-logic.test.js        # 67 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, detectGitError, detectStaleState, etc.)
+  gui-server.test.js       # 34 tests — HTTP server, static files, config, run-command, kill-process, delete-file, security headers, traversal
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks
   dashboard-broadcastoutput.test.js # 5 tests — buffer overflow, throttled writes, clearOutputBuffer with state
@@ -99,6 +100,7 @@ gui/
     styles.css               # Dark theme CSS (extracted from dashboard-html.js)
     logic.js                 # Pure functions (buildCommand, parseCliOutput, formatMs, etc.)
     app.js                   # State machine + fetch API calls to server.js endpoints
+    marked.umd.js            # Vendored marked v17 UMD build — markdown→HTML for output panels
 scripts/
   check-docs-freshness.js  # CI check: verifies doc counts match code reality
   run-flaky-check.js       # Runs test suite N times (default 3) to detect flaky tests
@@ -135,7 +137,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/prompts/loader.js` | Loads 33 prompts + special prompts (doc-update, changelog, consolidation) from markdown files via manifest.json | fs (data loader) |
 | `gui/server.js` | Desktop GUI backend — HTTP server + native folder dialog + Chrome launcher | node:http, node:fs, node:child_process |
 | `gui/resources/logic.js` | GUI pure logic — command building, JSON parsing, formatting | none (browser + Node.js dual) |
-| `gui/resources/app.js` | GUI state machine — screen transitions, process spawning, progress polling | logic.js, server.js (via fetch) |
+| `gui/resources/app.js` | GUI state machine — screen transitions, process spawning, progress polling | logic.js, marked, server.js (via fetch) |
 
 ## Build & Run Commands
 

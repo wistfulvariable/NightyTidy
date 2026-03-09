@@ -1,6 +1,6 @@
 # Testing — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. 557 tests, 30 files, Vitest v3.
+Assumes CLAUDE.md loaded. 589 tests, 30 files, Vitest v3.
 
 ## Test File -> Module Coverage
 
@@ -29,8 +29,8 @@ Assumes CLAUDE.md loaded. 557 tests, 30 files, Vitest v3.
 | `integration-extended.test.js` | Multi-module | 6 |
 | `orchestrator.test.js` | `orchestrator.js` | 36 |
 | `contracts.test.js` | All modules | 38 |
-| `gui-logic.test.js` | `gui/resources/logic.js` | 46 |
-| `gui-server.test.js` | `gui/server.js` | 29 |
+| `gui-logic.test.js` | `gui/resources/logic.js` | 67 |
+| `gui-server.test.js` | `gui/server.js` | 34 |
 | `lock.test.js` | `lock.js` | 9 |
 | `orchestrator-extended.test.js` | `orchestrator.js` | 11 |
 | `dashboard-broadcastoutput.test.js` | `dashboard.js` | 5 |

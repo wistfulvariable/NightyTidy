@@ -34,7 +34,7 @@ Exit 0 with empty stdout → failure → retry. Non-zero exit → failure → re
 
 ## Output Format
 
-All calls include `--output-format json`. Claude CLI returns a JSON blob with `result` (text), `total_cost_usd`, `num_turns`, `duration_api_ms`, `session_id`. `parseJsonOutput()` extracts these into the result object. Falls back gracefully if output isn't valid JSON (old CLI → `cost: null`).
+All calls include `--output-format stream-json --verbose`. Claude CLI v2.1.29+ requires `--verbose` when combining `--print` with `--output-format stream-json` (without it, CLI exits 1 immediately). NDJSON events stream in real-time; final line is a `result` event with `total_cost_usd`, `num_turns`, `duration_api_ms`. `parseJsonOutput()` extracts these into the result object. Falls back gracefully if output isn't valid JSON (old CLI → `cost: null`).
 
 ## Result Object
 

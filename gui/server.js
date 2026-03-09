@@ -294,6 +294,33 @@ async function handleReadFile(req, res) {
   }
 }
 
+// ── API: Delete File ──────────────────────────────────────────────
+
+async function handleDeleteFile(req, res) {
+  const body = await readBody(req);
+  const { path: filePath } = body;
+
+  if (!filePath) {
+    sendJson(res, { ok: false, error: 'No path provided' }, 400);
+    return;
+  }
+
+  // Only allow deleting NightyTidy ephemeral files
+  const name = filePath.replace(/\\/g, '/').split('/').pop();
+  const ALLOWED = ['nightytidy-run-state.json', 'nightytidy.lock', 'nightytidy-progress.json'];
+  if (!ALLOWED.includes(name)) {
+    sendJson(res, { ok: false, error: 'Not an allowed file' }, 403);
+    return;
+  }
+
+  try {
+    unlinkSync(resolve(filePath));
+    sendJson(res, { ok: true });
+  } catch {
+    sendJson(res, { ok: true }); // Already gone — not an error
+  }
+}
+
 // ── API: Shutdown ──────────────────────────────────────────────────
 
 function handleExit(res) {
@@ -355,6 +382,9 @@ function handleRequest(req, res) {
   }
   if (url.pathname === '/api/read-file' && req.method === 'POST') {
     return handleReadFile(req, res);
+  }
+  if (url.pathname === '/api/delete-file' && req.method === 'POST') {
+    return handleDeleteFile(req, res);
   }
   if (url.pathname === '/api/exit' && req.method === 'POST') {
     return handleExit(res);

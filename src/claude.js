@@ -43,8 +43,8 @@ function spawnClaude(prompt, cwd, useShell = false, continueSession = false) {
   // tool use, etc.). The final line is a `result` event with total_cost_usd,
   // num_turns, duration_api_ms, and the response text in the `result` field.
   const args = useStdin
-    ? ['--output-format', 'stream-json', '--dangerously-skip-permissions']
-    : ['-p', prompt, '--output-format', 'stream-json', '--dangerously-skip-permissions'];
+    ? ['--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions']
+    : ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
   if (continueSession) args.push('--continue');
   const stdinMode = useStdin ? 'pipe' : 'ignore';
 

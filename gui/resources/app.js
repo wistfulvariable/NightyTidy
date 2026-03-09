@@ -3,7 +3,7 @@
  * State machine driving 5 screens. Communicates with server.js via fetch API.
  */
 
-/* global NtLogic */
+/* global NtLogic, marked */
 
 // ── API helpers ────────────────────────────────────────────────────
 
@@ -15,6 +15,27 @@ async function api(endpoint, body = {}) {
   });
   return res.json();
 }
+
+// ── Markdown Rendering ────────────────────────────────────────────
+
+const markedInstance = new marked.Marked({
+  breaks: true,
+  gfm: true,
+});
+
+/**
+ * Render markdown text to sanitised HTML.
+ * Links open in a new tab. Empty/null input returns empty string.
+ */
+function renderMarkdown(text) {
+  if (!text) return '';
+  return markedInstance.parse(text);
+}
+
+/**
+ * Track last-rendered text to avoid unnecessary DOM updates during polling.
+ */
+let lastRenderedOutput = '';
 
 // ── State ──────────────────────────────────────────────────────────
 
@@ -44,7 +65,54 @@ const state = {
   finishResult: null,     // from --finish-run response
   stopping: false,        // stop button was clicked
   viewingStepOutput: null, // step number whose stored output is shown (null = live mode)
+  initMsgTimer: null,      // setInterval ID for init overlay rotating messages
 };
+
+// ── Init Overlay (shown during --init-run) ────────────────────────
+
+const INIT_MESSAGES = [
+  'Preparing your run\u2026',
+  'Validating git repository\u2026',
+  'Checking Claude Code CLI\u2026',
+  'Creating safety branch\u2026',
+  'Setting up progress tracking\u2026',
+  'Almost ready\u2026',
+];
+
+function showInitOverlay() {
+  // Hide step selection UI
+  for (const id of ['step-checklist', 'options-bar', 'start-bar', 'steps-header']) {
+    const el = document.querySelector(`.${id}`) || document.getElementById(id);
+    if (el) el.style.display = 'none';
+  }
+  const overlay = document.getElementById('init-overlay');
+  const statusEl = document.getElementById('init-status');
+  statusEl.textContent = INIT_MESSAGES[0];
+  overlay.style.display = 'block';
+
+  let idx = 0;
+  state.initMsgTimer = setInterval(() => {
+    idx = (idx + 1) % INIT_MESSAGES.length;
+    statusEl.style.opacity = '0';
+    setTimeout(() => {
+      statusEl.textContent = INIT_MESSAGES[idx];
+      statusEl.style.opacity = '1';
+    }, 200);
+  }, 2000);
+}
+
+function hideInitOverlay() {
+  if (state.initMsgTimer) {
+    clearInterval(state.initMsgTimer);
+    state.initMsgTimer = null;
+  }
+  document.getElementById('init-overlay').style.display = 'none';
+  // Restore step selection UI
+  for (const id of ['step-checklist', 'options-bar', 'start-bar', 'steps-header']) {
+    const el = document.querySelector(`.${id}`) || document.getElementById(id);
+    if (el) el.style.display = '';
+  }
+}
 
 // ── Screen Management ──────────────────────────────────────────────
 
@@ -149,6 +217,30 @@ function showGitSetupError(screenPrefix, reason) {
 
   document.getElementById('btn-git-init')?.addEventListener('click', initializeGit);
   document.getElementById('btn-git-commit')?.addEventListener('click', createInitialCommit);
+}
+
+/**
+ * Show a stale run-state error with a Reset button to clean up.
+ */
+function showStaleStateError(screenPrefix) {
+  const el = document.getElementById(`${screenPrefix}-error`);
+  if (!el) return;
+  el.innerHTML = '<span>A previous run was interrupted. Clean up the leftover state to start fresh.</span>' +
+    ' <button class="btn btn-success btn-sm" id="btn-reset-state">Reset</button>';
+  el.classList.add('visible');
+  document.getElementById('btn-reset-state')?.addEventListener('click', resetStaleState);
+}
+
+async function resetStaleState() {
+  const btn = document.getElementById('btn-reset-state');
+  if (btn) { btn.disabled = true; btn.textContent = 'Resetting...'; }
+
+  const stateFile = state.projectDir.replace(/[\\/]$/, '') + '\\nightytidy-run-state.json';
+  const lockFile = state.projectDir.replace(/[\\/]$/, '') + '\\nightytidy.lock';
+  await api('delete-file', { path: stateFile });
+  await api('delete-file', { path: lockFile });
+
+  clearError('steps');
 }
 
 /**
@@ -295,12 +387,9 @@ async function startRun() {
   const timeoutArg = state.timeout !== 45 ? ` --timeout ${state.timeout}` : '';
   const args = `--init-run ${stepArgs}${timeoutArg}`;
 
-  const startBtn = document.getElementById('btn-start-run');
-  startBtn.disabled = true;
-  startBtn.textContent = 'Initializing...';
+  showInitOverlay();
   const result = await runCli(args);
-  startBtn.disabled = false;
-  startBtn.textContent = 'Start Run';
+  hideInitOverlay();
 
   if (!result.ok) {
     showError('steps', result.error);
@@ -312,6 +401,8 @@ async function startRun() {
     const gitReason = NtLogic.detectGitError(errMsg);
     if (gitReason) {
       showGitSetupError('steps', gitReason);
+    } else if (NtLogic.detectStaleState(errMsg)) {
+      showStaleStateError('steps');
     } else {
       showError('steps', errMsg);
     }
@@ -455,7 +546,7 @@ async function runNextStep() {
   if (state.stopping) return;
 
   // Snapshot the last live output before it gets cleared (fallback if response has no output)
-  const liveSnapshot = document.getElementById('output-content').textContent || '';
+  const liveSnapshot = lastRenderedOutput || '';
 
   if (!result.ok) {
     state.failedSteps.push(next);
@@ -541,15 +632,20 @@ function renderProgressFromFile(progress) {
   if (state.viewingStepOutput !== null) return;
 
   if (progress.currentStepOutput) {
-    const outputEl = document.getElementById('output-content');
-    outputEl.textContent = progress.currentStepOutput;
-    const panel = document.getElementById('output-panel');
-    panel.scrollTop = panel.scrollHeight;
+    // Only re-render when the content has actually changed (polling is every 500ms)
+    if (progress.currentStepOutput !== lastRenderedOutput) {
+      lastRenderedOutput = progress.currentStepOutput;
+      const outputEl = document.getElementById('output-content');
+      outputEl.innerHTML = renderMarkdown(progress.currentStepOutput);
+      const panel = document.getElementById('output-panel');
+      panel.scrollTop = panel.scrollHeight;
+    }
   }
 }
 
 function clearOutput() {
-  document.getElementById('output-content').textContent = '';
+  document.getElementById('output-content').innerHTML = '';
+  lastRenderedOutput = '';
 }
 
 // ── Step Output Viewer ──────────────────────────────────────────
@@ -565,7 +661,8 @@ function viewStepOutput(stepNum) {
   const backBtn = document.getElementById('btn-back-to-live');
 
   titleEl.textContent = `Step ${stepNum}: ${name}`;
-  outputEl.textContent = result.output || (result.error ? `Error: ${result.error}` : '(No output recorded)');
+  const raw = result.output || (result.error ? `Error: ${result.error}` : '(No output recorded)');
+  outputEl.innerHTML = renderMarkdown(raw);
   backBtn.style.display = 'inline';
 
   // Highlight the active step in the running list
@@ -582,7 +679,8 @@ function backToLive() {
 
   titleEl.textContent = 'Claude Output';
   backBtn.style.display = 'none';
-  outputEl.textContent = '';
+  outputEl.innerHTML = '';
+  lastRenderedOutput = '';
 
   document.querySelectorAll('#running-step-list .step-item').forEach(el => el.classList.remove('step-active'));
 }
@@ -604,7 +702,8 @@ function viewSummaryStepOutput(stepNum) {
   state.viewingStepOutput = stepNum;
   const name = result.name || `Step ${stepNum}`;
   titleEl.textContent = `Step ${stepNum}: ${name}`;
-  contentEl.textContent = result.output || (result.error ? `Error: ${result.error}` : '(No output recorded)');
+  const raw = result.output || (result.error ? `Error: ${result.error}` : '(No output recorded)');
+  contentEl.innerHTML = renderMarkdown(raw);
   panel.style.display = 'block';
 
   // Highlight active step
@@ -816,7 +915,8 @@ function resetApp() {
   clearError('steps');
   clearError('running');
   clearError('finishing');
-  document.getElementById('output-content').textContent = '';
+  document.getElementById('output-content').innerHTML = '';
+  lastRenderedOutput = '';
   document.getElementById('btn-stop-run').disabled = false;
   document.getElementById('btn-stop-run').textContent = 'Stop Run';
   document.getElementById('progress-bar-fill').style.width = '0%';
@@ -841,12 +941,10 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
-// Best-effort backend cleanup when the page actually unloads during a run.
+// Always shut down the backend server when the window closes.
 // sendBeacon is fire-and-forget — works even as the page is torn down.
 window.addEventListener('unload', () => {
-  if (isRunInProgress()) {
-    navigator.sendBeacon('/api/exit');
-  }
+  navigator.sendBeacon('/api/exit');
 });
 
 // ── Event Binding ──────────────────────────────────────────────────

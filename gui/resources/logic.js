@@ -142,6 +142,16 @@ function detectGitError(errorMsg) {
   return null;
 }
 
+/**
+ * Detect a stale run-state error (previous run was interrupted).
+ * @param {string} errorMsg
+ * @returns {boolean}
+ */
+function detectStaleState(errorMsg) {
+  if (!errorMsg || typeof errorMsg !== 'string') return false;
+  return errorMsg.includes('already in progress') || errorMsg.includes('run-state.json');
+}
+
 // Export for browser (app.js) and for Node.js tests
 const NtLogic = {
   buildCommand,
@@ -152,6 +162,7 @@ const NtLogic = {
   getNextStep,
   buildStepArgs,
   detectGitError,
+  detectStaleState,
 };
 
 // Browser: attach to window. Node.js: attach to globalThis.

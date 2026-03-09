@@ -18,7 +18,8 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import { unlinkSync, existsSync } from 'node:fs';
 import { join, dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -160,6 +161,28 @@ beforeAll(async () => {
       return;
     }
 
+    // API: delete-file — mirrors server.js handleDeleteFile
+    if (url.pathname === '/api/delete-file' && req.method === 'POST') {
+      const body = await readBody(req);
+      if (!body.path) {
+        sendJson(res, { ok: false, error: 'No path provided' }, 400);
+        return;
+      }
+      const name = body.path.replace(/\\/g, '/').split('/').pop();
+      const ALLOWED = ['nightytidy-run-state.json', 'nightytidy.lock', 'nightytidy-progress.json'];
+      if (!ALLOWED.includes(name)) {
+        sendJson(res, { ok: false, error: 'Not an allowed file' }, 403);
+        return;
+      }
+      try {
+        unlinkSync(resolve(body.path));
+        sendJson(res, { ok: true });
+      } catch {
+        sendJson(res, { ok: true }); // Already gone
+      }
+      return;
+    }
+
     // Static files
     const safePath = url.pathname === '/' ? '/index.html' : url.pathname;
     const filePath = join(RESOURCES_DIR, safePath);
@@ -281,6 +304,71 @@ describe('read-file API', () => {
     });
     const data = await res.json();
     expect(data.ok).toBe(false);
+  });
+});
+
+// ── Delete File API ────────────────────────────────────────────────
+
+describe('delete-file API', () => {
+  it('deletes an allowed NightyTidy ephemeral file', async () => {
+    const { tmpdir } = await import('node:os');
+    const target = join(tmpdir(), 'nightytidy-run-state.json');
+    await writeFile(target, '{}');
+    expect(existsSync(target)).toBe(true);
+
+    const res = await fetch(`${baseUrl}/api/delete-file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: target }),
+    });
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(existsSync(target)).toBe(false);
+  });
+
+  it('returns ok even if the file does not exist', async () => {
+    const res = await fetch(`${baseUrl}/api/delete-file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '/tmp/nightytidy-run-state.json' }),
+    });
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+  });
+
+  it('rejects deletion of non-allowed files', async () => {
+    const res = await fetch(`${baseUrl}/api/delete-file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: '/tmp/package.json' }),
+    });
+    expect(res.status).toBe(403);
+    const data = await res.json();
+    expect(data.ok).toBe(false);
+  });
+
+  it('returns 400 when no path provided', async () => {
+    const res = await fetch(`${baseUrl}/api/delete-file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('allows deleting nightytidy.lock', async () => {
+    const { tmpdir } = await import('node:os');
+    const target = join(tmpdir(), 'nightytidy.lock');
+    await writeFile(target, '{}');
+
+    const res = await fetch(`${baseUrl}/api/delete-file`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: target }),
+    });
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(existsSync(target)).toBe(false);
   });
 });
 

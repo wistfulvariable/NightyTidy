@@ -126,7 +126,7 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'short prompt', '--output-format', 'stream-json', '--dangerously-skip-permissions'],
+        ['-p', 'short prompt', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
         expect.objectContaining({ cwd: '/tmp' }),
       );
     });
@@ -538,7 +538,7 @@ describe('runPrompt', () => {
       // When using stdin mode, args should only contain output-format + permission flag (no -p flag)
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['--output-format', 'stream-json', '--dangerously-skip-permissions'],
+        ['--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
         expect.objectContaining({ stdio: ['pipe', 'pipe', 'pipe'] }),
       );
     });
@@ -576,7 +576,7 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'test', '--output-format', 'stream-json', '--dangerously-skip-permissions'],
+        ['-p', 'test', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
         expect.objectContaining({ shell: true }),
       );
     });
@@ -593,7 +593,7 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'test', '--output-format', 'stream-json', '--dangerously-skip-permissions'],
+        ['-p', 'test', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
         expect.objectContaining({ shell: false }),
       );
     });
