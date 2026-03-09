@@ -94,6 +94,29 @@ function writeProgress(projectDir, progressState) {
   } catch { /* non-critical */ }
 }
 
+const OUTPUT_BUFFER_SIZE = 100 * 1024;
+const OUTPUT_WRITE_INTERVAL = 500;
+
+function createOutputHandler(progress, projectDir) {
+  let buffer = '';
+  let writePending = false;
+
+  return (chunk) => {
+    buffer += chunk;
+    if (buffer.length > OUTPUT_BUFFER_SIZE) {
+      buffer = buffer.slice(buffer.length - OUTPUT_BUFFER_SIZE);
+    }
+    if (!writePending) {
+      writePending = true;
+      setTimeout(() => {
+        writePending = false;
+        progress.currentStepOutput = buffer;
+        writeProgress(projectDir, progress);
+      }, OUTPUT_WRITE_INTERVAL);
+    }
+  };
+}
+
 function cleanupDashboard(projectDir) {
   for (const f of [PROGRESS_FILENAME, URL_FILENAME]) {
     try { unlinkSync(path.join(projectDir, f)); } catch { /* already gone */ }
@@ -267,25 +290,7 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
     writeProgress(projectDir, progress);
 
     // Stream Claude output to progress file for dashboard consumption
-    const OUTPUT_BUFFER_SIZE = 100 * 1024;
-    const OUTPUT_WRITE_INTERVAL = 500;
-    let outputBuffer = '';
-    let outputWritePending = false;
-
-    const onOutput = (chunk) => {
-      outputBuffer += chunk;
-      if (outputBuffer.length > OUTPUT_BUFFER_SIZE) {
-        outputBuffer = outputBuffer.slice(outputBuffer.length - OUTPUT_BUFFER_SIZE);
-      }
-      if (!outputWritePending) {
-        outputWritePending = true;
-        setTimeout(() => {
-          outputWritePending = false;
-          progress.currentStepOutput = outputBuffer;
-          writeProgress(projectDir, progress);
-        }, OUTPUT_WRITE_INTERVAL);
-      }
-    };
+    const onOutput = createOutputHandler(progress, projectDir);
 
     const result = await executeSingleStep(step, projectDir, { timeout: stepTimeout, onOutput });
 
