@@ -113,7 +113,7 @@ function handleRequest(req, res) {
       res.end(JSON.stringify({ ok: true, message: 'Stop not supported in orchestrator mode' }));
     });
   } else {
-    res.writeHead(404);
+    res.writeHead(404, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
     res.end('Not found');
   }
 }

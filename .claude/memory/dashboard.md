@@ -53,8 +53,8 @@ Updated by `cli.js` callbacks -> passed to `updateDashboard()` -> written to JSO
 - `GET /` -> HTML dashboard (inline CSS/JS, dark theme, real-time updates). Security headers: CSP, X-Frame-Options: DENY, X-Content-Type-Options: nosniff
 - `GET /events` -> SSE stream (text/event-stream, no-cache). No security headers (SSE streams).
 - `POST /stop` -> CSRF-protected. Requires `{ token }` body matching server-generated token. Returns 403 on invalid token, 413 if body exceeds 1 KB, 200 with `{ ok: true }` on valid. Dashboard calls `onStop` callback; standalone returns `{ ok: true, message: 'Stop not supported in orchestrator mode' }`.
-- Unknown routes -> 404 plain text (no security headers)
-- Error responses on `/stop` use `{ error: string }` shape (no `ok` field). This differs from GUI server which always includes `ok: false`.
+- Unknown routes -> 404 plain text with security headers (added in audit #11)
+- Error responses on `/stop` use `{ error: string }` shape (no `ok` field). This differs from GUI server which always includes `ok: false`. Intentional — different clients.
 
 ## TUI Spawn (Platform-Specific)
 

@@ -60,7 +60,7 @@ async function serveStatic(res, urlPath) {
   // confusion (e.g. "resources-extra" matching "resources")
   const boundary = RESOURCES_DIR.endsWith(sep) ? RESOURCES_DIR : RESOURCES_DIR + sep;
   if (!filePath.startsWith(boundary) && filePath !== RESOURCES_DIR) {
-    res.writeHead(403);
+    res.writeHead(403, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
     res.end('Forbidden');
     return;
   }
@@ -75,8 +75,8 @@ async function serveStatic(res, urlPath) {
     res.writeHead(200, headers);
     res.end(content);
   } catch {
-    res.writeHead(404);
-    res.end('Not Found');
+    res.writeHead(404, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
+    res.end('Not found');
   }
 }
 

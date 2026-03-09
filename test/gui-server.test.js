@@ -156,7 +156,7 @@ beforeAll(async () => {
     const safePath = url.pathname === '/' ? '/index.html' : url.pathname;
     const filePath = join(RESOURCES_DIR, safePath);
     if (!filePath.startsWith(RESOURCES_DIR)) {
-      res.writeHead(403);
+      res.writeHead(403, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
       res.end('Forbidden');
       return;
     }
@@ -169,8 +169,8 @@ beforeAll(async () => {
       });
       res.end(content);
     } catch {
-      res.writeHead(404);
-      res.end('Not Found');
+      res.writeHead(404, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
+      res.end('Not found');
     }
   });
 

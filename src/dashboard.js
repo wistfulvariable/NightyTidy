@@ -99,7 +99,7 @@ function handleRequest(req, res, onStop) {
   } else if (req.method === 'POST' && req.url === '/stop') {
     handleStop(req, res, onStop);
   } else {
-    res.writeHead(404);
+    res.writeHead(404, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
     res.end('Not found');
   }
 }
