@@ -129,6 +129,19 @@ function formatCost(costUSD) {
   return '$' + costUSD.toFixed(4);
 }
 
+/**
+ * Detect git-related errors from CLI error messages.
+ * Returns 'no-repo' | 'no-commits' | null.
+ * @param {string} errorMsg
+ * @returns {string|null}
+ */
+function detectGitError(errorMsg) {
+  if (!errorMsg || typeof errorMsg !== 'string') return null;
+  if (errorMsg.includes("isn't a git project") || errorMsg.includes('not a git repository')) return 'no-repo';
+  if (errorMsg.includes('no commits yet') || errorMsg.includes('has no commits')) return 'no-commits';
+  return null;
+}
+
 // Export for browser (app.js) and for Node.js tests
 const NtLogic = {
   buildCommand,
@@ -138,6 +151,7 @@ const NtLogic = {
   escapeHtml,
   getNextStep,
   buildStepArgs,
+  detectGitError,
 };
 
 // Browser: attach to window. Node.js: attach to globalThis.

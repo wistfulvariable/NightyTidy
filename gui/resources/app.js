@@ -98,6 +98,97 @@ async function runCli(args) {
   return parsed;
 }
 
+/**
+ * Run a shell command in the project directory.
+ * @param {string} shellCmd - Command to run after cd-ing into projectDir
+ * @returns {Promise<{ok: boolean, stdout: string, stderr: string}>}
+ */
+async function runShellInProject(shellCmd) {
+  const full = `cd /d "${state.projectDir}" && ${shellCmd}`;
+  return api('run-command', { command: full, id: `shell-${++processCounter}` });
+}
+
+// ── Git Readiness Check ─────────────────────────────────────────────
+
+/**
+ * Check if the selected project folder is git-ready (is a repo + has commits).
+ * @returns {Promise<{ready: boolean, reason: string|null}>}
+ *   reason: 'no-repo' | 'no-commits' | null
+ */
+async function checkGitReady() {
+  // Check if folder is inside a git repo
+  const repoCheck = await runShellInProject('git rev-parse --is-inside-work-tree');
+  if (!repoCheck.ok || repoCheck.exitCode !== 0) {
+    return { ready: false, reason: 'no-repo' };
+  }
+
+  // Check if repo has at least one commit
+  const commitCheck = await runShellInProject('git log --oneline -1');
+  if (!commitCheck.ok || commitCheck.exitCode !== 0) {
+    return { ready: false, reason: 'no-commits' };
+  }
+
+  return { ready: true, reason: null };
+}
+
+/**
+ * Show a git-specific error with an action button on the given screen.
+ */
+function showGitSetupError(screenPrefix, reason) {
+  const el = document.getElementById(`${screenPrefix}-error`);
+  if (!el) return;
+
+  if (reason === 'no-repo') {
+    el.innerHTML = '<span>This folder isn\u2019t a git project yet.</span>' +
+      ' <button class="btn btn-success btn-sm" id="btn-git-init">Initialize Git</button>';
+  } else if (reason === 'no-commits') {
+    el.innerHTML = '<span>Your project has git but no commits yet.</span>' +
+      ' <button class="btn btn-success btn-sm" id="btn-git-commit">Create Initial Commit</button>';
+  }
+  el.classList.add('visible');
+
+  document.getElementById('btn-git-init')?.addEventListener('click', initializeGit);
+  document.getElementById('btn-git-commit')?.addEventListener('click', createInitialCommit);
+}
+
+/**
+ * Initialize git + create initial commit in the project folder.
+ */
+async function initializeGit() {
+  clearError('setup');
+  clearError('steps');
+  const btn = document.getElementById('btn-git-init');
+  if (btn) { btn.disabled = true; btn.textContent = 'Initializing...'; }
+
+  const result = await runShellInProject('git init && git add -A && git commit -m "Initial commit"');
+
+  if (!result.ok || result.exitCode !== 0) {
+    showError('setup', 'Git initialization failed. ' + (result.stderr || '').trim());
+    return;
+  }
+
+  await loadSteps();
+}
+
+/**
+ * Create an initial commit in a repo that has no commits.
+ */
+async function createInitialCommit() {
+  clearError('setup');
+  clearError('steps');
+  const btn = document.getElementById('btn-git-commit');
+  if (btn) { btn.disabled = true; btn.textContent = 'Committing...'; }
+
+  const result = await runShellInProject('git add -A && git commit -m "Initial commit"');
+
+  if (!result.ok || result.exitCode !== 0) {
+    showError('setup', 'Could not create initial commit. ' + (result.stderr || '').trim());
+    return;
+  }
+
+  await loadSteps();
+}
+
 // ── Screen 1: Setup ────────────────────────────────────────────────
 
 async function selectFolder() {
@@ -122,6 +213,14 @@ async function loadSteps() {
   const loadingEl = document.getElementById('setup-loading');
   loadingEl.style.display = 'block';
   clearError('setup');
+
+  // Check git readiness before loading steps — surface issues early
+  const gitStatus = await checkGitReady();
+  if (!gitStatus.ready) {
+    loadingEl.style.display = 'none';
+    showGitSetupError('setup', gitStatus.reason);
+    return;
+  }
 
   const result = await runCli('--list --json');
   loadingEl.style.display = 'none';
@@ -209,7 +308,13 @@ async function startRun() {
   }
 
   if (!result.data.success) {
-    showError('steps', result.data.error || 'Failed to initialize run');
+    const errMsg = result.data.error || 'Failed to initialize run';
+    const gitReason = NtLogic.detectGitError(errMsg);
+    if (gitReason) {
+      showGitSetupError('steps', gitReason);
+    } else {
+      showError('steps', errMsg);
+    }
     return;
   }
 
@@ -375,6 +480,7 @@ async function runNextStep() {
       durationFormatted: data.durationFormatted,
       attempts: data.attempts,
       output: data.output || liveSnapshot,
+      error: data.error || null,
       costUSD: data.costUSD ?? null,
     });
 
@@ -459,7 +565,7 @@ function viewStepOutput(stepNum) {
   const backBtn = document.getElementById('btn-back-to-live');
 
   titleEl.textContent = `Step ${stepNum}: ${name}`;
-  outputEl.textContent = result.output || '(No output recorded)';
+  outputEl.textContent = result.output || (result.error ? `Error: ${result.error}` : '(No output recorded)');
   backBtn.style.display = 'inline';
 
   // Highlight the active step in the running list
@@ -498,7 +604,7 @@ function viewSummaryStepOutput(stepNum) {
   state.viewingStepOutput = stepNum;
   const name = result.name || `Step ${stepNum}`;
   titleEl.textContent = `Step ${stepNum}: ${name}`;
-  contentEl.textContent = result.output || '(No output recorded)';
+  contentEl.textContent = result.output || (result.error ? `Error: ${result.error}` : '(No output recorded)');
   panel.style.display = 'block';
 
   // Highlight active step

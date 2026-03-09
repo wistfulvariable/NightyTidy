@@ -180,3 +180,38 @@ describe('buildStepArgs', () => {
     expect(NtLogic.buildStepArgs(selected, total)).toBe(expected);
   });
 });
+
+describe('detectGitError', () => {
+  it('returns "no-repo" for NightyTidy git project error', () => {
+    const msg = "This folder isn't a git project. Navigate to your project folder and try again.\nIf you need to set one up, run: git init";
+    expect(NtLogic.detectGitError(msg)).toBe('no-repo');
+  });
+
+  it('returns "no-repo" for raw git error message', () => {
+    expect(NtLogic.detectGitError('fatal: not a git repository (or any of the parent directories): .git')).toBe('no-repo');
+  });
+
+  it('returns "no-commits" for NightyTidy no-commits error', () => {
+    const msg = "Your project has no commits yet. NightyTidy needs at least one commit to create a safety tag.";
+    expect(NtLogic.detectGitError(msg)).toBe('no-commits');
+  });
+
+  it('returns "no-commits" for variant wording', () => {
+    expect(NtLogic.detectGitError('This repo has no commits')).toBe('no-commits');
+  });
+
+  it('returns null for unrelated errors', () => {
+    expect(NtLogic.detectGitError('Claude Code not detected.')).toBeNull();
+  });
+
+  it('returns null for empty/null input', () => {
+    expect(NtLogic.detectGitError(null)).toBeNull();
+    expect(NtLogic.detectGitError('')).toBeNull();
+    expect(NtLogic.detectGitError(undefined)).toBeNull();
+  });
+
+  it('returns null for non-string input', () => {
+    expect(NtLogic.detectGitError(42)).toBeNull();
+    expect(NtLogic.detectGitError({})).toBeNull();
+  });
+});
