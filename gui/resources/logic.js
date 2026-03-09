@@ -213,6 +213,18 @@ function preprocessClaudeOutput(text) {
   return result.join('\n');
 }
 
+/**
+ * Format a timestamp (ms since epoch) as a locale time string: "2:45:32 PM".
+ * @param {number} timestamp - Date.now() value
+ * @returns {string} Formatted time, or '' if invalid
+ */
+function formatTime(timestamp) {
+  if (!timestamp || !Number.isFinite(timestamp)) return '';
+  const d = new Date(timestamp);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+}
+
 // Export for browser (app.js) and for Node.js tests
 const NtLogic = {
   buildCommand,
@@ -220,6 +232,7 @@ const NtLogic = {
   formatMs,
   formatCost,
   formatTokens,
+  formatTime,
   escapeHtml,
   getNextStep,
   buildStepArgs,

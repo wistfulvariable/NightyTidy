@@ -387,6 +387,14 @@ body {
 .output-panel-header h2 {
   margin-bottom: 0;
 }
+.last-update {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+  margin-right: 12px;
+  white-space: nowrap;
+}
 .output-content {
   color: #b0b0c0;
   font-size: 0.85rem;

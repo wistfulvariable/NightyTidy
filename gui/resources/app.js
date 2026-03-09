@@ -520,6 +520,11 @@ function updateElapsed() {
       if (durEl) durEl.textContent = NtLogic.formatMs(stepElapsed);
     }
   }
+
+  // Refresh the "Last update" display so the "ago" counter stays current
+  if (lastOutputChangeTime && state.viewingStepOutput === null) {
+    updateLastUpdateDisplay();
+  }
 }
 
 function showCurrentStep(stepNum) {
@@ -665,6 +670,7 @@ function renderProgressFromFile(progress) {
       const panel = document.getElementById('output-panel');
       panel.scrollTop = panel.scrollHeight;
       hideWorkingIndicator();
+      updateLastUpdateDisplay();
     } else {
       // Output hasn't changed — show working indicator after delay
       updateWorkingIndicator();
@@ -680,25 +686,52 @@ function updateWorkingIndicator() {
   if (state.screen !== SCREENS.RUNNING) return;
   if (state.viewingStepOutput !== null) return;
   const elapsed = Date.now() - (lastOutputChangeTime || state.runStartTime || Date.now());
+  updateLastUpdateDisplay();
   if (elapsed >= WORKING_INDICATOR_DELAY_MS) {
-    showWorkingIndicator();
+    showWorkingIndicator(elapsed);
   }
 }
 
-function showWorkingIndicator() {
+function showWorkingIndicator(elapsedMs) {
   const el = document.getElementById('working-indicator');
-  if (el) el.style.display = 'flex';
+  if (!el) return;
+  el.style.display = 'flex';
+  const textEl = el.querySelector('.working-text');
+  if (textEl && elapsedMs > 0) {
+    textEl.textContent = `Claude is working (${NtLogic.formatMs(elapsedMs)})`;
+  }
 }
 
 function hideWorkingIndicator() {
   const el = document.getElementById('working-indicator');
-  if (el) el.style.display = 'none';
+  if (!el) return;
+  el.style.display = 'none';
+  const textEl = el.querySelector('.working-text');
+  if (textEl) textEl.textContent = 'Claude is working';
+}
+
+function updateLastUpdateDisplay() {
+  const el = document.getElementById('last-update-time');
+  if (!el) return;
+  if (!lastOutputChangeTime) {
+    el.textContent = '';
+    return;
+  }
+  const timeStr = NtLogic.formatTime(lastOutputChangeTime);
+  const ago = Date.now() - lastOutputChangeTime;
+  if (ago < 2000) {
+    el.textContent = `Last update: ${timeStr}`;
+  } else {
+    el.textContent = `Last update: ${timeStr} (${NtLogic.formatMs(ago)} ago)`;
+  }
 }
 
 function clearOutput() {
   document.getElementById('output-content').innerHTML = '';
   lastRenderedOutput = '';
   hideWorkingIndicator();
+  const tsEl = document.getElementById('last-update-time');
+  if (tsEl) tsEl.textContent = '';
 }
 
 // ── Step Output Viewer ──────────────────────────────────────────
@@ -999,6 +1032,8 @@ function resetApp() {
   clearError('finishing');
   document.getElementById('output-content').innerHTML = '';
   lastRenderedOutput = '';
+  const tsEl = document.getElementById('last-update-time');
+  if (tsEl) tsEl.textContent = '';
   document.getElementById('btn-stop-run').disabled = false;
   document.getElementById('btn-stop-run').textContent = 'Stop Run';
   document.getElementById('progress-bar-fill').style.width = '0%';

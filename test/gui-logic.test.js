@@ -205,6 +205,51 @@ describe('formatTokens', () => {
   });
 });
 
+// ── formatTime ──────────────────────────────────────────────────────
+
+describe('formatTime', () => {
+  it('formats a timestamp to locale time string', () => {
+    // Use a known date: 2025-01-15 14:05:30
+    const ts = new Date(2025, 0, 15, 14, 5, 30).getTime();
+    const result = NtLogic.formatTime(ts);
+    // Locale-dependent, but should contain "2:05:30" and "PM"
+    expect(result).toMatch(/2:05:30/);
+    expect(result).toMatch(/PM/);
+  });
+
+  it('formats a morning timestamp', () => {
+    const ts = new Date(2025, 5, 10, 9, 15, 0).getTime();
+    const result = NtLogic.formatTime(ts);
+    expect(result).toMatch(/9:15:00/);
+    expect(result).toMatch(/AM/);
+  });
+
+  it('formats midnight correctly', () => {
+    const ts = new Date(2025, 0, 1, 0, 0, 0).getTime();
+    const result = NtLogic.formatTime(ts);
+    expect(result).toMatch(/12:00:00/);
+    expect(result).toMatch(/AM/);
+  });
+
+  it('formats noon correctly', () => {
+    const ts = new Date(2025, 0, 1, 12, 0, 0).getTime();
+    const result = NtLogic.formatTime(ts);
+    expect(result).toMatch(/12:00:00/);
+    expect(result).toMatch(/PM/);
+  });
+
+  it.each([
+    [null, 'null'],
+    [undefined, 'undefined'],
+    [0, 'zero'],
+    [NaN, 'NaN'],
+    [Infinity, 'Infinity'],
+    [-Infinity, '-Infinity'],
+  ])('returns empty string for %s (%s)', (input, _desc) => {
+    expect(NtLogic.formatTime(input)).toBe('');
+  });
+});
+
 // ── buildStepArgs ──────────────────────────────────────────────────
 
 describe('buildStepArgs', () => {
