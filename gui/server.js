@@ -352,6 +352,10 @@ function cleanup() {
 const server = createServer(handleRequest);
 serverInstance = server;
 
+// Prevent slow clients from holding connections indefinitely.
+server.requestTimeout = 30_000;  // 30s — max time for entire request
+server.headersTimeout = 15_000;  // 15s — max time to receive headers
+
 server.listen(0, '127.0.0.1', () => {
   const { port } = server.address();
   const url = `http://127.0.0.1:${port}`;
@@ -359,6 +363,18 @@ server.listen(0, '127.0.0.1', () => {
   launchChrome(url);
 });
 
-// Graceful shutdown
-process.on('SIGINT', () => { cleanup(); process.exit(0); });
-process.on('SIGTERM', () => { cleanup(); process.exit(0); });
+// Graceful shutdown with force-exit safety net.
+// cleanup() calls server.close() which waits for active connections to drain.
+// If a long-running command response or stuck connection prevents draining,
+// the 5s timeout guarantees the process terminates.
+const SHUTDOWN_FORCE_EXIT_MS = 5000;
+
+function shutdownHandler() {
+  cleanup();
+  const forceTimer = setTimeout(() => process.exit(1), SHUTDOWN_FORCE_EXIT_MS);
+  forceTimer.unref();
+  process.exit(0);
+}
+
+process.on('SIGINT', shutdownHandler);
+process.on('SIGTERM', shutdownHandler);

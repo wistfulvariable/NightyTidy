@@ -13,6 +13,9 @@ Assumes CLAUDE.md loaded. Progress display in `src/dashboard.js` + `src/dashboar
 | `EXIT_DELAY` | 5,000 ms | dashboard-tui.js |
 | `BAR_WIDTH` | 30 chars | dashboard-tui.js |
 | `MAX_VISIBLE_STEPS` | 16 | dashboard-tui.js |
+| `requestTimeout` | 30,000 ms | dashboard.js, dashboard-standalone.js |
+| `headersTimeout` | 15,000 ms | dashboard.js, dashboard-standalone.js |
+| `SHUTDOWN_FORCE_EXIT_MS` | 10,000 ms | dashboard-standalone.js |
 
 ## Architecture
 
@@ -71,6 +74,7 @@ Updated by `cli.js` callbacks -> passed to `updateDashboard()` -> written to JSO
 - `stopDashboard()`: delete ephemeral files -> close SSE clients -> close HTTP server -> reset state
 - Called directly on abort (not `scheduleShutdown()` — `process.exit` kills timers)
 - Orchestrator: `dashboard-standalone.js` killed via SIGTERM by `finishRun()` -> `stopDashboardServer(pid)`. Interval ID stored in `pollIntervalId` and cleared on SIGTERM (previously passed function reference to `clearInterval` by mistake).
+- `dashboard-standalone.js` SIGTERM has 10s force-exit timeout (audit #20). `server.close()` waits for connections; SSE connections never close on their own. Force timer is `.unref()`ed to not block Node's event loop if server closes cleanly.
 
 ## Error Handling
 

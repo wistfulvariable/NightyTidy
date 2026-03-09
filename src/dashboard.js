@@ -164,6 +164,12 @@ export async function startDashboard(initialState, { onStop, projectDir }) {
         resolve({ url: null, port: null });
       });
 
+      // Prevent slow/malicious clients from holding connections indefinitely.
+      // SSE connections are excluded by design (they write headers immediately
+      // and remain open). These timeouts only affect regular HTTP requests.
+      server.requestTimeout = 30_000;  // 30s — max time for entire request
+      server.headersTimeout = 15_000;  // 15s — max time to receive headers
+
       server.listen(0, '127.0.0.1', () => {
         const port = server.address().port;
         const url = `http://localhost:${port}`;

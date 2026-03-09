@@ -89,6 +89,14 @@ Uses `openSync(path, 'wx')` — O_CREAT + O_EXCL. This is a single kernel operat
 ### CLI Argument Validation
 `parseInt` coercion can produce `NaN` for non-numeric strings. Always guard with `Number.isFinite()` after `parseInt` for numeric CLI args (`--run-step`, `--timeout`).
 
+## HTTP Server Shutdown
+
+### server.close() Waits for Connections
+Node's `server.close()` waits for all active connections to drain. SSE connections never close on their own. Any shutdown handler using `server.close(callback)` must have a force-exit timeout to prevent hanging. Pattern: close SSE clients explicitly, then `setTimeout(() => process.exit(), ms).unref()` before `server.close()`. The `.unref()` lets Node exit naturally if `server.close()` completes before the timer. Applied in `dashboard-standalone.js` (10s) and `gui/server.js` (5s) in audit #20.
+
+### Request Timeouts on HTTP Servers
+All HTTP servers must set `server.requestTimeout` and `server.headersTimeout` to prevent slow/malicious clients from holding connections indefinitely. SSE connections are excluded by design (headers written immediately). Applied to `dashboard.js`, `dashboard-standalone.js`, and `gui/server.js` in audit #20 (30s request, 15s headers).
+
 ## Singleton State Risks
 
 - `logger.js`: Re-calling `initLogger()` clears the log file.

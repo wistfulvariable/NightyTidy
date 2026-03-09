@@ -121,6 +121,11 @@ function handleRequest(req, res) {
 
 const server = createServer(handleRequest);
 
+// Prevent slow/malicious clients from holding connections indefinitely.
+// SSE connections excluded by design (headers written immediately, stay open).
+server.requestTimeout = 30_000;  // 30s — max time for entire request
+server.headersTimeout = 15_000;  // 15s — max time to receive headers
+
 server.listen(0, '127.0.0.1', () => {
   const port = server.address().port;
   const url = `http://localhost:${port}`;
@@ -138,9 +143,17 @@ server.on('error', (err) => {
   process.exit(1);
 });
 
-// Graceful shutdown
+// Graceful shutdown with force-exit safety net.
+// server.close() waits for all connections to drain, but SSE connections
+// never close on their own. The 10s timeout guarantees termination even
+// if client.end() fails silently or new connections arrive after cleanup.
+const SHUTDOWN_FORCE_EXIT_MS = 10_000;
+
 process.on('SIGTERM', () => {
   if (pollIntervalId) clearInterval(pollIntervalId);
   for (const client of sseClients) { try { client.end(); } catch { /* ignore */ } }
+  sseClients.clear();
+  const forceTimer = setTimeout(() => process.exit(0), SHUTDOWN_FORCE_EXIT_MS);
+  forceTimer.unref();
   server.close(() => process.exit(0));
 });
