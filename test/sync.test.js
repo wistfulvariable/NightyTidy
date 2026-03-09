@@ -151,6 +151,7 @@ describe('parseDocSections', () => {
     expect(headings).toEqual([
       'Overview',
       'Meta Prompts',
+      'For Creating a New Prompt',
       'Documentation',
       'Test Coverage',
       'Test Hardening',
@@ -196,6 +197,7 @@ describe('filterPromptSections', () => {
     const headings = filtered.map(s => s.heading);
     expect(headings).not.toContain('Overview');
     expect(headings).not.toContain('Meta Prompts');
+    expect(headings).not.toContain('For Creating a New Prompt');
   });
 
   it('keeps prompt sections', () => {

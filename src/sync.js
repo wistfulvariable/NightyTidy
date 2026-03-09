@@ -33,6 +33,7 @@ const NON_PROMPT_HEADINGS = new Set([
   'safety rails built into every prompt',
   'conclusion',
   'meta prompts',
+  'for creating a new prompt',
 ]);
 
 /**

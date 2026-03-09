@@ -89,7 +89,8 @@ public static class FolderPicker {
         var dlg = (IFileDialog)new FileOpenDialogRCW();
         uint opts;
         dlg.GetOptions(out opts);
-        dlg.SetOptions(opts | 0x20u | 0x40000u | 0x800u);
+        // FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_DEFAULTNOMINIMODE
+        dlg.SetOptions(opts | 0x20u | 0x40u | 0x800u | 0x20000000u);
         dlg.SetTitle(title);
         if (dlg.Show(IntPtr.Zero) != 0) return "";
         IShellItem item;
@@ -220,13 +221,10 @@ async function handleRunCommand(req, res) {
   }
 
   try {
-    const isWin = process.platform === 'win32';
-    const shell = isWin ? 'cmd.exe' : '/bin/sh';
-    const shellArgs = isWin ? ['/c', command] : ['-c', command];
-
-    const proc = spawn(shell, shellArgs, {
+    const proc = spawn(command, [], {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
+      shell: true,
     });
 
     let stdout = '';

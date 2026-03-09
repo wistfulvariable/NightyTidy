@@ -68,7 +68,7 @@
       <span class="subtitle" id="running-subtitle">Running</span>
     </header>
 
-    <div class="status-badge status-running" id="running-status-badge" role="status" aria-live="polite">Running</div>
+    <span class="project-path" id="running-project-path"></span>
 
     <div class="card">
       <div class="progress-stats">
@@ -84,17 +84,13 @@
       </div>
     </div>
 
-    <div class="card" id="current-step-card" style="display:none">
-      <div class="current-step">
-        <span class="label">Now running:</span>
-        <span class="name pulse" id="current-step-name"></span>
-      </div>
-    </div>
-
     <div class="step-list" id="running-step-list"></div>
 
     <div class="output-panel" id="output-panel">
-      <h2>Claude Output</h2>
+      <div class="output-panel-header">
+        <h2 id="output-title">Claude Output</h2>
+        <button class="link-btn" id="btn-back-to-live" style="display:none">Back to live</button>
+      </div>
       <div class="output-content" id="output-content" aria-live="off"></div>
     </div>
 
@@ -125,6 +121,7 @@
       <span class="subtitle">Summary</span>
     </header>
 
+    <span class="project-path" id="summary-project-path"></span>
     <div class="summary-result" id="summary-result">
       <h2 id="summary-title">Run Complete</h2>
     </div>
@@ -137,11 +134,31 @@
 
     <div class="step-list" id="summary-step-list"></div>
 
+    <div class="output-panel" id="summary-output-panel" style="display:none">
+      <div class="output-panel-header">
+        <h2 id="summary-output-title">Step Output</h2>
+        <button class="link-btn" id="btn-close-output">Close</button>
+      </div>
+      <div class="output-content" id="summary-output-content"></div>
+    </div>
+
     <div class="summary-actions">
       <button class="btn btn-primary" id="btn-new-run">New Run</button>
       <button class="btn btn-secondary" id="btn-close-app">Close</button>
     </div>
   </section>
+
+  <!-- ═══ Confirm Stop Modal ═══ -->
+  <div class="modal-overlay hidden" id="confirm-stop-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-stop-title">
+    <div class="modal">
+      <h2 id="confirm-stop-title">Stop Run?</h2>
+      <p>This will cancel all remaining steps. Completed steps will be kept and a report will be generated.</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="btn-confirm-stop-cancel">Keep Running</button>
+        <button class="btn btn-danger" id="btn-confirm-stop-yes">Stop Run</button>
+      </div>
+    </div>
+  </div>
 
   <script src="/logic.js"></script>
   <script src="/app.js"></script>

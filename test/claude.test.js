@@ -126,7 +126,7 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'short prompt', '--output-format', 'json', '--dangerously-skip-permissions'],
+        ['-p', 'short prompt', '--output-format', 'stream-json', '--dangerously-skip-permissions'],
         expect.objectContaining({ cwd: '/tmp' }),
       );
     });
@@ -538,7 +538,7 @@ describe('runPrompt', () => {
       // When using stdin mode, args should only contain output-format + permission flag (no -p flag)
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['--output-format', 'json', '--dangerously-skip-permissions'],
+        ['--output-format', 'stream-json', '--dangerously-skip-permissions'],
         expect.objectContaining({ stdio: ['pipe', 'pipe', 'pipe'] }),
       );
     });
@@ -576,7 +576,7 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'test', '--output-format', 'json', '--dangerously-skip-permissions'],
+        ['-p', 'test', '--output-format', 'stream-json', '--dangerously-skip-permissions'],
         expect.objectContaining({ shell: true }),
       );
     });
@@ -593,7 +593,7 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'test', '--output-format', 'json', '--dangerously-skip-permissions'],
+        ['-p', 'test', '--output-format', 'stream-json', '--dangerously-skip-permissions'],
         expect.objectContaining({ shell: false }),
       );
     });
@@ -623,11 +623,12 @@ describe('runPrompt', () => {
   // onOutput callback
   // -----------------------------------------------------------------------
   describe('onOutput callback', () => {
-    it('receives stdout chunks in real time', async () => {
+    it('receives formatted output from stdout NDJSON lines in real time', async () => {
       const chunks = [];
       setupSpawnSequence((child) => {
-        child.emitStdout('chunk1');
-        child.emitStdout('chunk2');
+        // Emit non-JSON lines with newlines — passed through as raw text
+        child.emitStdout('chunk1\n');
+        child.emitStdout('chunk2\n');
         child.emitClose(0);
       });
 
@@ -637,7 +638,7 @@ describe('runPrompt', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(chunks).toEqual(['chunk1', 'chunk2']);
+      expect(chunks).toEqual(['chunk1\n', 'chunk2\n']);
     });
 
     it('is not called when not provided', async () => {
@@ -671,12 +672,12 @@ describe('runPrompt', () => {
       setupSpawnSequence(
         // Attempt 1: fails
         (child) => {
-          child.emitStdout('attempt1');
+          child.emitStdout('attempt1\n');
           child.emitClose(1);
         },
         // Attempt 2: succeeds
         (child) => {
-          child.emitStdout('attempt2');
+          child.emitStdout('attempt2\n');
           child.emitClose(0);
         },
       );
@@ -690,17 +691,22 @@ describe('runPrompt', () => {
       const result = await promise;
 
       expect(result.success).toBe(true);
-      expect(chunks).toContain('attempt1');
-      expect(chunks).toContain('attempt2');
+      expect(chunks).toContain('attempt1\n');
+      expect(chunks).toContain('attempt2\n');
     });
   });
 
   // -----------------------------------------------------------------------
   // JSON output parsing and cost extraction
   // -----------------------------------------------------------------------
-  describe('JSON output parsing (--output-format json)', () => {
-    it('extracts text from JSON result field and populates cost', async () => {
-      const jsonResponse = JSON.stringify({
+  describe('stream-json output parsing (--output-format stream-json)', () => {
+    it('extracts text and cost from NDJSON result event', async () => {
+      // stream-json outputs multiple NDJSON lines; final line is the result event
+      const assistantLine = JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'Working on it...' }] },
+      });
+      const resultLine = JSON.stringify({
         type: 'result',
         subtype: 'success',
         total_cost_usd: 0.0512,
@@ -713,7 +719,7 @@ describe('runPrompt', () => {
       });
 
       setupSpawnSequence((child) => {
-        child.emitStdout(jsonResponse);
+        child.emitStdout(assistantLine + '\n' + resultLine + '\n');
         child.emitClose(0);
       });
 
@@ -726,6 +732,32 @@ describe('runPrompt', () => {
         numTurns: 5,
         durationApiMs: 2100,
         sessionId: 'sess-abc-123',
+      });
+    });
+
+    it('extracts cost from result event even with many preceding NDJSON lines', async () => {
+      const lines = [
+        JSON.stringify({ type: 'system', subtype: 'init', session_id: 'sess-1' }),
+        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Step 1' }] } }),
+        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/src/main.js' } }] } }),
+        JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result', content: 'file data' }] } }),
+        JSON.stringify({ type: 'result', result: 'All done.', total_cost_usd: 0.10, num_turns: 3, duration_api_ms: 5000, session_id: 'sess-1' }),
+      ].join('\n') + '\n';
+
+      setupSpawnSequence((child) => {
+        child.emitStdout(lines);
+        child.emitClose(0);
+      });
+
+      const result = await runPrompt('test', '/tmp', FAST_OPTIONS);
+
+      expect(result.success).toBe(true);
+      expect(result.output).toBe('All done.');
+      expect(result.cost).toEqual({
+        costUSD: 0.10,
+        numTurns: 3,
+        durationApiMs: 5000,
+        sessionId: 'sess-1',
       });
     });
 
@@ -742,8 +774,8 @@ describe('runPrompt', () => {
       expect(result.cost).toBeNull();
     });
 
-    it('handles JSON with empty result field', async () => {
-      const jsonResponse = JSON.stringify({
+    it('handles result event with empty result field', async () => {
+      const resultLine = JSON.stringify({
         type: 'result',
         total_cost_usd: 0.001,
         num_turns: 1,
@@ -753,14 +785,14 @@ describe('runPrompt', () => {
       });
 
       setupSpawnSequence((child) => {
-        child.emitStdout(jsonResponse);
+        child.emitStdout(resultLine + '\n');
         child.emitClose(0);
       });
 
       // Empty result field means empty output text → treated as failure
       const result = await runPrompt('test', '/tmp', { ...FAST_OPTIONS, retries: 0 });
 
-      // JSON parsed successfully, but empty result = empty output = failure
+      // Parsed successfully, but empty result = empty output = failure
       expect(result.cost).toEqual({
         costUSD: 0.001,
         numTurns: 1,
@@ -769,7 +801,7 @@ describe('runPrompt', () => {
       });
     });
 
-    it('returns cost: null when process fails (no JSON output)', async () => {
+    it('returns cost: null when process fails (no output)', async () => {
       setupSpawnSequence((child) => {
         child.emitClose(1);
       });
@@ -780,14 +812,14 @@ describe('runPrompt', () => {
       expect(result.cost).toBeNull();
     });
 
-    it('handles JSON with missing optional cost fields gracefully', async () => {
-      const jsonResponse = JSON.stringify({
+    it('handles result event with missing optional cost fields', async () => {
+      const resultLine = JSON.stringify({
         type: 'result',
         result: 'Done.',
       });
 
       setupSpawnSequence((child) => {
-        child.emitStdout(jsonResponse);
+        child.emitStdout(resultLine + '\n');
         child.emitClose(0);
       });
 
@@ -801,6 +833,122 @@ describe('runPrompt', () => {
         durationApiMs: null,
         sessionId: null,
       });
+    });
+
+    it('falls back to single-JSON parse for backward compat (--output-format json)', async () => {
+      // If CLI still uses --output-format json, it outputs a single JSON object
+      const jsonResponse = JSON.stringify({
+        type: 'result',
+        result: 'Legacy output.',
+        total_cost_usd: 0.02,
+        num_turns: 2,
+        duration_api_ms: 1000,
+        session_id: 'sess-legacy',
+      });
+
+      setupSpawnSequence((child) => {
+        child.emitStdout(jsonResponse);
+        child.emitClose(0);
+      });
+
+      const result = await runPrompt('test', '/tmp', FAST_OPTIONS);
+
+      expect(result.success).toBe(true);
+      expect(result.output).toBe('Legacy output.');
+      expect(result.cost).toEqual({
+        costUSD: 0.02,
+        numTurns: 2,
+        durationApiMs: 1000,
+        sessionId: 'sess-legacy',
+      });
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // onOutput callback — stream-json NDJSON event formatting
+  // -----------------------------------------------------------------------
+  describe('onOutput with stream-json formatting', () => {
+    it('passes formatted assistant text events to onOutput', async () => {
+      const chunks = [];
+      const assistantLine = JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'text', text: 'Analyzing the code...' }] },
+      });
+      const resultLine = JSON.stringify({
+        type: 'result', result: 'Done.', total_cost_usd: 0.01,
+      });
+
+      setupSpawnSequence((child) => {
+        child.emitStdout(assistantLine + '\n' + resultLine + '\n');
+        child.emitClose(0);
+      });
+
+      await runPrompt('test', '/tmp', {
+        ...FAST_OPTIONS,
+        onOutput: (text) => chunks.push(text),
+      });
+
+      // Should receive formatted assistant text, not raw JSON
+      expect(chunks).toEqual(['Analyzing the code...\n']);
+    });
+
+    it('formats tool_use events as readable summaries', async () => {
+      const chunks = [];
+      const toolLine = JSON.stringify({
+        type: 'assistant',
+        message: { content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/src/main.js' } }] },
+      });
+      const resultLine = JSON.stringify({ type: 'result', result: 'Done.' });
+
+      setupSpawnSequence((child) => {
+        child.emitStdout(toolLine + '\n' + resultLine + '\n');
+        child.emitClose(0);
+      });
+
+      await runPrompt('test', '/tmp', {
+        ...FAST_OPTIONS,
+        onOutput: (text) => chunks.push(text),
+      });
+
+      expect(chunks).toEqual(['\u25B8 Read: /src/main.js\n']);
+    });
+
+    it('skips system, user, and result events in onOutput', async () => {
+      const chunks = [];
+      const lines = [
+        JSON.stringify({ type: 'system', subtype: 'init' }),
+        JSON.stringify({ type: 'user', message: { content: [{ type: 'tool_result' }] } }),
+        JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: 'Hello' }] } }),
+        JSON.stringify({ type: 'result', result: 'Done.' }),
+      ].join('\n') + '\n';
+
+      setupSpawnSequence((child) => {
+        child.emitStdout(lines);
+        child.emitClose(0);
+      });
+
+      await runPrompt('test', '/tmp', {
+        ...FAST_OPTIONS,
+        onOutput: (text) => chunks.push(text),
+      });
+
+      // Only the assistant text event should pass through
+      expect(chunks).toEqual(['Hello\n']);
+    });
+
+    it('passes through non-JSON lines for backward compat', async () => {
+      const chunks = [];
+      setupSpawnSequence((child) => {
+        child.emitStdout('Some plain text output\n');
+        child.emitClose(0);
+      });
+
+      await runPrompt('test', '/tmp', {
+        ...FAST_OPTIONS,
+        onOutput: (text) => chunks.push(text),
+      });
+
+      expect(chunks).toEqual(['Some plain text output\n']);
     });
   });
 });

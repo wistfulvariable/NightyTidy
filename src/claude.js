@@ -38,11 +38,13 @@ function spawnClaude(prompt, cwd, useShell = false, continueSession = false) {
   // Without it, Claude Code blocks on tool permission prompts (Bash, Edit, etc.)
   // that cannot be approved without a TTY. NightyTidy is the permission layer —
   // it controls what prompts are sent and operates on a safety branch.
-  // --output-format json: returns structured JSON with total_cost_usd, num_turns,
-  // duration_api_ms, and the response text in the `result` field.
+  // --output-format stream-json: streams NDJSON events in real-time as the
+  // conversation progresses. Each line is a JSON object (assistant message,
+  // tool use, etc.). The final line is a `result` event with total_cost_usd,
+  // num_turns, duration_api_ms, and the response text in the `result` field.
   const args = useStdin
-    ? ['--output-format', 'json', '--dangerously-skip-permissions']
-    : ['-p', prompt, '--output-format', 'json', '--dangerously-skip-permissions'];
+    ? ['--output-format', 'stream-json', '--dangerously-skip-permissions']
+    : ['-p', prompt, '--output-format', 'stream-json', '--dangerously-skip-permissions'];
   if (continueSession) args.push('--continue');
   const stdinMode = useStdin ? 'pipe' : 'ignore';
 
@@ -81,10 +83,79 @@ function setupAbortHandler(child, signal, settle) {
   return onAbort;
 }
 
+/**
+ * Extract a human-readable summary from a single tool_use content block.
+ * Returns a short string like "▸ Read: /path/to/file".
+ */
+function summarizeToolInput(input) {
+  if (!input) return '';
+  if (input.file_path) return input.file_path;
+  if (input.command) return input.command.length > 80 ? input.command.slice(0, 80) + '...' : input.command;
+  if (input.pattern) return input.pattern;
+  if (input.query) return input.query.length > 80 ? input.query.slice(0, 80) + '...' : input.query;
+  return '';
+}
+
+/**
+ * Convert a parsed stream-json NDJSON event into human-readable display text.
+ * Returns null for events that should not be displayed (system, result, etc.).
+ */
+function formatStreamEvent(event) {
+  if (!event || !event.type) return null;
+
+  // Final result — cost data handled by parseJsonOutput, not displayed
+  if (event.type === 'result') return null;
+  // System init — not useful for display
+  if (event.type === 'system') return null;
+  // Tool results — too verbose (full file contents)
+  if (event.type === 'user') return null;
+
+  // Verbose mode: token-by-token deltas
+  if (event.type === 'stream_event') {
+    const delta = event.event?.delta;
+    if (delta?.type === 'text_delta' && delta.text) return delta.text;
+    return null;
+  }
+
+  // Assistant messages — extract text and tool_use content blocks
+  if (event.type === 'assistant') {
+    const content = event.message?.content;
+    if (!Array.isArray(content)) return null;
+
+    const parts = [];
+    for (const block of content) {
+      if (block.type === 'text' && block.text) {
+        parts.push(block.text);
+      } else if (block.type === 'tool_use' && block.name) {
+        const detail = summarizeToolInput(block.input);
+        parts.push(`\u25B8 ${block.name}${detail ? ': ' + detail : ''}`);
+      }
+    }
+    return parts.length > 0 ? parts.join('\n') + '\n' : null;
+  }
+
+  return null;
+}
+
+/**
+ * Parse a single NDJSON line and return display text (or null).
+ * Non-JSON lines are passed through as-is for backward compatibility.
+ */
+function formatEventLine(line) {
+  try {
+    const event = JSON.parse(line);
+    return formatStreamEvent(event);
+  } catch {
+    // Not valid JSON — pass through raw text (backward compat with older CLI)
+    return line.trim() ? line + '\n' : null;
+  }
+}
+
 function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {}) {
   return new Promise((resolve) => {
     let stdout = '';
     let settled = false;
+    let lineBuffer = ''; // Buffers incomplete NDJSON lines for onOutput parsing
 
     // Central settle function — guards against double-resolve and cleans up
     const settle = (result) => {
@@ -103,7 +174,17 @@ function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {
       stdout += text;
       if (verbose) debug(text.trimEnd());
       if (onOutput) {
-        try { onOutput(text); } catch { /* callback failure must not crash subprocess */ }
+        // Parse complete NDJSON lines and extract display text
+        lineBuffer += text;
+        const lines = lineBuffer.split('\n');
+        lineBuffer = lines.pop(); // Keep incomplete last line in buffer
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const display = formatEventLine(line);
+          if (display) {
+            try { onOutput(display); } catch { /* callback failure must not crash subprocess */ }
+          }
+        }
       }
     });
 
@@ -128,13 +209,38 @@ function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {
 }
 
 /**
- * Parse Claude Code --output-format json response.
- * Extracts the text response from `result` field and cost metadata.
- * Falls back gracefully if output isn't valid JSON (e.g., old CLI version).
+ * Parse Claude Code --output-format stream-json response.
+ * Scans NDJSON lines for the final `result` event to extract cost metadata
+ * and the response text. Falls back to single-JSON parse (backward compat
+ * with --output-format json) and then to raw text (cost: null).
  */
 function parseJsonOutput(result) {
   if (!result.output) return { ...result, cost: null };
 
+  const lines = result.output.trim().split('\n');
+
+  // Scan backwards for the "result" event (stream-json NDJSON format)
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const event = JSON.parse(lines[i]);
+      if (event.type === 'result') {
+        return {
+          ...result,
+          output: event.result || '',
+          cost: {
+            costUSD: event.total_cost_usd ?? null,
+            numTurns: event.num_turns ?? null,
+            durationApiMs: event.duration_api_ms ?? null,
+            sessionId: event.session_id ?? null,
+          },
+        };
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  // Fallback: try parsing entire output as single JSON (--output-format json compat)
   try {
     const json = JSON.parse(result.output.trim());
     return {
@@ -148,8 +254,7 @@ function parseJsonOutput(result) {
       },
     };
   } catch {
-    // Not valid JSON — CLI may not support --output-format json.
-    // Return original result with null cost.
+    // Not valid JSON — CLI may be an old version without JSON output.
     return { ...result, cost: null };
   }
 }
