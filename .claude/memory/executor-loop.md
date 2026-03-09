@@ -1,6 +1,6 @@
 # Executor Loop — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. Core loop in `src/executor.js` (105 lines).
+Assumes CLAUDE.md loaded. Core loop in `src/executor.js`.
 
 ## Exports
 
@@ -72,5 +72,5 @@ Signal flows: `cli.js AbortController` → `executeSteps(signal)` → `runPrompt
 
 - `runPrompt` from `claude.js`
 - `getHeadHash`, `hasNewCommit`, `fallbackCommit` from `git.js`
-- `DOC_UPDATE_PROMPT` from `prompts/steps.js`
+- `DOC_UPDATE_PROMPT` from `prompts/loader.js`
 - `notify` from `notifications.js`

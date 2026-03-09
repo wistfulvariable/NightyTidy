@@ -1,6 +1,6 @@
 # Report Generation — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. Report logic in `src/report.js` (158 lines).
+Assumes CLAUDE.md loaded. Report logic in `src/report.js`.
 
 ## Exports
 

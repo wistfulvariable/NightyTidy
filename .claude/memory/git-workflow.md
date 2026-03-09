@@ -1,6 +1,6 @@
 # Git Workflow — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. All git ops in `src/git.js` (143 lines) via `simple-git`.
+Assumes CLAUDE.md loaded. All git ops in `src/git.js` via `simple-git`.
 
 ## Module State
 
@@ -12,14 +12,14 @@ Assumes CLAUDE.md loaded. All git ops in `src/git.js` (143 lines) via `simple-gi
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| `EPHEMERAL_FILES` | `['nightytidy-run.log', 'nightytidy-progress.json', 'nightytidy-dashboard.url']` | Excluded from git tracking |
-| `RETRY_LIMIT` | 10 | Max collision retry attempts for tags/branches |
+| `EPHEMERAL_FILES` | `['nightytidy-run.log', 'nightytidy-progress.json', 'nightytidy-dashboard.url', 'nightytidy-run-state.json']` | Excluded from git tracking |
+| `MAX_NAME_RETRIES` | 10 | Max collision retry attempts for tags/branches |
 
 ## Ephemeral File Exclusion
 
 `excludeEphemeralFiles()` writes to `.git/info/exclude` (local, not committed).
-`fallbackCommit()` also uses `:!file` pathspec exclusions with `git add -A`.
-Prevents log/progress/url files from being tracked by `git add -A`.
+`fallbackCommit()` relies on `.git/info/exclude` — uses plain `git add -A` (no `:!` pathspec).
+Prevents log/progress/state files from being tracked by `git add -A`.
 
 ## Timestamp Format
 

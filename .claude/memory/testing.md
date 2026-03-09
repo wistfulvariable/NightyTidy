@@ -1,33 +1,35 @@
 # Testing — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. 307 tests, 22 files, Vitest v2.
+Assumes CLAUDE.md loaded. 359 tests, 24 files, Vitest v2.
 
-## Test File → Module Coverage
+## Test File -> Module Coverage
 
-| Test File | Module | Tests | Type |
-|-----------|--------|-------|------|
-| `smoke.test.js` | All (structural) | 6 | Smoke — deploy verification |
-| `cli.test.js` | `cli.js` | 27 | Unit (mocked lifecycle) |
-| `dashboard.test.js` | `dashboard.js` | 20 | Unit + Integration (real HTTP) |
-| `logger.test.js` | `logger.js` | 10 | Integration (real file I/O) |
-| `checks.test.js` | `checks.js` | 4 | Unit (mocked subprocess) |
-| `checks-extended.test.js` | `checks.js` | 13 | Unit (auth, disk, empty repo) |
-| `claude.test.js` | `claude.js` | 25 | Unit (fake process, fake timers) |
-| `executor.test.js` | `executor.js` | 11 | Unit (mocked claude, git) |
-| `git.test.js` | `git.js` | 16 | Integration (real git, temp dirs) |
-| `git-extended.test.js` | `git.js` | 7 | Integration (collision, empty repo) |
-| `notifications.test.js` | `notifications.js` | 2 | Unit (mock notifier) |
-| `report.test.js` | `report.js` | 7 | Unit (mock fs) |
-| `report-extended.test.js` | `report.js` | 15 | Unit (CLAUDE.md update, edge cases) |
-| `steps.test.js` | `prompts/loader.js` | 8 | Structural integrity + manifest |
-| `integration.test.js` | Multi-module | 5 | Integration (real git + fs) |
-| `setup.test.js` | `setup.js` | 7 | Unit (mock fs) |
-| `cli-extended.test.js` | `cli.js` | 31 | Unit (dashboard state, abort paths) |
-| `dashboard-extended.test.js` | `dashboard.js` | 3 | Unit (TUI spawn, error paths) |
-| `dashboard-tui.test.js` | `dashboard-tui.js` | 22 | Unit (TUI rendering, chalk proxy) |
-| `integration-extended.test.js` | Multi-module | 6 | Integration (abort, ephemeral, report) |
-| `orchestrator.test.js` | `orchestrator.js` | 31 | Unit (initRun, runStep, finishRun) |
-| `contracts.test.js` | All modules | 31 | Contract verification vs CLAUDE.md |
+| Test File | Module | Tests |
+|-----------|--------|-------|
+| `smoke.test.js` | All (structural) | 6 |
+| `cli.test.js` | `cli.js` | 27 |
+| `dashboard.test.js` | `dashboard.js` | 20 |
+| `logger.test.js` | `logger.js` | 10 |
+| `checks.test.js` | `checks.js` | 4 |
+| `checks-extended.test.js` | `checks.js` | 13 |
+| `claude.test.js` | `claude.js` | 25 |
+| `executor.test.js` | `executor.js` | 11 |
+| `git.test.js` | `git.js` | 16 |
+| `git-extended.test.js` | `git.js` | 7 |
+| `notifications.test.js` | `notifications.js` | 2 |
+| `report.test.js` | `report.js` | 7 |
+| `report-extended.test.js` | `report.js` | 15 |
+| `steps.test.js` | `prompts/loader.js` | 8 |
+| `integration.test.js` | Multi-module | 5 |
+| `setup.test.js` | `setup.js` | 7 |
+| `cli-extended.test.js` | `cli.js` | 31 |
+| `dashboard-extended.test.js` | `dashboard.js` | 3 |
+| `dashboard-tui.test.js` | `dashboard-tui.js` | 22 |
+| `integration-extended.test.js` | Multi-module | 6 |
+| `orchestrator.test.js` | `orchestrator.js` | 31 |
+| `contracts.test.js` | All modules | 31 |
+| `gui-logic.test.js` | `gui/resources/logic.js` | 39 |
+| `gui-server.test.js` | `gui/server.js` | 13 |
 
 ## Test Helpers (`test/helpers/`)
 
@@ -47,40 +49,12 @@ vi.mock('../src/logger.js', () => ({
 
 Without this: tests crash writing `nightytidy-run.log`. Exception: `logger.test.js` tests real logger.
 
-## Mock Patterns
-
-### Fake ChildProcess (claude.test.js)
-- `createFakeChild()` → EventEmitter with `.stdout`, `.stderr`, `.stdin`, `.kill`
-- `setupSpawnSequence(...behaviors)` configures multiple spawn calls in order
-- Schedule events via `queueMicrotask()` — listeners attach before events fire
-- `vi.useFakeTimers({ shouldAdvanceTime: true })` for retry/timeout tests
-
-### Mock subprocess (checks tests)
-- `createMockProcess({ code, stdout, stderr })` from `test/helpers/mocks.js`
-- Conditional mock: `spawn.mockImplementation((cmd, args) => { if (cmd === 'git') ... })`
-
-### Real git integration (git tests, integration tests)
-- Create temp dir: `mkdtemp(path.join(tmpdir(), 'nightytidy-test-'))`
-- Init repo: `git init` + config `user.email`/`user.name` + initial commit
-- Call `initGit(tempDir)` to set module singleton per test
-- Cleanup: `robustCleanup(tempDir)` — NEVER raw `rm()`
-
-### Mock fs (report, setup tests)
-- `vi.mock('fs', () => ({ writeFileSync: vi.fn(), readFileSync: vi.fn(), existsSync: vi.fn() }))`
-- **Important**: If the module under test imports `prompts/loader.js`, you must also mock `../src/prompts/loader.js` — the loader calls `readFileSync` at import time and will fail with the mocked fs
-
-### vi.doMock isolation (contracts.test.js)
-- `vi.resetModules()` + `vi.doMock()` in `beforeEach`
-- **Must** `vi.doUnmock()` in `afterEach` — registrations persist across `resetModules()`
-- Dynamic import AFTER mocks: `const { fn } = await import('../src/module.js')`
-
 ## Common Pitfalls
 
 - **Windows EBUSY on temp dirs**: git holds handles. Always `robustCleanup()`, never raw `rm()`
 - **Forgetting `vi.clearAllMocks()` in beforeEach** — mock state leaks between tests
 - **Not advancing fake timers** — retry/timeout tests hang forever
-- **`queueMicrotask` vs `process.nextTick`** — checks tests use nextTick, claude tests use queueMicrotask
 - **git tests need `initGit(tempDir)`** — module singleton must reset per test
-- **Dashboard state mutability** — `dashState` is shared reference; test shape, not initial values
 - **Non-TTY stdin** — `process.stdin.isTTY` falsy in test envs; CLI tests need `--all` or `--steps`
 - **loader.js + mocked fs** — tests mocking `fs` must also mock `prompts/loader.js` or the loader breaks at import time
+- **vi.doMock() leaks** — registrations persist across `vi.resetModules()`. Must `vi.doUnmock()` in `afterEach`

@@ -1,6 +1,6 @@
 # Claude Code Integration — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. Subprocess wrapper in `src/claude.js` (193 lines).
+Assumes CLAUDE.md loaded. Subprocess wrapper in `src/claude.js`.
 
 ## Constants
 

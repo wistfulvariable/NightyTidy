@@ -34,17 +34,17 @@ bin/
 src/
   cli.js                   # Full lifecycle orchestration (welcome → checks → select → execute → report → merge)
   executor.js              # Core step loop — runs prompts sequentially, handles failures + executeSingleStep
-  orchestrator.js          # Claude Code orchestrator mode — initRun, runStep, finishRun + dashboard (~400 LOC)
+  orchestrator.js          # Claude Code orchestrator mode — initRun, runStep, finishRun + dashboard
   claude.js                # Claude Code subprocess wrapper (spawn, retry, timeout, session continue)
   git.js                   # Git operations — branches, tags, commits, merges
   checks.js                # Pre-run validation (git, Claude CLI, disk space)
   notifications.js         # Desktop notifications (silent on failure)
-  dashboard.js             # Progress file writer + TUI window spawner + HTTP server (~230 LOC)
-  dashboard-html.js        # Dashboard HTML template with CSS + JS (~410 LOC, used by dashboard.js)
-  dashboard-standalone.js  # Standalone dashboard HTTP server for orchestrator mode (~100 LOC, detached process)
+  dashboard.js             # Progress file writer + TUI window spawner + HTTP server
+  dashboard-html.js        # Dashboard HTML template with CSS + JS (used by dashboard.js)
+  dashboard-standalone.js  # Standalone dashboard HTTP server for orchestrator mode (detached process)
   dashboard-tui.js         # Standalone TUI progress display (spawned in separate terminal window)
-  lock.js                  # Atomic lock file to prevent concurrent runs (~100 LOC, async with TTY prompt)
-  logger.js                # File + stdout logger with chalk coloring (~50 LOC)
+  lock.js                  # Atomic lock file to prevent concurrent runs (async with TTY prompt)
+  logger.js                # File + stdout logger with chalk coloring
   report.js                # NIGHTYTIDY-REPORT.md generation + CLAUDE.md update
   setup.js                 # --setup command: generates CLAUDE.md integration snippet for target projects
   prompts/
@@ -75,10 +75,19 @@ test/
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
   orchestrator.test.js     # 31 tests — initRun, runStep, finishRun, dashboard integration with mocked modules
   contracts.test.js        # 31 tests — module API contract verification against CLAUDE.md
+  gui-logic.test.js        # 39 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, etc.)
+  gui-server.test.js       # 13 tests — HTTP server, static file serving, read-file API, HTML structure
   helpers/
     cleanup.js             # Shared temp directory cleanup with EBUSY retry for Windows
     mocks.js               # Shared mock factories: createMockProcess, createErrorProcess, createMockGit
     testdata.js            # Shared test data factories: makeMetadata, makeResults
+gui/
+  server.js                  # Node.js HTTP server + Chrome app-mode launcher
+  resources/
+    index.html               # Single-page app with 5 screen sections
+    styles.css               # Dark theme CSS (extracted from dashboard-html.js)
+    logic.js                 # Pure functions (buildCommand, parseCliOutput, formatMs, etc.)
+    app.js                   # State machine + fetch API calls to server.js endpoints
 scripts/
   check-docs-freshness.js  # CI check: verifies doc counts match code reality
   run-flaky-check.js       # Runs test suite N times (default 3) to detect flaky tests
@@ -99,7 +108,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/orchestrator.js` | Claude Code orchestrator mode (JSON API for step-by-step runs) + dashboard | logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone |
 | `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue) | logger |
 | `src/git.js` | Git operations via simple-git | logger |
-| `src/checks.js` | Pre-run validation (6 checks) | logger |
+| `src/checks.js` | Pre-run validation (7 checks) | logger |
 | `src/notifications.js` | Desktop notifications | logger |
 | `src/dashboard.js` | Progress file + TUI window spawner + HTTP server (CSRF, security headers) | crypto, logger, dashboard-html |
 | `src/dashboard-html.js` | Dashboard HTML template (CSS + client-side JS) | none (data only) |
@@ -110,6 +119,9 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/report.js` | Report generation + CLAUDE.md update + `getVersion()` | logger |
 | `src/setup.js` | `--setup` command: CLAUDE.md integration for target projects | logger, prompts/loader |
 | `src/prompts/loader.js` | Loads 33 prompts from markdown files via manifest.json | fs (data loader) |
+| `gui/server.js` | Desktop GUI backend — HTTP server + native folder dialog + Chrome launcher | node:http, node:fs, node:child_process |
+| `gui/resources/logic.js` | GUI pure logic — command building, JSON parsing, formatting | none (browser + Node.js dual) |
+| `gui/resources/app.js` | GUI state machine — screen transitions, process spawning, progress polling | logic.js, server.js (via fetch) |
 
 ## Build & Run Commands
 
@@ -126,6 +138,7 @@ npx nightytidy --list --json    # List steps as JSON (for Claude Code orchestrat
 npx nightytidy --init-run --steps 1,5,12  # Initialize orchestrated run (pre-checks, git, state file)
 npx nightytidy --run-step 1     # Run a single step in orchestrated mode
 npx nightytidy --finish-run     # Finish orchestrated run (report, merge, cleanup)
+npm run gui               # Launch desktop GUI (Node.js server + Chrome app mode)
 npm test                  # Vitest — single pass
 npm run test:watch        # Vitest — watch mode
 npm run test:ci           # Vitest with coverage + threshold enforcement
@@ -284,7 +297,7 @@ Each command is a separate process invocation. State persists via `nightytidy-ru
 ## Testing
 
 - **Framework**: Vitest v2, `vitest.config.js` for coverage thresholds + strip-shebang plugin
-- **Tests** across 22 files — `npm test` to run, `npm run test:ci` for coverage enforcement
+- **Tests** across 24 files — `npm test` to run, `npm run test:ci` for coverage enforcement
 - **Coverage thresholds**: 90% statements, 80% branches, 80% functions — enforced by `test:ci`
 - **Philosophy**: Mock Claude Code subprocess, use real git against temp directories. Test failure paths harder than success paths
 - **Universal mock**: All test files mock `../src/logger.js` to prevent file I/O during tests (exception: `logger.test.js` tests the real logger)

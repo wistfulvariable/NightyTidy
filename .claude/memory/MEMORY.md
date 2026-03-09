@@ -5,15 +5,17 @@ NightyTidy: automated overnight codebase improvement via Claude Code subprocess 
 ## Current State
 
 - **Version**: 0.1.0
-- **Test count**: 188 (17 test files, all passing)
+- **Test count**: 359 (24 test files, all passing)
 - **Coverage**: above thresholds (90/80/80)
-- **Last major change**: GitHub-readiness — README, LICENSE, 4 bug fixes, 6 new tests
+- **Last major change**: Desktop GUI + orchestrator mode + markdown prompt refactor
 
 ## Recent Changes
 
-- README.md and LICENSE (MIT) added
-- Bug fixes: empty repo crash, tag/branch collision retry (up to 10), abort cleanup, dashboard file cleanup
-- Documentation overhaul: three-tier system (Tier 1 CLAUDE.md, Tier 2 memory files, Tier 3 human docs)
+- Desktop GUI: `gui/server.js` + `gui/resources/` (Chrome app-mode launcher, folder dialog, process management)
+- Orchestrator mode: `--init-run`, `--run-step`, `--finish-run` for Claude Code-driven workflows
+- Prompt refactor: monolithic `steps.js` replaced with `manifest.json` + individual markdown files in `src/prompts/`
+- Dashboard standalone server for orchestrator mode (`dashboard-standalone.js`)
+- GUI test coverage: `gui-logic.test.js` (39 tests), `gui-server.test.js` (13 tests)
 
 ## Topic Files
 
