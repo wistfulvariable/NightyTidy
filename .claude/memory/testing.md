@@ -114,3 +114,24 @@ Pattern: `it.each` rows count as individual tests, so parameterization can incre
 - orchestrator.js: never throws, returns `{ success: false, error }` (4 tests)
 - lock.js: throws on contention, releaseLock never throws (3 tests)
 - initialization sequence: logger must init first (1 test)
+
+## Test Quality Audit (2026-03-09)
+
+See `audit-reports/06_TEST_QUALITY_REPORT.md` for full report (6-phase analysis).
+
+**Key quality findings**:
+- Error path coverage across critical modules: 90% (71/79 paths tested)
+- Assertion density: 24/27 files above 1.5 threshold (healthy)
+- Zero tautological assertions found
+- 4 execution-only tests identified (incl. gui-server.test.js decorative file)
+- 5 test name/assertion mismatches (test names promise more than assertions verify)
+
+**Untested boundaries to watch**:
+- `formatDuration(negative)`, `formatDuration(NaN)`, `formatDuration(Infinity)` in report.js
+- `executeSteps([])` with empty step array
+- `runPrompt('')` with empty prompt string
+- `claude.js` STDIN_THRESHOLD boundary (exactly 8000 chars)
+- `setup.js` CLAUDE.md with start marker but missing end marker (falls through to append, duplicating)
+- `dashboard.js` has 5 untested non-critical catch blocks (progress write, URL write, TUI spawn, buffer overflow, server error)
+
+**Module ratings**: claude.js, executor.js, checks.js, lock.js, orchestrator.js, report.js, notifications.js = Strong. dashboard.js, setup.js = Weak. gui/server.js = Decorative. gui/resources/app.js = None (zero coverage).
