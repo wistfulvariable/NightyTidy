@@ -90,6 +90,48 @@ describe('generateReport', () => {
     const reportContent = writeFileSync.mock.calls[0][1];
     expect(reportContent).not.toContain('## Action Plan');
   });
+
+  it('includes Cost column in step table when results have cost data', async () => {
+    const results = makeResults({ completedCount: 2, failedCount: 0, withCost: true });
+    const metadata = makeMetadata();
+
+    await generateReport(results, 'Narration.', metadata);
+
+    const reportContent = writeFileSync.mock.calls[0][1];
+    expect(reportContent).toContain('| Cost |');
+    expect(reportContent).toContain('$0.0500');
+    expect(reportContent).toContain('$0.1000');
+  });
+
+  it('omits Cost column when no results have cost data', async () => {
+    const results = makeResults({ completedCount: 2, failedCount: 0 });
+    const metadata = makeMetadata();
+
+    await generateReport(results, 'Narration.', metadata);
+
+    const reportContent = writeFileSync.mock.calls[0][1];
+    expect(reportContent).not.toContain('| Cost |');
+  });
+
+  it('includes total cost in summary when metadata has totalCostUSD', async () => {
+    const results = makeResults({ completedCount: 2, failedCount: 0, withCost: true });
+    const metadata = makeMetadata({ totalCostUSD: 0.15 });
+
+    await generateReport(results, 'Narration.', metadata);
+
+    const reportContent = writeFileSync.mock.calls[0][1];
+    expect(reportContent).toContain('**Total cost**: $0.1500');
+  });
+
+  it('omits total cost from summary when metadata has no totalCostUSD', async () => {
+    const results = makeResults({ completedCount: 2, failedCount: 0 });
+    const metadata = makeMetadata();
+
+    await generateReport(results, 'Narration.', metadata);
+
+    const reportContent = writeFileSync.mock.calls[0][1];
+    expect(reportContent).not.toContain('**Total cost**');
+  });
 });
 
 describe('formatDuration', () => {

@@ -20,10 +20,10 @@ Assumes CLAUDE.md loaded. Report logic in `src/report.js`.
 ---
 
 ## Run Summary
-- Date, Duration, Steps completed/failed, Branch, Safety tag
+- Date, Duration, Steps completed/failed, Branch, Safety tag, Total cost (if available)
 
 ## Step Results
-| # | Step | Status | Duration | Attempts |
+| # | Step | Status | Duration | Attempts | Cost |  ← Cost column only if any step has cost data
 
 ## Failed Steps          ← Only if failedCount > 0
 ### Step N: Name
@@ -62,10 +62,10 @@ Imported by `cli.js` for terminal summary (single source — no duplication).
 ## Metadata Shape
 
 ```js
-{ projectDir, branchName, tagName, originalBranch, startTime, endTime }
+{ projectDir, branchName, tagName, originalBranch, startTime, endTime, totalCostUSD? }
 ```
 
-All strings except `startTime`/`endTime` (numbers from `Date.now()`).
+All strings except `startTime`/`endTime` (numbers from `Date.now()`) and `totalCostUSD` (number, optional — includes step + overhead costs).
 
 ## Error Handling
 

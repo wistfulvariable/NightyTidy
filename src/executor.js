@@ -35,6 +35,18 @@ export const SAFETY_PREAMBLE =
   '- Commit your changes with a descriptive message when done.\n' +
   '---\n\n';
 
+function sumCosts(a, b) {
+  if (!a && !b) return null;
+  if (!a) return b;
+  if (!b) return a;
+  return {
+    costUSD: (a.costUSD || 0) + (b.costUSD || 0),
+    numTurns: (a.numTurns || 0) + (b.numTurns || 0),
+    durationApiMs: (a.durationApiMs || 0) + (b.durationApiMs || 0),
+    sessionId: b.sessionId || a.sessionId,
+  };
+}
+
 function makeStepResult(step, status, result, duration) {
   return {
     step: { number: step.number, name: step.name },
@@ -43,6 +55,7 @@ function makeStepResult(step, status, result, duration) {
     duration,
     attempts: result.attempts,
     error: status === 'failed' ? result.error : null,
+    cost: result.cost || null,
   };
 }
 
@@ -84,6 +97,9 @@ export async function executeSingleStep(step, projectDir, { signal, timeout, onO
     warn(`${stepLabel}: Doc update failed after retries — improvement changes preserved but docs may be stale`);
   }
 
+  // Combine costs from improvement + doc-update calls
+  const combinedCost = sumCosts(result.cost, docResult.cost);
+
   // Commit verification
   const committed = await hasNewCommit(preStepHash);
   if (committed) {
@@ -99,7 +115,7 @@ export async function executeSingleStep(step, projectDir, { signal, timeout, onO
   const duration = Date.now() - stepStart;
   info(`${stepLabel} — completed (${Math.round(duration / 1000)}s)`);
 
-  return makeStepResult(step, 'completed', result, duration);
+  return makeStepResult(step, 'completed', { ...result, cost: combinedCost }, duration);
 }
 
 export async function executeSteps(selectedSteps, projectDir, { signal, timeout, onStepStart, onStepComplete, onStepFail, onOutput } = {}) {

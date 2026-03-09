@@ -38,9 +38,11 @@ function spawnClaude(prompt, cwd, useShell = false, continueSession = false) {
   // Without it, Claude Code blocks on tool permission prompts (Bash, Edit, etc.)
   // that cannot be approved without a TTY. NightyTidy is the permission layer —
   // it controls what prompts are sent and operates on a safety branch.
+  // --output-format json: returns structured JSON with total_cost_usd, num_turns,
+  // duration_api_ms, and the response text in the `result` field.
   const args = useStdin
-    ? ['--dangerously-skip-permissions']
-    : ['-p', prompt, '--dangerously-skip-permissions'];
+    ? ['--output-format', 'json', '--dangerously-skip-permissions']
+    : ['-p', prompt, '--output-format', 'json', '--dangerously-skip-permissions'];
   if (continueSession) args.push('--continue');
   const stdinMode = useStdin ? 'pipe' : 'ignore';
 
@@ -125,6 +127,33 @@ function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {
   });
 }
 
+/**
+ * Parse Claude Code --output-format json response.
+ * Extracts the text response from `result` field and cost metadata.
+ * Falls back gracefully if output isn't valid JSON (e.g., old CLI version).
+ */
+function parseJsonOutput(result) {
+  if (!result.output) return { ...result, cost: null };
+
+  try {
+    const json = JSON.parse(result.output.trim());
+    return {
+      ...result,
+      output: json.result || '',
+      cost: {
+        costUSD: json.total_cost_usd ?? null,
+        numTurns: json.num_turns ?? null,
+        durationApiMs: json.duration_api_ms ?? null,
+        sessionId: json.session_id ?? null,
+      },
+    };
+  } catch {
+    // Not valid JSON — CLI may not support --output-format json.
+    // Return original result with null cost.
+    return { ...result, cost: null };
+  }
+}
+
 async function runOnce(prompt, cwd, timeoutMs, signal, continueSession = false, onOutput) {
   // On Windows, always use shell — 'claude' is a .cmd script that
   // requires shell interpretation. Spawning without shell always gets
@@ -136,13 +165,13 @@ async function runOnce(prompt, cwd, timeoutMs, signal, continueSession = false, 
   try {
     child = spawnClaude(prompt, cwd, useShell, continueSession);
   } catch (err) {
-    return { success: false, output: '', error: err.message || 'Failed to start Claude Code', exitCode: -1 };
+    return { success: false, output: '', error: err.message || 'Failed to start Claude Code', exitCode: -1, cost: null };
   }
 
   const result = await waitForChild(child, timeoutMs, { signal, onOutput });
 
   delete result._errorCode;
-  return result;
+  return parseJsonOutput(result);
 }
 
 export async function runPrompt(prompt, cwd, options = {}) {
@@ -160,7 +189,7 @@ export async function runPrompt(prompt, cwd, options = {}) {
   for (let attempt = 1; attempt <= totalAttempts; attempt++) {
     if (signal?.aborted) {
       const duration = Date.now() - startTime;
-      return { success: false, output: '', error: 'Aborted by user', exitCode: -1, duration, attempts: attempt };
+      return { success: false, output: '', error: 'Aborted by user', exitCode: -1, duration, attempts: attempt, cost: null };
     }
 
     info(`Running Claude Code: ${label} (attempt ${attempt}/${totalAttempts})`);
@@ -171,7 +200,7 @@ export async function runPrompt(prompt, cwd, options = {}) {
     // Abort detected — return immediately without retry
     if (signal?.aborted) {
       const duration = Date.now() - startTime;
-      return { success: false, output: result.output || '', error: 'Aborted by user', exitCode: -1, duration, attempts: attempt };
+      return { success: false, output: result.output || '', error: 'Aborted by user', exitCode: -1, duration, attempts: attempt, cost: null };
     }
 
     if (result.success) {
@@ -197,5 +226,6 @@ export async function runPrompt(prompt, cwd, options = {}) {
     exitCode: -1,
     duration,
     attempts: totalAttempts,
+    cost: lastResult?.cost ?? null,
   };
 }

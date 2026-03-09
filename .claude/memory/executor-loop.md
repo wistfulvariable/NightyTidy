@@ -37,12 +37,15 @@ For each step in `selectedSteps`:
 
 ```js
 {
-  results: [{ step: { number, name }, status: 'completed'|'failed', output, duration, attempts, error }],
+  results: [{ step: { number, name }, status, output, duration, attempts, error, cost }],
   totalDuration: number,
   completedCount: number,
   failedCount: number,
 }
+// cost: { costUSD, numTurns, durationApiMs, sessionId } | null
 ```
+
+Each step's cost = improvement cost + doc-update cost (summed via `sumCosts()`). Failed steps have `cost: null`.
 
 ## Key Behaviors
 

@@ -242,3 +242,79 @@ describe('executeSteps', () => {
     }
   });
 });
+
+describe('cost tracking', () => {
+  it('includes cost in step results when runPrompt returns cost data', async () => {
+    const steps = [makeStep(1, 'Lint')];
+    const mockCost = { costUSD: 0.05, numTurns: 3, durationApiMs: 2000, sessionId: 'sess-1' };
+
+    runPrompt.mockResolvedValue({
+      success: true, output: 'ok', error: null, exitCode: 0, attempts: 1,
+      cost: mockCost,
+    });
+
+    const result = await executeSteps(steps, '/fake/project');
+
+    expect(result.results[0].cost).toBeDefined();
+    // Combined cost = improvement cost + doc-update cost (both have same mock cost)
+    expect(result.results[0].cost.costUSD).toBe(0.10);
+    expect(result.results[0].cost.numTurns).toBe(6);
+    expect(result.results[0].cost.durationApiMs).toBe(4000);
+  });
+
+  it('sums improvement and doc-update costs into a single step cost', async () => {
+    const steps = [makeStep(1, 'Lint')];
+    const improvementCost = { costUSD: 0.08, numTurns: 4, durationApiMs: 3000, sessionId: 'sess-a' };
+    const docUpdateCost = { costUSD: 0.02, numTurns: 1, durationApiMs: 500, sessionId: 'sess-a' };
+
+    runPrompt
+      .mockResolvedValueOnce({ success: true, output: 'ok', error: null, exitCode: 0, attempts: 1, cost: improvementCost })
+      .mockResolvedValueOnce({ success: true, output: 'ok', error: null, exitCode: 0, attempts: 1, cost: docUpdateCost });
+
+    const result = await executeSteps(steps, '/fake/project');
+
+    expect(result.results[0].cost).toEqual({
+      costUSD: 0.10,
+      numTurns: 5,
+      durationApiMs: 3500,
+      sessionId: 'sess-a',
+    });
+  });
+
+  it('uses improvement cost alone when doc-update has no cost', async () => {
+    const steps = [makeStep(1, 'Lint')];
+
+    runPrompt
+      .mockResolvedValueOnce({ success: true, output: 'ok', error: null, exitCode: 0, attempts: 1, cost: { costUSD: 0.05, numTurns: 3, durationApiMs: 2000, sessionId: 'sess-1' } })
+      .mockResolvedValueOnce({ success: true, output: 'ok', error: null, exitCode: 0, attempts: 1, cost: null });
+
+    const result = await executeSteps(steps, '/fake/project');
+
+    expect(result.results[0].cost.costUSD).toBe(0.05);
+  });
+
+  it('returns cost: null for failed steps', async () => {
+    const steps = [makeStep(1, 'Lint')];
+
+    runPrompt.mockResolvedValue({
+      success: false, output: '', error: 'fail', exitCode: -1, attempts: 4, cost: null,
+    });
+
+    const result = await executeSteps(steps, '/fake/project');
+
+    expect(result.results[0].cost).toBeNull();
+  });
+
+  it('handles steps with no cost data (null) gracefully', async () => {
+    const steps = [makeStep(1, 'Lint')];
+
+    runPrompt.mockResolvedValue({
+      success: true, output: 'ok', error: null, exitCode: 0, attempts: 1,
+    });
+
+    const result = await executeSteps(steps, '/fake/project');
+
+    // When runPrompt returns no cost field, the result should have cost: null
+    expect(result.results[0].cost).toBeNull();
+  });
+});

@@ -80,6 +80,7 @@ function buildExecutionResults(state) {
       duration: s.duration,
       attempts: s.attempts,
       error: s.status === 'failed' ? 'Step failed during orchestrated run' : null,
+      cost: s.cost || null,
     })),
     completedCount: state.completedSteps.length,
     failedCount: state.failedSteps.length,
@@ -335,7 +336,7 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
 
     // Update state
     const output = result.status === 'completed' ? (result.output || '').slice(0, 6000) : '';
-    const entry = { number: step.number, name: step.name, status: result.status, duration: result.duration, attempts: result.attempts, output };
+    const entry = { number: step.number, name: step.name, status: result.status, duration: result.duration, attempts: result.attempts, output, cost: result.cost || null };
     if (result.status === 'completed') {
       state.completedSteps.push(entry);
     } else {
@@ -356,9 +357,11 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
       step: stepNumber,
       name: step.name,
       status: result.status,
+      output,
       duration: result.duration,
       durationFormatted: formatDuration(result.duration),
       attempts: result.attempts,
+      costUSD: result.cost?.costUSD ?? null,
       remainingSteps: remaining,
     });
   } catch (err) {
@@ -384,6 +387,7 @@ export async function finishRun(projectDir) {
 
     // Generate changelog
     let narration = null;
+    let overheadCostUSD = 0;
     if (executionResults.completedCount > 0) {
       info('Orchestrator: generating narrated changelog...');
       const changelogResult = await runPrompt(SAFETY_PREAMBLE + CHANGELOG_PROMPT, projectDir, {
@@ -392,12 +396,17 @@ export async function finishRun(projectDir) {
       });
       narration = changelogResult.success ? changelogResult.output : null;
       if (!narration) warn('Orchestrator: narrated changelog generation failed — using fallback text');
+      overheadCostUSD += changelogResult.cost?.costUSD || 0;
     }
 
     // Consolidated action plan
     const actionPlan = await generateActionPlan(executionResults, projectDir, {
       timeout: state.timeout || undefined,
     });
+
+    // Sum step costs + overhead (changelog, consolidation tracked via overhead)
+    const stepsCostUSD = executionResults.results.reduce((sum, r) => sum + (r.cost?.costUSD || 0), 0);
+    const totalCostUSD = stepsCostUSD + overheadCostUSD;
 
     // Generate report
     generateReport(executionResults, narration, {
@@ -407,6 +416,7 @@ export async function finishRun(projectDir) {
       originalBranch: state.originalBranch,
       startTime: state.startTime,
       endTime: Date.now(),
+      totalCostUSD: totalCostUSD || null,
     }, { actionPlan: !!actionPlan });
 
     // Commit report
@@ -446,6 +456,7 @@ export async function finishRun(projectDir) {
       completed: executionResults.completedCount,
       failed: executionResults.failedCount,
       totalDurationFormatted: formatDuration(totalDuration),
+      totalCostUSD: totalCostUSD || null,
       merged: mergeResult.success,
       mergeConflict: mergeResult.conflict || false,
       reportPath: 'NIGHTYTIDY-REPORT.md',

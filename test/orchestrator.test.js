@@ -324,6 +324,58 @@ describe('runStep', () => {
 
     expect(result.remainingSteps).toEqual([3]);
   });
+
+  it('includes costUSD in return value when step has cost', async () => {
+    executeSingleStep.mockResolvedValue({
+      step: { number: 1, name: 'Documentation' },
+      status: 'completed',
+      output: 'done',
+      duration: 120000,
+      attempts: 1,
+      error: null,
+      cost: { costUSD: 0.0512, numTurns: 5, durationApiMs: 2100, sessionId: 'sess-1' },
+    });
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.success).toBe(true);
+    expect(result.costUSD).toBe(0.0512);
+  });
+
+  it('stores cost in state file entry', async () => {
+    executeSingleStep.mockResolvedValue({
+      step: { number: 1, name: 'Documentation' },
+      status: 'completed',
+      output: 'done',
+      duration: 120000,
+      attempts: 1,
+      error: null,
+      cost: { costUSD: 0.03, numTurns: 2, durationApiMs: 1500, sessionId: 'sess-x' },
+    });
+
+    await runStep('/fake/project', 1);
+
+    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
+    const updatedState = JSON.parse(stateCall[1]);
+    expect(updatedState.completedSteps[0].cost).toEqual({
+      costUSD: 0.03, numTurns: 2, durationApiMs: 1500, sessionId: 'sess-x',
+    });
+  });
+
+  it('returns costUSD: null when step has no cost data', async () => {
+    executeSingleStep.mockResolvedValue({
+      step: { number: 1, name: 'Documentation' },
+      status: 'completed',
+      output: 'done',
+      duration: 120000,
+      attempts: 1,
+      error: null,
+    });
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.costUSD).toBeNull();
+  });
 });
 
 describe('finishRun', () => {

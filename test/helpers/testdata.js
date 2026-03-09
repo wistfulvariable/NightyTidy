@@ -14,7 +14,7 @@ export function makeMetadata(overrides = {}) {
   };
 }
 
-export function makeResults({ completedCount = 2, failedCount = 0 } = {}) {
+export function makeResults({ completedCount = 2, failedCount = 0, withCost = false } = {}) {
   const results = [];
 
   for (let i = 0; i < completedCount; i++) {
@@ -25,6 +25,7 @@ export function makeResults({ completedCount = 2, failedCount = 0 } = {}) {
       duration: 60000,
       attempts: 1,
       error: null,
+      cost: withCost ? { costUSD: 0.05 * (i + 1), numTurns: 3, durationApiMs: 5000, sessionId: `sess-${i + 1}` } : null,
     });
   }
 
@@ -36,6 +37,7 @@ export function makeResults({ completedCount = 2, failedCount = 0 } = {}) {
       duration: 30000,
       attempts: 4,
       error: 'Something went wrong',
+      cost: null,
     });
   }
 

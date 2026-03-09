@@ -73,6 +73,9 @@ describe('contract: claude.js — never throws, returns result objects', () => {
     expect(typeof result.exitCode).toBe('number');
     expect(typeof result.duration).toBe('number');
     expect(typeof result.attempts).toBe('number');
+
+    // Cost field must be present (null or object)
+    expect(result).toHaveProperty('cost');
   });
 
   it('runPrompt is the only exported function', async () => {
@@ -311,6 +314,7 @@ describe('contract: executor.js — never throws, returns result object', () => 
     expect(entry).toHaveProperty('duration');
     expect(entry).toHaveProperty('attempts');
     expect(entry).toHaveProperty('error');
+    expect(entry).toHaveProperty('cost');
     expect(['completed', 'failed']).toContain(entry.status);
   });
 });

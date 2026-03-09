@@ -153,6 +153,43 @@ describe('formatDuration — edge cases', () => {
 // Report content validation
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Cost column rendering
+// ---------------------------------------------------------------------------
+
+describe('generateReport — cost column', () => {
+  it('shows dash for steps without cost when other steps have cost', async () => {
+    const results = makeResults({ completedCount: 1, failedCount: 1, withCost: true });
+    // Failed steps have cost: null — should render as dash
+    await generateReport(results, 'narration', makeMetadata());
+
+    const reportContent = writeFileSync.mock.calls[0][1];
+    expect(reportContent).toContain('| Cost |');
+    // Completed step has cost, failed step gets a dash
+    expect(reportContent).toContain('$0.0500');
+    expect(reportContent).toMatch(/\u2014/); // em-dash for null cost
+  });
+
+  it('handles mixed cost/null results in cost column', async () => {
+    // Create a custom results object with one cost and one null
+    const results = {
+      results: [
+        { step: { number: 1, name: 'Step1' }, status: 'completed', output: 'ok', duration: 60000, attempts: 1, error: null, cost: { costUSD: 0.0312, numTurns: 5, durationApiMs: 3000, sessionId: 's1' } },
+        { step: { number: 2, name: 'Step2' }, status: 'completed', output: 'ok', duration: 45000, attempts: 1, error: null, cost: null },
+      ],
+      completedCount: 2,
+      failedCount: 0,
+    };
+
+    await generateReport(results, 'narration', makeMetadata());
+
+    const reportContent = writeFileSync.mock.calls[0][1];
+    expect(reportContent).toContain('| Cost |');
+    expect(reportContent).toContain('$0.0312');
+    expect(reportContent).toMatch(/\u2014/); // dash for null cost step
+  });
+});
+
 describe('generateReport — content structure', () => {
   it('includes the date from metadata in the report header', async () => {
     await generateReport(makeResults(), 'narration', makeMetadata());

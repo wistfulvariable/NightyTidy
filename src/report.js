@@ -42,31 +42,53 @@ function fallbackNarration(results) {
   );
 }
 
+function formatCost(costUSD) {
+  if (costUSD == null) return null;
+  return `$${costUSD.toFixed(4)}`;
+}
+
 function buildSummarySection(results, metadata) {
   const date = formatDate(metadata.startTime);
   const duration = formatDuration(metadata.endTime - metadata.startTime);
   const total = results.completedCount + results.failedCount;
 
-  return (
+  let section =
     `## Run Summary\n\n` +
     `- **Date**: ${date}\n` +
     `- **Duration**: ${duration}\n` +
     `- **Steps completed**: ${results.completedCount}/${total}\n` +
     `- **Steps failed**: ${results.failedCount}\n` +
     `- **Branch**: ${metadata.branchName}\n` +
-    `- **Safety tag**: ${metadata.tagName}\n\n`
-  );
+    `- **Safety tag**: ${metadata.tagName}\n`;
+
+  if (metadata.totalCostUSD != null) {
+    section += `- **Total cost**: ${formatCost(metadata.totalCostUSD)}\n`;
+  }
+
+  return section + '\n';
 }
 
 function buildStepTable(results) {
+  const hasCost = results.results.some(r => r.cost?.costUSD != null);
+
   let table = `## Step Results\n\n`;
-  table += `| # | Step | Status | Duration | Attempts |\n`;
-  table += `|---|------|--------|----------|----------|\n`;
+  if (hasCost) {
+    table += `| # | Step | Status | Duration | Attempts | Cost |\n`;
+    table += `|---|------|--------|----------|----------|------|\n`;
+  } else {
+    table += `| # | Step | Status | Duration | Attempts |\n`;
+    table += `|---|------|--------|----------|----------|\n`;
+  }
 
   for (const r of results.results) {
     const status = r.status === 'completed' ? '\u2705 Completed' : '\u274C Failed';
     const duration = formatDuration(r.duration);
-    table += `| ${r.step.number} | ${r.step.name} | ${status} | ${duration} | ${r.attempts} |\n`;
+    if (hasCost) {
+      const cost = formatCost(r.cost?.costUSD) || '\u2014';
+      table += `| ${r.step.number} | ${r.step.name} | ${status} | ${duration} | ${r.attempts} | ${cost} |\n`;
+    } else {
+      table += `| ${r.step.number} | ${r.step.name} | ${status} | ${duration} | ${r.attempts} |\n`;
+    }
   }
 
   return table + '\n';

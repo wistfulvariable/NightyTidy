@@ -126,7 +126,7 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'short prompt', '--dangerously-skip-permissions'],
+        ['-p', 'short prompt', '--output-format', 'json', '--dangerously-skip-permissions'],
         expect.objectContaining({ cwd: '/tmp' }),
       );
     });
@@ -535,10 +535,10 @@ describe('runPrompt', () => {
 
       await runPrompt(longPrompt, '/tmp', FAST_OPTIONS);
 
-      // When using stdin mode, args should only contain permission flag (no -p flag)
+      // When using stdin mode, args should only contain output-format + permission flag (no -p flag)
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['--dangerously-skip-permissions'],
+        ['--output-format', 'json', '--dangerously-skip-permissions'],
         expect.objectContaining({ stdio: ['pipe', 'pipe', 'pipe'] }),
       );
     });
@@ -576,7 +576,7 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'test', '--dangerously-skip-permissions'],
+        ['-p', 'test', '--output-format', 'json', '--dangerously-skip-permissions'],
         expect.objectContaining({ shell: true }),
       );
     });
@@ -593,7 +593,7 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'test', '--dangerously-skip-permissions'],
+        ['-p', 'test', '--output-format', 'json', '--dangerously-skip-permissions'],
         expect.objectContaining({ shell: false }),
       );
     });
@@ -692,6 +692,115 @@ describe('runPrompt', () => {
       expect(result.success).toBe(true);
       expect(chunks).toContain('attempt1');
       expect(chunks).toContain('attempt2');
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // JSON output parsing and cost extraction
+  // -----------------------------------------------------------------------
+  describe('JSON output parsing (--output-format json)', () => {
+    it('extracts text from JSON result field and populates cost', async () => {
+      const jsonResponse = JSON.stringify({
+        type: 'result',
+        subtype: 'success',
+        total_cost_usd: 0.0512,
+        is_error: false,
+        duration_ms: 3000,
+        duration_api_ms: 2100,
+        num_turns: 5,
+        result: 'Refactored the authentication module.',
+        session_id: 'sess-abc-123',
+      });
+
+      setupSpawnSequence((child) => {
+        child.emitStdout(jsonResponse);
+        child.emitClose(0);
+      });
+
+      const result = await runPrompt('refactor auth', '/tmp', FAST_OPTIONS);
+
+      expect(result.success).toBe(true);
+      expect(result.output).toBe('Refactored the authentication module.');
+      expect(result.cost).toEqual({
+        costUSD: 0.0512,
+        numTurns: 5,
+        durationApiMs: 2100,
+        sessionId: 'sess-abc-123',
+      });
+    });
+
+    it('returns cost: null when stdout is not valid JSON (graceful fallback)', async () => {
+      setupSpawnSequence((child) => {
+        child.emitStdout('Plain text output from old CLI');
+        child.emitClose(0);
+      });
+
+      const result = await runPrompt('test', '/tmp', FAST_OPTIONS);
+
+      expect(result.success).toBe(true);
+      expect(result.output).toBe('Plain text output from old CLI');
+      expect(result.cost).toBeNull();
+    });
+
+    it('handles JSON with empty result field', async () => {
+      const jsonResponse = JSON.stringify({
+        type: 'result',
+        total_cost_usd: 0.001,
+        num_turns: 1,
+        duration_api_ms: 500,
+        result: '',
+        session_id: 'sess-empty',
+      });
+
+      setupSpawnSequence((child) => {
+        child.emitStdout(jsonResponse);
+        child.emitClose(0);
+      });
+
+      // Empty result field means empty output text → treated as failure
+      const result = await runPrompt('test', '/tmp', { ...FAST_OPTIONS, retries: 0 });
+
+      // JSON parsed successfully, but empty result = empty output = failure
+      expect(result.cost).toEqual({
+        costUSD: 0.001,
+        numTurns: 1,
+        durationApiMs: 500,
+        sessionId: 'sess-empty',
+      });
+    });
+
+    it('returns cost: null when process fails (no JSON output)', async () => {
+      setupSpawnSequence((child) => {
+        child.emitClose(1);
+      });
+
+      const result = await runPrompt('test', '/tmp', { ...FAST_OPTIONS, retries: 0 });
+
+      expect(result.success).toBe(false);
+      expect(result.cost).toBeNull();
+    });
+
+    it('handles JSON with missing optional cost fields gracefully', async () => {
+      const jsonResponse = JSON.stringify({
+        type: 'result',
+        result: 'Done.',
+      });
+
+      setupSpawnSequence((child) => {
+        child.emitStdout(jsonResponse);
+        child.emitClose(0);
+      });
+
+      const result = await runPrompt('test', '/tmp', FAST_OPTIONS);
+
+      expect(result.success).toBe(true);
+      expect(result.output).toBe('Done.');
+      expect(result.cost).toEqual({
+        costUSD: null,
+        numTurns: null,
+        durationApiMs: null,
+        sessionId: null,
+      });
     });
   });
 });

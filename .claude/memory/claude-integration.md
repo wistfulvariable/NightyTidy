@@ -32,13 +32,18 @@ Assumes CLAUDE.md loaded. Subprocess wrapper in `src/claude.js`.
 
 Exit 0 with empty stdout → failure → retry. Non-zero exit → failure → retry.
 
+## Output Format
+
+All calls include `--output-format json`. Claude CLI returns a JSON blob with `result` (text), `total_cost_usd`, `num_turns`, `duration_api_ms`, `session_id`. `parseJsonOutput()` extracts these into the result object. Falls back gracefully if output isn't valid JSON (old CLI → `cost: null`).
+
 ## Result Object
 
 ```js
-{ success, output, error, exitCode, duration, attempts }
+{ success, output, error, exitCode, duration, attempts, cost }
+// cost: { costUSD, numTurns, durationApiMs, sessionId } | null
 ```
 
-`exitCode: -1` for internal errors. `attempts`: 1-based count.
+`exitCode: -1` for internal errors. `attempts`: 1-based count. `cost: null` on failure, abort, or when CLI doesn't support JSON output.
 
 ## Timeout → Retry → Abort
 

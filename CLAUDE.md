@@ -62,13 +62,13 @@ test/
   logger.test.js           # 10 tests — real file I/O, level filtering, stderr fallback
   checks.test.js           # 4 tests — mock subprocess, mock git
   checks-extended.test.js  # 23 tests — auth paths, disk space characterization, branch warnings, empty repo, dirty working tree
-  claude.test.js           # 26 tests — fake child process, fake timers, abort signal, Windows shell mode
-  executor.test.js         # 11 tests — mocks claude, git, notifications, signal propagation
+  claude.test.js           # 31 tests — fake child process, fake timers, abort signal, Windows shell mode, JSON output parsing
+  executor.test.js         # 16 tests — mocks claude, git, notifications, signal propagation, cost tracking
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 7 tests — getGitInstance, getHeadHash, tag/branch collision
   notifications.test.js    # 2 tests — mock node-notifier
-  report.test.js           # 9 tests — mock fs, verify report format, actionPlan option
-  report-extended.test.js  # 15 tests — updateClaudeMd, formatDuration edge cases
+  report.test.js           # 13 tests — mock fs, verify report format, actionPlan option, cost column
+  report-extended.test.js  # 17 tests — updateClaudeMd, formatDuration edge cases, cost rendering
   consolidation.test.js    # 16 tests — buildConsolidationPrompt, generateActionPlan, error handling
   steps.test.js            # 9 tests — structural integrity of prompt data + manifest validation
   integration.test.js      # 5 tests — multi-module integration with real git repos
@@ -77,7 +77,7 @@ test/
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
-  orchestrator.test.js     # 31 tests — initRun, runStep, finishRun, dashboard integration with mocked modules
+  orchestrator.test.js     # 34 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking
   contracts.test.js        # 38 tests — module API contract verification against CLAUDE.md
   gui-logic.test.js        # 46 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, etc.)
   gui-server.test.js       # 29 tests — HTTP server, static files, config, run-command, kill-process, security headers, traversal
@@ -258,7 +258,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 |--------|----------|
 | `checks.js` | **Throws** with user-friendly messages → caught by cli.js |
 | `lock.js` | **Async, throws** with user-friendly messages → awaited + caught by cli.js. Prompts for override in TTY when lock appears active. |
-| `claude.js` | **Never throws** → returns `{ success, output, error, exitCode, duration, attempts }` |
+| `claude.js` | **Never throws** → returns `{ success, output, error, exitCode, duration, attempts, cost }` |
 | `executor.js` | **Never throws** → failed steps recorded, run continues |
 | `git.js` `mergeRunBranch` | **Never throws** → returns `{ success: false, conflict: true }` on conflict |
 | `notifications.js` | **Swallows all errors** silently (try/catch in `notify()`) |
