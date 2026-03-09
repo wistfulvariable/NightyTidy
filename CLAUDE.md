@@ -63,7 +63,7 @@ test/
   logger.test.js           # 10 tests — real file I/O, level filtering, stderr fallback
   checks.test.js           # 4 tests — mock subprocess, mock git
   checks-extended.test.js  # 23 tests — auth paths, disk space characterization, branch warnings, empty repo, dirty working tree
-  claude.test.js           # 37 tests — fake child process, fake timers, abort signal, Windows shell mode, stream-json NDJSON parsing
+  claude.test.js           # 38 tests — fake child process, fake timers, abort signal, Windows shell mode, stream-json NDJSON parsing
   executor.test.js         # 22 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 7 tests — getGitInstance, getHeadHash, tag/branch collision

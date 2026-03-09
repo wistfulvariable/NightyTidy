@@ -37,6 +37,13 @@ function renderMarkdown(text) {
  */
 let lastRenderedOutput = '';
 
+/**
+ * Track when output last changed. Used to show the "working" indicator
+ * when Claude Code is executing tools with no visible output.
+ */
+let lastOutputChangeTime = 0;
+const WORKING_INDICATOR_DELAY_MS = 8000; // Show after 8s of no output change
+
 // ── State ──────────────────────────────────────────────────────────
 
 const SCREENS = {
@@ -551,6 +558,7 @@ async function runNextStep() {
   backToLive();
   state.currentStepNum = next;
   state.stepStartTime = Date.now();
+  lastOutputChangeTime = Date.now(); // Reset for new step
 
   const timeoutArg = state.timeout !== 45 ? ` --timeout ${state.timeout}` : '';
   const result = await runCli(`--run-step ${next}${timeoutArg}`);
@@ -651,17 +659,46 @@ function renderProgressFromFile(progress) {
     // Only re-render when the content has actually changed (polling is every 500ms)
     if (progress.currentStepOutput !== lastRenderedOutput) {
       lastRenderedOutput = progress.currentStepOutput;
+      lastOutputChangeTime = Date.now();
       const outputEl = document.getElementById('output-content');
       outputEl.innerHTML = renderMarkdown(progress.currentStepOutput);
       const panel = document.getElementById('output-panel');
       panel.scrollTop = panel.scrollHeight;
+      hideWorkingIndicator();
+    } else {
+      // Output hasn't changed — show working indicator after delay
+      updateWorkingIndicator();
     }
+  } else {
+    // No output yet — show working indicator after delay
+    if (!lastOutputChangeTime) lastOutputChangeTime = Date.now();
+    updateWorkingIndicator();
   }
+}
+
+function updateWorkingIndicator() {
+  if (state.screen !== SCREENS.RUNNING) return;
+  if (state.viewingStepOutput !== null) return;
+  const elapsed = Date.now() - (lastOutputChangeTime || state.runStartTime || Date.now());
+  if (elapsed >= WORKING_INDICATOR_DELAY_MS) {
+    showWorkingIndicator();
+  }
+}
+
+function showWorkingIndicator() {
+  const el = document.getElementById('working-indicator');
+  if (el) el.style.display = 'flex';
+}
+
+function hideWorkingIndicator() {
+  const el = document.getElementById('working-indicator');
+  if (el) el.style.display = 'none';
 }
 
 function clearOutput() {
   document.getElementById('output-content').innerHTML = '';
   lastRenderedOutput = '';
+  hideWorkingIndicator();
 }
 
 // ── Step Output Viewer ──────────────────────────────────────────

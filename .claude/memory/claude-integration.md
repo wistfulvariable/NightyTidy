@@ -34,7 +34,7 @@ Exit 0 with empty stdout → failure → retry. Non-zero exit → failure → re
 
 ## Output Format
 
-All calls include `--output-format stream-json --verbose`. Claude CLI v2.1.29+ requires `--verbose` when combining `--print` with `--output-format stream-json` (without it, CLI exits 1 immediately). NDJSON events stream in real-time; final line is a `result` event with `total_cost_usd`, `num_turns`, `duration_api_ms`, and `usage` (token counts). `parseJsonOutput()` extracts these into the result object. Falls back gracefully if output isn't valid JSON (old CLI → `cost: null`).
+All calls include `--output-format stream-json --verbose`. Claude CLI v2.1.29+ requires `--verbose` when combining `--print` with `--output-format stream-json` (without it, CLI exits 1 immediately). NDJSON events arrive at **turn boundaries** (not token-by-token). Event types: `system` (init/hooks), `assistant` (full turn content), `user` (tool results), `result` (final summary with cost). The `stream_event` handler in `formatStreamEvent` is forward-compat code — CLI v2.1.29 never emits it. `user` events produce brief "← result received" markers for GUI liveness. `parseJsonOutput()` extracts cost from the `result` event. Falls back gracefully if output isn't valid JSON (old CLI → `cost: null`).
 
 ## Result Object
 

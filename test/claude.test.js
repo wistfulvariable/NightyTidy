@@ -926,7 +926,7 @@ describe('runPrompt', () => {
       expect(chunks).toEqual(['\u25B8 Read: /src/main.js\n']);
     });
 
-    it('skips system, user, and result events in onOutput', async () => {
+    it('skips system and result events, passes user tool results as brief markers', async () => {
       const chunks = [];
       const lines = [
         JSON.stringify({ type: 'system', subtype: 'init' }),
@@ -945,8 +945,33 @@ describe('runPrompt', () => {
         onOutput: (text) => chunks.push(text),
       });
 
-      // Only the assistant text event should pass through
-      expect(chunks).toEqual(['Hello\n']);
+      // User events now produce brief tool completion markers
+      expect(chunks).toEqual(['  \u2190 result received\n', 'Hello\n']);
+    });
+
+    it('shows count for multiple tool results in user events', async () => {
+      const chunks = [];
+      const userLine = JSON.stringify({
+        type: 'user',
+        message: { content: [
+          { type: 'tool_result', tool_use_id: 't1' },
+          { type: 'tool_result', tool_use_id: 't2' },
+          { type: 'tool_result', tool_use_id: 't3' },
+        ] },
+      });
+      const resultLine = JSON.stringify({ type: 'result', result: 'Done.' });
+
+      setupSpawnSequence((child) => {
+        child.emitStdout(userLine + '\n' + resultLine + '\n');
+        child.emitClose(0);
+      });
+
+      await runPrompt('test', '/tmp', {
+        ...FAST_OPTIONS,
+        onOutput: (text) => chunks.push(text),
+      });
+
+      expect(chunks).toEqual(['  \u2190 3 results received\n']);
     });
 
     it('passes through non-JSON lines for backward compat', async () => {

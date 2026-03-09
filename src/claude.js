@@ -99,6 +99,11 @@ function summarizeToolInput(input) {
 /**
  * Convert a parsed stream-json NDJSON event into human-readable display text.
  * Returns null for events that should not be displayed (system, result, etc.).
+ *
+ * Note: Claude Code CLI v2.1.29 does NOT emit token-level streaming events
+ * (`stream_event` type). Output arrives only at turn boundaries as complete
+ * `assistant` messages. The `stream_event` handler is kept for forward
+ * compatibility in case future CLI versions add token streaming.
  */
 function formatStreamEvent(event) {
   if (!event || !event.type) return null;
@@ -107,10 +112,19 @@ function formatStreamEvent(event) {
   if (event.type === 'result') return null;
   // System init — not useful for display
   if (event.type === 'system') return null;
-  // Tool results — too verbose (full file contents)
-  if (event.type === 'user') return null;
 
-  // Verbose mode: token-by-token deltas
+  // Tool results — content is too verbose (full file contents, bash output)
+  // but emit a brief marker so the output updates when tools complete.
+  // Without this, the GUI shows nothing during multi-minute tool executions.
+  if (event.type === 'user') {
+    const content = event.message?.content;
+    if (!Array.isArray(content)) return null;
+    const count = content.filter(b => b.type === 'tool_result').length;
+    if (count > 0) return `  \u2190 ${count === 1 ? 'result received' : count + ' results received'}\n`;
+    return null;
+  }
+
+  // Forward compat: token-by-token deltas (not emitted by CLI v2.1.29)
   if (event.type === 'stream_event') {
     const delta = event.event?.delta;
     if (delta?.type === 'text_delta' && delta.text) return delta.text;
