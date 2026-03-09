@@ -69,12 +69,12 @@ Create a detailed inventory of every inconsistency pattern found:
 **Step 1: Analyze the bundle**
 - If build tooling supports it, generate a bundle analysis (webpack-bundle-analyzer, source-map-explorer, or equivalent)
 - Identify:
-  - The largest dependencies by size
-  - Dependencies that are imported but only partially used (e.g., importing all of lodash for one function)
-  - Dependencies with lighter alternatives (moment.js → date-fns, lodash → native methods)
-  - Code that's bundled but only used on specific routes (should be lazy-loaded)
-  - Duplicate dependencies (same package at multiple versions in the bundle)
-  - CSS that's included but never used (dead CSS)
+- The largest dependencies by size
+- Dependencies that are imported but only partially used (e.g., importing all of lodash for one function)
+- Dependencies with lighter alternatives (moment.js → date-fns, lodash → native methods)
+- Code that's bundled but only used on specific routes (should be lazy-loaded)
+- Duplicate dependencies (same package at multiple versions in the bundle)
+- CSS that's included but never used (dead CSS)
 
 **Step 2: Implement safe optimizations**
 - Replace full library imports with specific imports (`import get from 'lodash/get'` instead of `import _ from 'lodash'`)
@@ -106,8 +106,8 @@ Scan every component, template, and UI-related file for:
 - If an i18n framework is already in the project (react-intl, i18next, vue-i18n, etc.), identify strings that should be using it but aren't
 - If no i18n framework exists, recommend one and document the migration effort
 - For either case, create a catalog:
-  - Table: | File | Line | Current String | Suggested Key | Notes |
-  - Group by module/page for organized extraction
+- Table: | File | Line | Current String | Suggested Key | Notes |
+- Group by module/page for organized extraction
 
 **Step 3: Implement extraction if framework exists**
 If the project already has i18n tooling set up:
@@ -127,38 +127,38 @@ Create the `audit-reports/` directory in the project root if it doesn't already 
 ### Report Structure
 
 1. **Executive Summary**
-   - Total accessibility issues found and fixed
-   - UX consistency score (your subjective assessment: poor/fair/good/excellent)
-   - Bundle size before/after (if measurable)
-   - i18n readiness assessment (not ready / partially ready / mostly ready)
+- Total accessibility issues found and fixed
+- UX consistency score (your subjective assessment: poor/fair/good/excellent)
+- Bundle size before/after (if measurable)
+- i18n readiness assessment (not ready / partially ready / mostly ready)
 
 2. **Accessibility**
-   - Issues fixed: table with | Component | Issue | Fix |
-   - Issues remaining: table with | Component | Issue | Severity | Effort to Fix |
-   - Overall WCAG compliance assessment
+- Issues fixed: table with | Component | Issue | Fix |
+- Issues remaining: table with | Component | Issue | Severity | Effort to Fix |
+- Overall WCAG compliance assessment
 
 3. **UX Consistency**
-   - Component inventory with consistency assessment
-   - Inconsistencies found and fixed
-   - Inconsistencies documented for team review
-   - Recommended design system improvements
+- Component inventory with consistency assessment
+- Inconsistencies found and fixed
+- Inconsistencies documented for team review
+- Recommended design system improvements
 
 4. **Bundle Size**
-   - Current bundle composition (top 10 largest items)
-   - Optimizations implemented
-   - Larger optimization opportunities with effort estimates
+- Current bundle composition (top 10 largest items)
+- Optimizations implemented
+- Larger optimization opportunities with effort estimates
 
 5. **Internationalization**
-   - Total hardcoded strings found: X
-   - Strings extracted (if framework exists): X
-   - Strings remaining: X
-   - Full string catalog (appendix)
-   - Recommended i18n approach and effort estimate
+- Total hardcoded strings found: X
+- Strings extracted (if framework exists): X
+- Strings remaining: X
+- Full string catalog (appendix)
+- Recommended i18n approach and effort estimate
 
 6. **Recommendations**
-   - Priority-ordered list of improvements
-   - Estimated effort for each
-   - Dependencies between improvements
+- Priority-ordered list of improvements
+- Estimated effort for each
+- Dependencies between improvements
 
 ## Rules
 - Branch: `frontend-quality-[date]`

@@ -25,8 +25,8 @@ Branch: `resilience-[date]`
 
 **Step 3: Fix missing/misconfigured timeouts**
 - Add timeouts to every unprotected external call. Sensible defaults:
-  - Connection: 3-5s
-  - Read: 100ms-2s for DB, 5-30s for external APIs, configurable for long-running ops
+- Connection: 3-5s
+- Read: 100ms-2s for DB, 5-30s for external APIs, configurable for long-running ops
 - Make timeouts configurable via environment variables where they aren't already.
 
 ## Phase 2: Retry Logic Audit

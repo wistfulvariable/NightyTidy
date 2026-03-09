@@ -131,12 +131,12 @@ Save as `audit-reports/PERFORMANCE_REPORT_[run-number]_[date].md`. Create direct
 4. **Memory & Resources** — Leaks fixed, potential leaks needing investigation, resource management gaps.
 
 5.  **Frontend Performance** (skip if no frontend)
-   - Render: fixes applied (Component | Issue | Fix) and documented for review (Component | Issue | Impact | Effort)
-   - Loading: what blocks first paint, fixes applied (Area | Before | After), larger recommendations (Opportunity | Impact | Effort)
-   - Bundle: top 10 largest items (if analyzable)
-   - Images: Image/Pattern | Issue | Recommendation
-   - Third-party: Script | Purpose | Size | Async? | Deferrable?
-   - Event handler and animation fixes applied
+- Render: fixes applied (Component | Issue | Fix) and documented for review (Component | Issue | Impact | Effort)
+- Loading: what blocks first paint, fixes applied (Area | Before | After), larger recommendations (Opportunity | Impact | Effort)
+- Bundle: top 10 largest items (if analyzable)
+- Images: Image/Pattern | Issue | Recommendation
+- Third-party: Script | Purpose | Size | Async? | Deferrable?
+- Event handler and animation fixes applied
 
 6. **Optimizations Implemented** — Every change with before/after. All tests passing: yes/no.
 

@@ -10,9 +10,9 @@ Identify every place the system accepts external data: API request bodies, query
 **Step 2: Audit validation at each boundary**
 For each input boundary, check:
 - Is there ANY validation? Are validation rules comprehensive?
-  - Required fields enforced, string length limits, numeric ranges (no negative quantities, no $0 prices)
-  - Format validation for emails, URLs, phones, dates (not just "is it a string?")
-  - Enum fields restricted to valid values, array/collection size limits, nested object depth limits
+- Required fields enforced, string length limits, numeric ranges (no negative quantities, no $0 prices)
+- Format validation for emails, URLs, phones, dates (not just "is it a string?")
+- Enum fields restricted to valid values, array/collection size limits, nested object depth limits
 - Is validation at the right layer? (handler level, not buried in the data layer)
 - Frontend vs. backend consistency — flag cases where frontend validates but backend doesn't
 - Are validation errors returned in a consistent, helpful format?

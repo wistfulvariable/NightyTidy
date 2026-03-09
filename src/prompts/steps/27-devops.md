@@ -102,13 +102,13 @@ Save to `audit-reports/DEVOPS_AUDIT_REPORT_[run-number]_[date].md`, incrementing
 2. **CI/CD Pipeline** — Pipeline diagram (mermaid), optimizations implemented, estimated savings, larger recommendations
 
 3. **Environment Configuration**
-   - Variable inventory: | Variable | Used In | Default | Required | Description | Issues |
-   - Issues found/fixed and issues remaining
-   - Secret management assessment
-   - Kill switch inventory: | Toggle | Controls | Change Mechanism | Latency | Documented? |
-   - Missing kill switches: | Feature/Dependency | Risk if Unavailable | Recommendation |
-   - Production safety: | Config | Issue | Risk | Recommendation |
-   - Reference to `docs/CONFIGURATION.md` if created
+- Variable inventory: | Variable | Used In | Default | Required | Description | Issues |
+- Issues found/fixed and issues remaining
+- Secret management assessment
+- Kill switch inventory: | Toggle | Controls | Change Mechanism | Latency | Documented? |
+- Missing kill switches: | Feature/Dependency | Risk if Unavailable | Recommendation |
+- Production safety: | Config | Issue | Risk | Recommendation |
+- Reference to `docs/CONFIGURATION.md` if created
 
 4. **Logging** — Maturity assessment (poor/fair/good/excellent), sensitive data findings (CRITICAL if any), coverage gaps, quality fixes, infrastructure recommendations
 

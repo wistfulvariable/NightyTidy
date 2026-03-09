@@ -119,52 +119,52 @@ Create the `audit-reports/` directory in the project root if it doesn't already 
 ### Report Structure
 
 1. **Product Profile**
-   - What the product is and does (as understood from the codebase)
-   - Target users
-   - Core features inventory
-   - Strengths and weaknesses
-   - Current monetization model
+- What the product is and does (as understood from the codebase)
+- Target users
+- Core features inventory
+- Strengths and weaknesses
+- Current monetization model
 
 2. **Competitive Landscape**
-   - Competitor matrix: table with | Competitor | Overlap | Unique Strengths | Weaknesses | Pricing |
-   - What competitors are doing that this product isn't
-   - What this product does better than competitors
-   - Market trends affecting this space
+- Competitor matrix: table with | Competitor | Overlap | Unique Strengths | Weaknesses | Pricing |
+- What competitors are doing that this product isn't
+- What this product does better than competitors
+- Market trends affecting this space
 
 3. **Feature Opportunities**
-   Prioritized list, for each:
-   - Feature description
-   - User need it addresses
-   - Competitive context (who has it, is it table stakes?)
-   - Implementation complexity (based on current architecture)
-   - Priority: Critical / High / Medium / Nice-to-have
-   - Estimated effort: Small (days) / Medium (weeks) / Large (months)
+Prioritized list, for each:
+- Feature description
+- User need it addresses
+- Competitive context (who has it, is it table stakes?)
+- Implementation complexity (based on current architecture)
+- Priority: Critical / High / Medium / Nice-to-have
+- Estimated effort: Small (days) / Medium (weeks) / Large (months)
 
 4. **Untapped Data & Intelligence**
-   - Data currently collected but underutilized
-   - Analytics/insights that could be surfaced
-   - Personalization opportunities
-   - Automation triggers
+- Data currently collected but underutilized
+- Analytics/insights that could be surfaced
+- Personalization opportunities
+- Automation triggers
 
 5. **Integration & Ecosystem Opportunities**
-   - Third-party integrations worth building
-   - API/platform possibilities
-   - Ecosystem plays
+- Third-party integrations worth building
+- API/platform possibilities
+- Ecosystem plays
 
 6. **AI Integration Roadmap**
-   - AI opportunities ranked by impact and feasibility
-   - What data assets exist to support AI features
-   - Quick AI wins vs. larger AI initiatives
+- AI opportunities ranked by impact and feasibility
+- What data assets exist to support AI features
+- Quick AI wins vs. larger AI initiatives
 
 7. **Architectural Recommendations**
-   - Scalability concerns and suggested remediation
-   - Platform/extensibility opportunities
-   - Technical investments that would unlock future product capabilities
+- Scalability concerns and suggested remediation
+- Platform/extensibility opportunities
+- Technical investments that would unlock future product capabilities
 
 8. **Recommended Roadmap**
-   - Synthesize all findings into a suggested priority order
-   - Group into: This quarter / Next quarter / Future
-   - Note dependencies between items
+- Synthesize all findings into a suggested priority order
+- Group into: This quarter / Next quarter / Future
+- Note dependencies between items
 
 ## Rules
 - This is READ-ONLY. Do not modify any code.

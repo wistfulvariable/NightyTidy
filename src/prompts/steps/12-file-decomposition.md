@@ -174,36 +174,36 @@ Create `audit-reports/` in project root if needed. Save as `audit-reports/FILE_D
 1. **Executive Summary** — Files analyzed, files split, files skipped (and why), total line reduction in largest files, all tests passing.
 
 2. **File Size Inventory** — Before/after table for every file over 300 lines:
-   | File | Before (lines) | After (lines) | Action | New Files Created |
+| File | Before (lines) | After (lines) | Action | New Files Created |
 
 3. **Splits Executed** — For each split:
-   - Original file, line count, number of exports
-   - New files created with line counts and responsibilities
-   - Import references updated (count)
-   - Test/build status after split
-   - Commit hash
+- Original file, line count, number of exports
+- New files created with line counts and responsibilities
+- Import references updated (count)
+- Test/build status after split
+- Commit hash
 
 4. **Splits Attempted but Reverted** — For each failed split:
-   - What was attempted
-   - What broke (test failure, build failure, circular dep)
-   - Why it couldn't be resolved safely overnight
+- What was attempted
+- What broke (test failure, build failure, circular dep)
+- Why it couldn't be resolved safely overnight
 
 5. **Files Skipped** — For each oversized file not split:
-   - Why (inherently monolithic, too risky, time constraints)
-   - Whether it could be addressed in a future pass
+- Why (inherently monolithic, too risky, time constraints)
+- Whether it could be addressed in a future pass
 
 6. **Structural Observations (Documentation Only)**
-   - Directory structure recommendations
-   - Barrel file assessment
-   - Shared module opportunities
+- Directory structure recommendations
+- Barrel file assessment
+- Shared module opportunities
 
 7. **File Size Distribution** — Before/after histogram:
-   | Range | Before | After |
-   | 0-100 lines | X | Y |
-   | 100-200 | X | Y |
-   | 200-300 | X | Y |
-   | 300-500 | X | Y |
-   | 500+ | X | Y |
+| Range | Before | After |
+| 0-100 lines | X | Y |
+| 100-200 | X | Y |
+| 200-300 | X | Y |
+| 300-500 | X | Y |
+| 500+ | X | Y |
 
 8. **Recommendations** — Priority-ordered next steps, files needing manual review for further decomposition, naming/structure conventions to adopt going forward.
 

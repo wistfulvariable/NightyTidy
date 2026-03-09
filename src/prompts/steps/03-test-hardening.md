@@ -19,25 +19,25 @@ Flaky tests are tests that sometimes pass and sometimes fail without code change
 - Look for tests that have been skipped/disabled with comments like "flaky", "intermittent", "timing issue", "TODO: fix"
 - Search git history for tests that have been re-run in CI (if CI config is visible)
 - Look for common flaky patterns even in currently-passing tests:
-  - Tests that depend on wall clock time or `Date.now()`
-  - Tests that depend on execution order (shared mutable state between tests)
-  - Tests that use `setTimeout` or arbitrary delays instead of proper async waiting
-  - Tests that depend on database auto-increment IDs or insertion order
-  - Tests that depend on file system state, network availability, or external services without mocking
-  - Tests that use random/non-deterministic data without seeding
-  - Tests with race conditions in async setup/teardown
-  - Tests that assert on floating point equality without tolerance
-  - Tests that depend on object key ordering or array sort stability
+- Tests that depend on wall clock time or `Date.now()`
+- Tests that depend on execution order (shared mutable state between tests)
+- Tests that use `setTimeout` or arbitrary delays instead of proper async waiting
+- Tests that depend on database auto-increment IDs or insertion order
+- Tests that depend on file system state, network availability, or external services without mocking
+- Tests that use random/non-deterministic data without seeding
+- Tests with race conditions in async setup/teardown
+- Tests that assert on floating point equality without tolerance
+- Tests that depend on object key ordering or array sort stability
 
 **For each flaky or potentially flaky test found:**
 1. Diagnose the root cause — explain WHY it's flaky
 2. Fix it:
-   - Replace time-dependent assertions with deterministic alternatives (mock clocks, inject time)
-   - Isolate shared state — each test gets its own setup
-   - Replace arbitrary delays with proper async waiting (waitFor, polling, event-based)
-   - Mock external dependencies that introduce non-determinism
-   - Use deterministic test data with explicit seeds if randomness is needed
-   - Fix setup/teardown ordering issues
+- Replace time-dependent assertions with deterministic alternatives (mock clocks, inject time)
+- Isolate shared state — each test gets its own setup
+- Replace arbitrary delays with proper async waiting (waitFor, polling, event-based)
+- Mock external dependencies that introduce non-determinism
+- Use deterministic test data with explicit seeds if randomness is needed
+- Fix setup/teardown ordering issues
 3. Run the test 5 times to verify the fix holds
 4. Commit: `fix: resolve flaky test in [module] — [root cause]`
 
@@ -53,22 +53,22 @@ Verify that the actual API behavior matches what consumers expect. This catches 
 **Step 1: Map all API endpoints**
 - Crawl the routing layer to find every endpoint
 - For each endpoint, document:
-  - Method (GET/POST/PUT/DELETE/PATCH)
-  - Path (including URL parameters)
-  - Expected request body schema
-  - Expected response body schema for each status code
-  - Required headers / authentication
-  - Query parameters
+- Method (GET/POST/PUT/DELETE/PATCH)
+- Path (including URL parameters)
+- Expected request body schema
+- Expected response body schema for each status code
+- Required headers / authentication
+- Query parameters
 
 **Step 2: Compare against documentation**
 - If OpenAPI/Swagger docs exist, compare the actual code against the spec
 - If TypeScript types/interfaces exist for request/response, compare against actual behavior
 - Flag any discrepancies:
-  - Endpoints that exist in code but not in docs (undocumented)
-  - Endpoints in docs but not in code (stale docs)
-  - Response fields that exist in code but not in types
-  - Required fields in types that are actually optional in practice
-  - Status codes returned that aren't documented
+- Endpoints that exist in code but not in docs (undocumented)
+- Endpoints in docs but not in code (stale docs)
+- Response fields that exist in code but not in types
+- Required fields in types that are actually optional in practice
+- Status codes returned that aren't documented
 
 **Step 3: Write contract tests**
 For each endpoint, write tests that verify:
@@ -105,32 +105,32 @@ Create the `audit-reports/` directory in the project root if it doesn't already 
 ### Report Structure
 
 1. **Summary**
-   - Flaky tests found and fixed: X
-   - Flaky tests found but couldn't fix: X
-   - Previously disabled tests re-enabled: X
-   - API endpoints found: X
-   - Contract tests written: X
-   - Documentation discrepancies found: X
+- Flaky tests found and fixed: X
+- Flaky tests found but couldn't fix: X
+- Previously disabled tests re-enabled: X
+- API endpoints found: X
+- Contract tests written: X
+- Documentation discrepancies found: X
 
 2. **Flaky Tests Fixed**
-   - Table: | Test Name | File | Root Cause | Fix Applied |
+- Table: | Test Name | File | Root Cause | Fix Applied |
 
 3. **Flaky Tests Unresolved**
-   - Table: | Test Name | File | Root Cause | Why It Couldn't Be Fixed |
+- Table: | Test Name | File | Root Cause | Why It Couldn't Be Fixed |
 
 4. **API Endpoint Map**
-   - Complete table of all endpoints with method, path, auth requirement, and test status
+- Complete table of all endpoints with method, path, auth requirement, and test status
 
 5. **Documentation Discrepancies**
-   - Every mismatch between docs/types and actual behavior
-   - Include what the docs say vs. what the code does
+- Every mismatch between docs/types and actual behavior
+- Include what the docs say vs. what the code does
 
 6. **Undocumented Behavior**
-   - Behavior you discovered that isn't documented anywhere
+- Behavior you discovered that isn't documented anywhere
 
 7. **Recommendations**
-   - Patterns that are causing flakiness that the team should stop using
-   - Suggestions for preventing future documentation drift
+- Patterns that are causing flakiness that the team should stop using
+- Suggestions for preventing future documentation drift
 
 ## Rules
 - Branch: `test-hardening-[date]`

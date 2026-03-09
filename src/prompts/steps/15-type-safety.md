@@ -110,37 +110,37 @@ Create the `audit-reports/` directory in the project root if it doesn't already 
 ### Report Structure
 
 1. **Summary**
-   - `any` types removed: X
-   - Type assertions replaced with proper narrowing: X
-   - `@ts-ignore` comments removed: X
-   - Return type annotations added: X
-   - Empty catch blocks fixed: X
-   - Unhandled async errors fixed: X
-   - Error format inconsistencies fixed: X
-   - Tests still passing: yes/no
+- `any` types removed: X
+- Type assertions replaced with proper narrowing: X
+- `@ts-ignore` comments removed: X
+- Return type annotations added: X
+- Empty catch blocks fixed: X
+- Unhandled async errors fixed: X
+- Error format inconsistencies fixed: X
+- Tests still passing: yes/no
 
 2. **Type Safety Improvements Made**
-   - Table: | File | Change | Risk Level | Before → After |
+- Table: | File | Change | Risk Level | Before → After |
 
 3. **Type Safety Improvements Recommended (Not Implemented)**
-   - Structural improvements that need team discussion
-   - Files/modules that need larger refactoring
+- Structural improvements that need team discussion
+- Files/modules that need larger refactoring
 
 4. **Error Handling Fixes Made**
-   - Table: | File | Issue | Fix Applied |
+- Table: | File | Issue | Fix Applied |
 
 5. **Error Handling Infrastructure Assessment**
-   - Current state of error handling patterns
-   - What's good, what's missing, what needs work
+- Current state of error handling patterns
+- What's good, what's missing, what needs work
 
 6. **Bugs Discovered**
-   - Type errors or error handling gaps that revealed actual bugs
-   - These are high-value findings — highlight them
+- Type errors or error handling gaps that revealed actual bugs
+- These are high-value findings — highlight them
 
 7. **Recommendations**
-   - Suggested tsconfig.json strict mode changes (with impact assessment)
-   - Error handling patterns the team should adopt
-   - Custom error classes to create
+- Suggested tsconfig.json strict mode changes (with impact assessment)
+- Error handling patterns the team should adopt
+- Custom error classes to create
 
 ## Rules
 - Branch: `robustness-hardening-[date]`

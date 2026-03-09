@@ -14,8 +14,8 @@ Work on branch `concurrency-audit-[date]`.
 - **Only fix** race conditions where the fix is clearly correct and low-risk: adding unique constraints (migration file, not run), replacing read-modify-write with atomic operations, adding `SELECT FOR UPDATE` to existing transactions, adding `WHERE` clause guards to status transitions, replacing read-compute-write cache patterns with atomic cache operations, adding missing cache invalidation to write paths, fixing invalidation ordering, adding button disable-on-submit.
 - **Do NOT implement** overnight: distributed locking, leader election, event sourcing, global transaction isolation level changes, cache stampede protection (unless project already has a pattern), or TTL changes (unless clearly a framework default).
 - When documenting a race condition, show the **interleaved timeline** — the specific sequence of events that causes the problem, with entity IDs and timing where relevant.
-  - Bad: "There's a race condition in the order system"
-  - Good: "In `orders_service.js:142`, two concurrent requests can both read `inventory_count=1`, both pass the `>0` check, and both decrement → `inventory_count=-1`. Fix: `SELECT FOR UPDATE` on the inventory row."
+- Bad: "There's a race condition in the order system"
+- Good: "In `orders_service.js:142`, two concurrent requests can both read `inventory_count=1`, both pass the `>0` check, and both decrement → `inventory_count=-1`. Fix: `SELECT FOR UPDATE` on the inventory row."
 - For cache races, include timing windows: "DB write takes ~50ms, invalidation 10ms after → 60ms stale read window."
 
 ---

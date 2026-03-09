@@ -128,14 +128,14 @@ Save as `audit-reports/SECURITY_AUDIT_REPORT_[run-number]_[date].md` (create dir
 1. **Executive Summary** — 3-5 sentences on overall security posture, including what was found AND fixed
 
 2. **Automated Security Scan Results**
-   - Tools discovered and run: | Tool | Version | Findings | Critical | High | Medium | Low | False Positives |
-   - Tools recommended but unavailable: | Tool | What It Catches | Effort to Add | Priority |
-   - Key verified findings: | Finding | Tool | Severity | File | Verified? | Addressed In Phase |
-   - Notable false positives (for future runs)
-   - Security CI/CD assessment: what runs automatically vs. what should
+- Tools discovered and run: | Tool | Version | Findings | Critical | High | Medium | Low | False Positives |
+- Tools recommended but unavailable: | Tool | What It Catches | Effort to Add | Priority |
+- Key verified findings: | Finding | Tool | Severity | File | Verified? | Addressed In Phase |
+- Notable false positives (for future runs)
+- Security CI/CD assessment: what runs automatically vs. what should
 
 3. **Fixes Applied** — everything fixed in Phase 5
-   - | Issue | Severity | Location | Fix Applied | Tests Pass? | Detected By |
+- | Issue | Severity | Location | Fix Applied | Tests Pass? | Detected By |
 
 4. **Critical Findings (Unfixed)**
 5. **High Findings (Unfixed)**
@@ -144,12 +144,12 @@ Save as `audit-reports/SECURITY_AUDIT_REPORT_[run-number]_[date].md` (create dir
 8. **Informational**
 
 9. **Supply Chain Risk Assessment**
-   - Post-install scripts: | Package | Script Type | Behavior | Risk Level | Recommendation |
-   - Typosquatting risks: | Package | Similar To | Confidence | Evidence |
-   - Namespace/scope risks: | Package | Risk Type | Detail | Recommendation |
-   - Lock file integrity: pass/fail with anomaly details
-   - Maintainer risk: | Package | Concern | Evidence | Risk Level |
-   - Transitive dependency stats: total count, max depth, flagged packages
+- Post-install scripts: | Package | Script Type | Behavior | Risk Level | Recommendation |
+- Typosquatting risks: | Package | Similar To | Confidence | Evidence |
+- Namespace/scope risks: | Package | Risk Type | Detail | Recommendation |
+- Lock file integrity: pass/fail with anomaly details
+- Maintainer risk: | Package | Concern | Evidence | Risk Level |
+- Transitive dependency stats: total count, max depth, flagged packages
 
 ### Finding Template (all findings, fixed and unfixed)
 - **Title**, **Severity** (Critical/High/Medium/Low/Info), **Location** (file + line), **Description**, **Impact**, **Proof** (code snippet), **Recommendation** (with code example), **Detected By** (manual / [tool name] / both)

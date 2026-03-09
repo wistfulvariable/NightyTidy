@@ -29,13 +29,13 @@ Systematically identify and remove:
 ### Phase 2: Code Duplication Reduction
 - Scan for duplicated or near-duplicated logic (functions that do roughly the same thing with minor variations)
 - Focus on:
-  - Copy-pasted utility functions that exist in multiple files
-  - Similar data transformation logic repeated across modules
-  - Repeated validation patterns that could be a shared validator
-  - Similar API call patterns that could be a shared client method
+- Copy-pasted utility functions that exist in multiple files
+- Similar data transformation logic repeated across modules
+- Repeated validation patterns that could be a shared validator
+- Similar API call patterns that could be a shared client method
 - For each instance of significant duplication:
-  - If the fix is low-risk (extracting a shared utility, creating a helper function): implement it, run tests, commit
-  - If the fix is higher-risk (refactoring core patterns): document it in the report with a proposed approach, but don't implement
+- If the fix is low-risk (extracting a shared utility, creating a helper function): implement it, run tests, commit
+- If the fix is higher-risk (refactoring core patterns): document it in the report with a proposed approach, but don't implement
 
 ### Phase 3: Consistency Enforcement
 Scan for and fix inconsistencies in:
@@ -54,45 +54,45 @@ This phase combines stale feature flag cleanup, TODO inventory, and comprehensiv
 **Step 1: Feature flag inventory and cleanup**
 - Find every feature flag in the codebase (environment variables, config files, LaunchDarkly/Flagsmith/etc. references, hardcoded boolean switches)
 - For each flag, document:
-  - Name and location
-  - Current value (always true, always false, dynamic, or unknown)
-  -  **Owner**: Who likely owns this flag? (Infer from git blame, module ownership, or comments)
-  -  **Age**: When was it introduced? (Check git history)
-  -  **Type**: Is this a temporary rollout flag, a permanent operational toggle, or a kill switch?
+- Name and location
+- Current value (always true, always false, dynamic, or unknown)
+-  **Owner**: Who likely owns this flag? (Infer from git blame, module ownership, or comments)
+-  **Age**: When was it introduced? (Check git history)
+-  **Type**: Is this a temporary rollout flag, a permanent operational toggle, or a kill switch?
 - For always-true flags: remove the flag and keep the code
 - For always-false flags: remove the flag AND the dead code it guards
 -  For rollout flags older than 6 months that are always-on: these are almost certainly safe to remove. Remove the flag, keep the code.
 - Run tests after each removal. Commit: `chore: remove stale feature flag [name]`
 
- **Step 2: Flag coupling analysis**
+**Step 2: Flag coupling analysis**
 - Identify flags that depend on other flags (nested conditionals, compound flag checks)
 - Document the combinatorial complexity: how many distinct code paths do the current flags create?
 - Flag any combinations that are likely untested (e.g., if Flag A and Flag B are both "sometimes on," is the (A=true, B=false) path ever tested?)
 - Document these in the report — don't try to fix flag coupling overnight
 
- **Step 3: Configuration sprawl audit**
+**Step 3: Configuration sprawl audit**
 - Find every configuration value in the codebase (constants, config files, environment variable reads, settings objects)
 - Identify configuration that is:
-  - **Set but never varied**: Config values that have only ever been set to one value across all environments. These might be candidates for becoming constants.
-  - **Undocumented**: Config values that have no comment, no README entry, and no `.env.example` entry explaining what they do or what valid values are
-  - **Duplicated**: The same conceptual setting defined in multiple places (a timeout defined in both a config file and a hardcoded fallback, with different values)
-  - **Unused**: Config values defined but never read by application code
+- **Set but never varied**: Config values that have only ever been set to one value across all environments. These might be candidates for becoming constants.
+- **Undocumented**: Config values that have no comment, no README entry, and no `.env.example` entry explaining what they do or what valid values are
+- **Duplicated**: The same conceptual setting defined in multiple places (a timeout defined in both a config file and a hardcoded fallback, with different values)
+- **Unused**: Config values defined but never read by application code
 - For clearly unused config: remove it. Run tests. Commit: `chore: remove unused config [name]`
 - For undocumented config: add clear comments explaining what it controls, valid values, and default behavior
 - For duplicated config: consolidate to a single source of truth where safe
 
- **Step 4: Default value audit**
+**Step 4: Default value audit**
 - For every configuration value with a default, evaluate whether the default is appropriate:
-  - Are there defaults appropriate for development that would be dangerous in production? (Debug mode on by default, permissive CORS by default, short token expiry in dev but what about prod?)
-  - Are there defaults that silently degrade behavior? (A cache TTL defaulting to 0, effectively disabling caching)
-  - Are there missing defaults that cause crashes if the config isn't explicitly set?
+- Are there defaults appropriate for development that would be dangerous in production? (Debug mode on by default, permissive CORS by default, short token expiry in dev but what about prod?)
+- Are there defaults that silently degrade behavior? (A cache TTL defaulting to 0, effectively disabling caching)
+- Are there missing defaults that cause crashes if the config isn't explicitly set?
 - Document concerns in the report. Fix defaults that are clearly wrong and safe to change.
 
 **Step 5: TODO/FIXME/HACK inventory** (unchanged from original)
 - Find every TODO, FIXME, HACK, XXX, and TEMP comment in the codebase. For each one:
-  - Categorize: bug, tech debt, feature request, optimization, or obsolete
-  - If it's clearly obsolete (references old code that no longer exists, mentions completed work): remove it
-  - For the rest: include in the report with file, line, category, and your assessment of priority
+- Categorize: bug, tech debt, feature request, optimization, or obsolete
+- If it's clearly obsolete (references old code that no longer exists, mentions completed work): remove it
+- For the rest: include in the report with file, line, category, and your assessment of priority
 
 ### Phase 5: Quick Wins
 As you work through the phases above, you'll notice small improvements that don't fit neatly into a category. Fix them as you go:
@@ -112,11 +112,11 @@ Create the `audit-reports/` directory in the project root if it doesn't already 
 ### Report Structure
 
 1. **Summary**
-   - Total files modified
-   - Lines of code removed (net)
-   - Unused dependencies removed
-   - Number of commits made
-   - Any tests that were affected
+- Total files modified
+- Lines of code removed (net)
+- Unused dependencies removed
+- Number of commits made
+- Any tests that were affected
 
 2. **Dead Code Removed** — list everything you removed and why you're confident it was dead
 
@@ -125,16 +125,16 @@ Create the `audit-reports/` directory in the project root if it doesn't already 
 4. **Consistency Changes** — what patterns you enforced and where
 
 5. **Configuration & Feature Flags**  (expanded from original)
-   - Flags removed: table with | Flag | Type | Age | Value | Action Taken |
-   -  Flag coupling map (which flags interact and the combinatorial paths created)
-   -  Configuration sprawl findings: table with | Config | Location | Issue | Action |
-   -  Default value concerns: table with | Config | Default | Concern | Recommendation |
-   - Full TODO/FIXME inventory table: | File | Line | Comment | Category | Priority | Recommendation |
+- Flags removed: table with | Flag | Type | Age | Value | Action Taken |
+-  Flag coupling map (which flags interact and the combinatorial paths created)
+-  Configuration sprawl findings: table with | Config | Location | Issue | Action |
+-  Default value concerns: table with | Config | Default | Concern | Recommendation |
+- Full TODO/FIXME inventory table: | File | Line | Comment | Category | Priority | Recommendation |
 
 6. **Couldn't Touch** — things you wanted to fix but couldn't because:
-   - Tests broke when you tried
-   - The change was too risky without team input
-   - You weren't sure about the intended behavior
+- Tests broke when you tried
+- The change was too risky without team input
+- You weren't sure about the intended behavior
 
 7. **Recommendations** — larger refactoring opportunities you noticed that deserve their own effort
 
@@ -149,7 +149,6 @@ Create the `audit-reports/` directory in the project root if it doesn't already 
 - When in doubt, document rather than change. Conservative changes that keep tests green are infinitely more valuable than aggressive changes that might break things.
 - You have all night. Be thorough. Check every directory.
 ```
-
 
 ## Chat Output Requirement
 

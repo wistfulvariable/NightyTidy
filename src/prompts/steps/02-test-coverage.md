@@ -28,10 +28,10 @@ Before writing tests, understand what's missing.
 - Run the existing suite and generate a coverage report if tooling is available
 - If not, manually identify: modules with zero tests, uncovered functions, unexercised code paths
 - Categorize uncovered code by risk:
-  - **Critical**: Public APIs, auth, payment/billing, data mutation, user-facing
-  - **High**: Business logic, data transforms, validation, error handling
-  - **Medium**: Internal utilities, helpers, config
-  - **Low**: Logging, formatting, UI presentation
+- **Critical**: Public APIs, auth, payment/billing, data mutation, user-facing
+- **High**: Business logic, data transforms, validation, error handling
+- **Medium**: Internal utilities, helpers, config
+- **Low**: Logging, formatting, UI presentation
 - Produce a prioritized list. Work top-down from Critical.
 
 ### Phase 3: Unit Test Generation
@@ -117,11 +117,11 @@ Create `audit-reports/` in project root if needed. Save as `audit-reports/TEST_C
 3. **Coverage Gap Analysis** — Uncovered modules by priority; covered vs. remaining
 4. **Bugs Discovered** — File, line, description, severity, and the skipped test that reveals it
 5. **Mutation Testing Results**
-   - Per-function table: Function | File | Risk | Mutations | Killed (tests) | Killed (types) | Survived | Score
-   - Overall mutation score for critical logic
-   - Surviving mutants addressed (new tests): Function | Mutation | New Test | Confirms Kill?
-   - Surviving mutants NOT addressed: Function | Mutation | Why Survived | Risk
-   - Type system effectiveness analysis; functions needing stronger types
+- Per-function table: Function | File | Risk | Mutations | Killed (tests) | Killed (types) | Survived | Score
+- Overall mutation score for critical logic
+- Surviving mutants addressed (new tests): Function | Mutation | New Test | Confirms Kill?
+- Surviving mutants NOT addressed: Function | Mutation | Why Survived | Risk
+- Type system effectiveness analysis; functions needing stronger types
 6. **Tests Written** — Organized by module with brief descriptions
 7. **Remaining Gaps** — What needs coverage and why (time, complexity, infra); functions with low mutation scores
 8. **Testing Infrastructure Recommendations** — Missing utilities, suggested patterns, infra improvements, whether a mutation framework (Stryker, mutmut, etc.) is worth adopting

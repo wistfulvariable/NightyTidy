@@ -37,20 +37,20 @@ For each dependency, assess its health:
 - **Last published**: When was the last release? Dependencies with no release in 2+ years are a risk.
 - **Maintenance signals**: Open issue count, unmerged PRs, maintainer activity (use web search to check npm/PyPI/crates.io pages and GitHub repos)
 - **Known vulnerabilities**: Run `npm audit` / `pip audit` / `cargo audit` / equivalent. For each CVE:
-  - Severity (critical/high/medium/low)
-  - Is the vulnerable code path actually used in this project?
-  - Is there a patched version available?
-  - Is the fix a simple version bump or a breaking change?
+- Severity (critical/high/medium/low)
+- Is the vulnerable code path actually used in this project?
+- Is there a patched version available?
+- Is the fix a simple version bump or a breaking change?
 - **Bus factor**: Is this maintained by one person? Is it a critical dependency maintained by an unfunded individual? (This is a real supply chain risk)
 
 **Step 2: License compliance scan**
 For every dependency (including transitive dependencies):
 - What license does it use?
 - Flag any that are:
-  - **GPL/AGPL** in a proprietary or non-GPL project (potential copyleft risk)
-  - **SSPL** or **BSL** (may restrict commercial use)
-  - **No license specified** (legally risky — no license means no permission to use)
-  - **Custom or unusual licenses** that need legal review
+- **GPL/AGPL** in a proprietary or non-GPL project (potential copyleft risk)
+- **SSPL** or **BSL** (may restrict commercial use)
+- **No license specified** (legally risky — no license means no permission to use)
+- **Custom or unusual licenses** that need legal review
 - Generate a complete license inventory table
 - If the project has a declared license, flag any dependency license that's incompatible with it
 
@@ -124,47 +124,47 @@ Create the `audit-reports/` directory in the project root if it doesn't already 
 ### Report Structure
 
 1. **Executive Summary**
-   - Total dependencies: X (Y direct, Z transitive)
-   - Dependencies with known vulnerabilities: X
-   - Dependencies 1+ major versions behind: X
-   - Potentially abandoned dependencies: X
-   - License risks found: X
-   - Upgrades applied: X
-   - Dependencies removed: X
+- Total dependencies: X (Y direct, Z transitive)
+- Dependencies with known vulnerabilities: X
+- Dependencies 1+ major versions behind: X
+- Potentially abandoned dependencies: X
+- License risks found: X
+- Upgrades applied: X
+- Dependencies removed: X
 
 2. **Vulnerability Report**
-   - Table: | Package | CVE | Severity | Used in Project? | Fix Available? | Fix Applied? |
-   - Vulnerabilities that couldn't be fixed and why
+- Table: | Package | CVE | Severity | Used in Project? | Fix Available? | Fix Applied? |
+- Vulnerabilities that couldn't be fixed and why
 
 3. **License Compliance**
-   - Complete license inventory: table with | Package | License | Risk Level | Notes |
-   - Flagged licenses that need legal review
-   - Recommendation for ongoing license monitoring
+- Complete license inventory: table with | Package | License | Risk Level | Notes |
+- Flagged licenses that need legal review
+- Recommendation for ongoing license monitoring
 
 4. **Staleness Report**
-   - Table: | Package | Current | Latest | Versions Behind | Last Published | Health |
-   - Sorted by risk (most behind + least maintained first)
+- Table: | Package | Current | Latest | Versions Behind | Last Published | Health |
+- Sorted by risk (most behind + least maintained first)
 
 5. **Upgrades Applied**
-   - Table: | Package | From | To | Tests Pass? |
-   - Any issues encountered during upgrades
+- Table: | Package | From | To | Tests Pass? |
+- Any issues encountered during upgrades
 
 6. **Major Upgrades Needed (Not Applied)**
-   - Table: | Package | Current | Target | Breaking Changes | Effort | Priority |
-   - Suggested upgrade order (accounting for dependencies between upgrades)
+- Table: | Package | Current | Target | Breaking Changes | Effort | Priority |
+- Suggested upgrade order (accounting for dependencies between upgrades)
 
 7. **Dependency Weight & Reduction**
-   - Heavy dependencies: table with | Package | Size/Impact | Usage | Alternative | Effort |
-   - Unused dependencies removed
-   - Replacement opportunities for team review
+- Heavy dependencies: table with | Package | Size/Impact | Usage | Alternative | Effort |
+- Unused dependencies removed
+- Replacement opportunities for team review
 
 8. **Abandoned/At-Risk Dependencies**
-   - Table: | Package | Last Release | Maintainer Activity | Risk | Recommendation |
+- Table: | Package | Last Release | Maintainer Activity | Risk | Recommendation |
 
 9. **Recommendations**
-   - Priority-ordered action items
-   - Suggested tooling for ongoing dependency health (Dependabot, Renovate, Snyk, etc.)
-   - Suggested policy for dependency additions (criteria for adopting new dependencies)
+- Priority-ordered action items
+- Suggested tooling for ongoing dependency health (Dependabot, Renovate, Snyk, etc.)
+- Suggested policy for dependency additions (criteria for adopting new dependencies)
 
 ## Rules
 - Branch: `dependency-health-[date]`

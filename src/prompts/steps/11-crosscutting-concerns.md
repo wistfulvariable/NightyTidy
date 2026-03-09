@@ -181,8 +181,8 @@ Print a summary in conversation (don't make user open the report):
 
 1. **Status Line** — What you did, whether tests pass.
 2. **Key Findings** — Specific, actionable bullets with severity. Lead with impact.
-   - ✅ "CRITICAL: 4 of 22 queries on `orders` don't filter `deleted_at` — soft-deleted orders appear in invoices."
-   - ❌ "Found some inconsistencies with soft deletes."
+- ✅ "CRITICAL: 4 of 22 queries on `orders` don't filter `deleted_at` — soft-deleted orders appear in invoices."
+- ❌ "Found some inconsistencies with soft deletes."
 3. **Changes Made** (if any) — Bullet list. Skip for read-only runs.
 4. **Drift Heat Map** — Summary table from report.
 5. **Recommendations** — Table (only if warranted):

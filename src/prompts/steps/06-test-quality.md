@@ -182,7 +182,7 @@ In addition to writing the full report file, you MUST print a summary directly i
 One sentence: what you analyzed and how long it took. (No code was changed — no test status to report.)
 
 ### 2. Key Findings
-The most important gaps discovered �� specific and actionable, not vague. Lead with impact.
+The most important gaps discovered — specific and actionable, not vague. Lead with impact.
 
 **Good:** "HIGH: Zero adversarial input tests exist on any auth or payment endpoint — no test covers a negative price, a stolen session token, or SQL injection in any user-supplied field."
 **Bad:** "Found some test quality issues."

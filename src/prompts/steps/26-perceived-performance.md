@@ -88,7 +88,7 @@ const dashboard = await fetchDashboard(user.id);
 // GOOD: 300ms parallel (prefs + dashboard don't depend on each other)
 const user = await fetchUser();
 const [prefs, dashboard] = await Promise.all([
-  fetchPreferences(user.id), fetchDashboard(user.id)
+fetchPreferences(user.id), fetchDashboard(user.id)
 ]);
 ```
 

@@ -219,43 +219,43 @@ Create `audit-reports/` in project root if needed. Save as `audit-reports/ARCHIT
 1. **Executive Summary** — Overall complexity assessment (lean / reasonable / heavy / over-engineered), the single biggest complexity tax the codebase is paying, top 3 simplification opportunities with estimated impact.
 
 2. **Structural Complexity Map**
-   - Dependency graph summary: hub modules, deepest chains, circular dependencies
-   - Layer analysis per operation: | Operation | Files Touched | Meaningful Layers | Indirection Ratio | Glue Code Lines |
-   - Abstraction inventory: | Abstraction | Type | Location | Implementations | Justification | Verdict |
-   - Directory structure assessment
+- Dependency graph summary: hub modules, deepest chains, circular dependencies
+- Layer analysis per operation: | Operation | Files Touched | Meaningful Layers | Indirection Ratio | Glue Code Lines |
+- Abstraction inventory: | Abstraction | Type | Location | Implementations | Justification | Verdict |
+- Directory structure assessment
 
 3. **Data Flow Complexity**
-   - Transformation chains per core data type: diagram or table showing each reshape and whether it does meaningful work
-   - State management assessment: sources of truth, duplication, global vs. local
-   - Configuration layer map
+- Transformation chains per core data type: diagram or table showing each reshape and whether it does meaningful work
+- State management assessment: sources of truth, duplication, global vs. local
+- Configuration layer map
 
 4. **Pattern Complexity**
-   - Premature generalizations: | Pattern | Location | Introduced | Ever Used? | Maintenance Cost | Recommendation |
-   - Unnecessary indirection: | Pattern | Location | Simpler Alternative | Risk of Change |
-   - Cargo-culted patterns: | Pattern | Location | Problem It Solves Here | Simpler Alternative |
-   - Organic growth tangles: locations where the architecture has been routed around
+- Premature generalizations: | Pattern | Location | Introduced | Ever Used? | Maintenance Cost | Recommendation |
+- Unnecessary indirection: | Pattern | Location | Simpler Alternative | Risk of Change |
+- Cargo-culted patterns: | Pattern | Location | Problem It Solves Here | Simpler Alternative |
+- Organic growth tangles: locations where the architecture has been routed around
 
 5. **Complexity Quantification**
-   - Indirection scores per operation (table + red/yellow/green)
-   - Abstraction overhead: total line count, percentage of codebase
-   - Onboarding complexity per area: | Area | Files to Read | Layers | Patterns | Rating |
+- Indirection scores per operation (table + red/yellow/green)
+- Abstraction overhead: total line count, percentage of codebase
+- Onboarding complexity per area: | Area | Files to Read | Layers | Patterns | Rating |
 
 6. **Simplification Roadmap**
-   - Full finding list: | Finding | Category (Remove/Collapse/Replace/Restructure/Accept) | Effort | Risk | Impact | Priority |
-   - This week: trivial removals, feed into next Code Elegance or Codebase Cleanup run
-   - This month: planned simplifications with suggested approach
-   - This quarter: larger restructuring with milestones
-   - Backlog: good ideas, low urgency
-   - Dependency graph between simplifications (what enables what)
+- Full finding list: | Finding | Category (Remove/Collapse/Replace/Restructure/Accept) | Effort | Risk | Impact | Priority |
+- This week: trivial removals, feed into next Code Elegance or Codebase Cleanup run
+- This month: planned simplifications with suggested approach
+- This quarter: larger restructuring with milestones
+- Backlog: good ideas, low urgency
+- Dependency graph between simplifications (what enables what)
 
 7. **Accepted Complexity**
-   - Complexity that's justified, with explicit reasoning. This section exists so the team doesn't re-litigate these decisions.
+- Complexity that's justified, with explicit reasoning. This section exists so the team doesn't re-litigate these decisions.
 
 8. **Recommendations**
-   - Priority-ordered next steps
-   - Which existing overnight prompts (Code Elegance, File Decomposition, Codebase Cleanup) should run next and what they should target based on these findings
-   - Conventions to adopt to prevent new unnecessary complexity
-   - How to evaluate "should we add this abstraction?" going forward (a decision framework)
+- Priority-ordered next steps
+- Which existing overnight prompts (Code Elegance, File Decomposition, Codebase Cleanup) should run next and what they should target based on these findings
+- Conventions to adopt to prevent new unnecessary complexity
+- How to evaluate "should we add this abstraction?" going forward (a decision framework)
 
 ## Rules
 - READ-ONLY. Do not modify any code.

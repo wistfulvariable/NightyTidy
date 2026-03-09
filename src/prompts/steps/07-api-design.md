@@ -60,33 +60,33 @@ Document the dominant convention for each category — this becomes the target f
 2. **Identify the dominant pattern** — this is the target format.
 3. **Flag deviations** — for each, note: current format, target format, and whether changing it would break consumers.
 4. **Evaluate error quality:**
-   - Are messages helpful and specific? (Not just "Validation failed")
-   - Are all field errors returned at once, or fail-on-first?
-   - Are machine-readable error codes included?
-   - Is sensitive info leaked? (SQL errors, stack traces, internal paths)
+- Are messages helpful and specific? (Not just "Validation failed")
+- Are all field errors returned at once, or fail-on-first?
+- Are machine-readable error codes included?
+- Is sensitive info leaked? (SQL errors, stack traces, internal paths)
 5. **Fix safe inconsistencies** — align error format where it won't break consumers. Improve unhelpful messages.
 
 ## Phase 5: Pagination Consistency
 
 1. **Find all list endpoints.**
 2. **Audit each:**
-   - Paginated at all? (Unbounded lists = performance/security risk)
-   - Strategy: offset/limit, page/perPage, cursor-based?
-   - Parameter names consistent? (`page` vs `p`, `limit` vs `per_page` vs `pageSize`)
-   - Default and maximum page size enforced?
-   - Response includes pagination metadata? (total count, current page, next/prev links) Format consistent?
+- Paginated at all? (Unbounded lists = performance/security risk)
+- Strategy: offset/limit, page/perPage, cursor-based?
+- Parameter names consistent? (`page` vs `p`, `limit` vs `per_page` vs `pageSize`)
+- Default and maximum page size enforced?
+- Response includes pagination metadata? (total count, current page, next/prev links) Format consistent?
 3. **Fix safe issues** — add defaults/maximums where missing, standardize param and metadata formats.
 
 ## Phase 6: Request Validation Consistency
 
 1. **Audit validation patterns:**
-   - Does every input-accepting endpoint have validation?
-   - What library/approach? Consistent or mixed?
-   - Where does validation happen? (Middleware, handler, service layer, mixed?)
+- Does every input-accepting endpoint have validation?
+- What library/approach? Consistent or mixed?
+- Where does validation happen? (Middleware, handler, service layer, mixed?)
 2. **Audit validation behavior:**
-   - Consistent failure status code? Consistent error format (matching Phase 4)?
-   - All errors returned at once or one at a time?
-   - Same fields validated the same way across endpoints?
+- Consistent failure status code? Consistent error format (matching Phase 4)?
+- All errors returned at once or one at a time?
+- Same fields validated the same way across endpoints?
 3. **Fix safe issues** — add missing validation using existing patterns, standardize error format.
 
 ## Phase 7: Miscellaneous API Quality

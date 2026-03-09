@@ -75,10 +75,10 @@ Now do a thorough analysis. For each file/module in the codebase, evaluate again
 - Is high-level orchestration mixed with low-level details? A function that coordinates a workflow should call well-named subfunctions — not contain raw SQL, string parsing, and HTTP calls inline.
 - Is the code at a consistent level of abstraction within each function? (Not mixing "createUser" with "buffer.toString('base64')" in the same block)
 - Are things in the right architectural layer?
-  - Route handlers should: validate input, call service layer, format response. Nothing else.
-  - Service layer should: orchestrate business logic, coordinate between data sources. No HTTP concepts, no response formatting.
-  - Data layer should: query and persist data. No business rules, no formatting.
-  - UI components should: render and handle user interaction. No direct API calls, no business logic.
+- Route handlers should: validate input, call service layer, format response. Nothing else.
+- Service layer should: orchestrate business logic, coordinate between data sources. No HTTP concepts, no response formatting.
+- Data layer should: query and persist data. No business rules, no formatting.
+- UI components should: render and handle user interaction. No direct API calls, no business logic.
 
 ### Dimension 3: Readability & Clarity
 - Can a new developer understand this code without tribal knowledge?
@@ -244,35 +244,35 @@ Create `audit-reports/` in project root if needed. Save as `audit-reports/CODE_E
 2. **Characterization Tests Written** — Table: | File/Module | Tests Added | Coverage Before | Coverage After | Purpose |. These tests have value beyond this refactoring pass — they document current behavior.
 
 3. **Refactors Executed** — For each refactor:
-   | File | What Changed | Technique Used | Risk Level | Before (metrics) | After (metrics) |
-   
-   Plus a brief description of what was improved and why for non-obvious changes.
+| File | What Changed | Technique Used | Risk Level | Before (metrics) | After (metrics) |
+
+Plus a brief description of what was improved and why for non-obvious changes.
 
 4. **Refactors Attempted but Reverted** — What you tried, what broke, and your assessment of why.
 
 5. **Refactors Identified but Not Attempted** — The backlog. For each:
-   | File | Issue | Proposed Refactor | Risk Level | Why Not Attempted | Priority for Next Run |
+| File | Issue | Proposed Refactor | Risk Level | Why Not Attempted | Priority for Next Run |
 
 6. **Code Quality Metrics** — Before/after summary:
-   - Longest function (lines): before → after
-   - Deepest nesting level: before → after  
-   - Largest parameter count: before → after
-   - Functions over 50 lines: before → after
-   - Files with mixed abstraction layers: before → after
+- Longest function (lines): before → after
+- Deepest nesting level: before → after
+- Largest parameter count: before → after
+- Functions over 50 lines: before → after
+- Files with mixed abstraction layers: before → after
 
 7. **Anti-Pattern Inventory** — Recurring patterns the team should address as conventions:
-   | Pattern | Frequency | Where It Appears | Recommended Convention |
+| Pattern | Frequency | Where It Appears | Recommended Convention |
 
 8. **Abstraction Layer Assessment** — Current state of architectural layering:
-   - Which layers exist and are respected?
-   - Which layers are violated and where?
-   - Recommended layer boundaries for this project
+- Which layers exist and are respected?
+- Which layers are violated and where?
+- Recommended layer boundaries for this project
 
 9. **Recommendations** — Priority-ordered next steps:
-   - Refactors to attempt in the next run (from the backlog)
-   - Conventions to adopt to prevent new code from regressing
-   - Architectural improvements that would benefit the codebase
-   - Areas needing team discussion before refactoring
+- Refactors to attempt in the next run (from the backlog)
+- Conventions to adopt to prevent new code from regressing
+- Architectural improvements that would benefit the codebase
+- Areas needing team discussion before refactoring
 
 ## Rules
 - Branch: `code-elegance-[date]`

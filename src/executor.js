@@ -8,7 +8,7 @@ import { info, warn, error as logError } from './logger.js';
 // SHA-256 of all STEPS[].prompt content — update when prompts change.
 // Detects unexpected modification of prompt data before passing to
 // Claude Code with --dangerously-skip-permissions.
-const STEPS_HASH = 'dbe885767dbfcffac944d142dcc4fd82af0cef33bca162ecacf8a304d6a2cbff';
+const STEPS_HASH = '1578cc610e97618b4eacdbfb79be29b7aa2715b0c4fa32b960eaa21f8ef2ab6a';
 
 function verifyStepsIntegrity(steps) {
   const content = steps.map(s => s.prompt).join('');
