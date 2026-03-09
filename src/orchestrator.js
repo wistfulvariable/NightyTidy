@@ -60,6 +60,24 @@ function validateStepNumbers(numbers) {
   return null;
 }
 
+function buildExecutionResults(state) {
+  const allStepResults = [...state.completedSteps, ...state.failedSteps]
+    .sort((a, b) => state.selectedSteps.indexOf(a.number) - state.selectedSteps.indexOf(b.number));
+
+  return {
+    results: allStepResults.map(s => ({
+      step: { number: s.number, name: s.name },
+      status: s.status,
+      output: '',
+      duration: s.duration,
+      attempts: s.attempts,
+      error: s.status === 'failed' ? 'Step failed during orchestrated run' : null,
+    })),
+    completedCount: state.completedSteps.length,
+    failedCount: state.failedSteps.length,
+  };
+}
+
 function buildProgressState(state) {
   const doneNums = new Set([
     ...state.completedSteps.map(s => s.number),
@@ -338,22 +356,7 @@ export async function finishRun(projectDir) {
     initGit(projectDir);
     info('Orchestrator: finishing run');
 
-    // Build execution results from accumulated state
-    const allStepResults = [...state.completedSteps, ...state.failedSteps]
-      .sort((a, b) => state.selectedSteps.indexOf(a.number) - state.selectedSteps.indexOf(b.number));
-
-    const executionResults = {
-      results: allStepResults.map(s => ({
-        step: { number: s.number, name: s.name },
-        status: s.status,
-        output: '',
-        duration: s.duration,
-        attempts: s.attempts,
-        error: s.status === 'failed' ? 'Step failed during orchestrated run' : null,
-      })),
-      completedCount: state.completedSteps.length,
-      failedCount: state.failedSteps.length,
-    };
+    const executionResults = buildExecutionResults(state);
 
     const totalDuration = Date.now() - state.startTime;
 
