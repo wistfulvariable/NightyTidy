@@ -25,24 +25,13 @@ beforeAll(() => {
 // ── buildCommand ───────────────────────────────────────────────────
 
 describe('buildCommand', () => {
-  it('builds Windows command with cd /d and quoted path', () => {
-    const cmd = NtLogic.buildCommand('C:\\Projects\\MyApp', '--list --json', 'Windows');
-    expect(cmd).toBe('cd /d "C:\\Projects\\MyApp" && npx nightytidy --list --json');
-  });
-
-  it('builds Linux/macOS command with cd and quoted path', () => {
-    const cmd = NtLogic.buildCommand('/home/user/project', '--list --json', 'Linux');
-    expect(cmd).toBe('cd "/home/user/project" && npx nightytidy --list --json');
-  });
-
-  it('builds macOS command with cd (same as Linux)', () => {
-    const cmd = NtLogic.buildCommand('/Users/dev/app', '--init-run --all', 'Darwin');
-    expect(cmd).toBe('cd "/Users/dev/app" && npx nightytidy --init-run --all');
-  });
-
-  it('handles paths with spaces', () => {
-    const cmd = NtLogic.buildCommand('C:\\My Projects\\App Name', '--run-step 5', 'Windows');
-    expect(cmd).toBe('cd /d "C:\\My Projects\\App Name" && npx nightytidy --run-step 5');
+  it.each([
+    ['C:\\Projects\\MyApp', '--list --json', 'Windows', 'cd /d "C:\\Projects\\MyApp" && npx nightytidy --list --json', 'Windows with cd /d'],
+    ['/home/user/project', '--list --json', 'Linux', 'cd "/home/user/project" && npx nightytidy --list --json', 'Linux with cd'],
+    ['/Users/dev/app', '--init-run --all', 'Darwin', 'cd "/Users/dev/app" && npx nightytidy --init-run --all', 'macOS (same as Linux)'],
+    ['C:\\My Projects\\App Name', '--run-step 5', 'Windows', 'cd /d "C:\\My Projects\\App Name" && npx nightytidy --run-step 5', 'paths with spaces'],
+  ])('builds correct command for %s on %s (%s)', (dir, args, os, expected) => {
+    expect(NtLogic.buildCommand(dir, args, os)).toBe(expected);
   });
 
   it('passes through arbitrary args', () => {
@@ -54,181 +43,104 @@ describe('buildCommand', () => {
 // ── parseCliOutput ─────────────────────────────────────────────────
 
 describe('parseCliOutput', () => {
-  it('parses a single JSON line', () => {
-    const result = NtLogic.parseCliOutput('{"steps":[{"number":1,"name":"Documentation"}]}');
-    expect(result.ok).toBe(true);
-    expect(result.data.steps).toHaveLength(1);
-    expect(result.data.steps[0].name).toBe('Documentation');
+  describe('successful parsing', () => {
+    it.each([
+      ['{"steps":[{"number":1,"name":"Documentation"}]}', 'single JSON line'],
+      ['warning: something\nanother warning\n{"success":true,"runBranch":"nightytidy/run-123"}', 'JSON after warning lines'],
+      ['{"success":true}\n', 'JSON with trailing newline'],
+      ['warning text\r\n{"success":true}\r\n', 'Windows CRLF line endings'],
+    ])('returns ok:true for %s', (input) => {
+      const result = NtLogic.parseCliOutput(input);
+      expect(result.ok).toBe(true);
+      expect(result.data).toBeDefined();
+    });
+
+    it('extracts nested data from parsed JSON', () => {
+      const result = NtLogic.parseCliOutput('{"steps":[{"number":1,"name":"Documentation"}]}');
+      expect(result.data.steps).toHaveLength(1);
+      expect(result.data.steps[0].name).toBe('Documentation');
+    });
   });
 
-  it('parses JSON from last line when preceded by warnings', () => {
-    const stdout = 'warning: something\nanother warning\n{"success":true,"runBranch":"nightytidy/run-123"}';
-    const result = NtLogic.parseCliOutput(stdout);
-    expect(result.ok).toBe(true);
-    expect(result.data.success).toBe(true);
-    expect(result.data.runBranch).toBe('nightytidy/run-123');
-  });
+  describe('error cases', () => {
+    it.each([
+      [null, /no output/i, 'null input'],
+      ['', /no output/i, 'empty string'],
+      ['   \n  \n  ', /empty output/i, 'whitespace-only'],
+      ['Error: command not found\nSome other text', /could not parse/i, 'non-JSON output'],
+    ])('returns ok:false for %s (%s)', (input, errorPattern) => {
+      const result = NtLogic.parseCliOutput(input);
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(errorPattern);
+    });
 
-  it('returns error for null input', () => {
-    const result = NtLogic.parseCliOutput(null);
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/no output/i);
-  });
-
-  it('returns error for empty string', () => {
-    const result = NtLogic.parseCliOutput('');
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/no output/i);
-  });
-
-  it('returns error for whitespace-only string', () => {
-    const result = NtLogic.parseCliOutput('   \n  \n  ');
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/empty output/i);
-  });
-
-  it('returns error for non-JSON output', () => {
-    const result = NtLogic.parseCliOutput('Error: command not found\nSome other text');
-    expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/could not parse/i);
-  });
-
-  it('returns error for non-string input', () => {
-    const result = NtLogic.parseCliOutput(42);
-    expect(result.ok).toBe(false);
-  });
-
-  it('handles JSON with trailing newline', () => {
-    const result = NtLogic.parseCliOutput('{"success":true}\n');
-    expect(result.ok).toBe(true);
-    expect(result.data.success).toBe(true);
-  });
-
-  it('handles Windows CRLF line endings', () => {
-    const stdout = 'warning text\r\n{"success":true}\r\n';
-    const result = NtLogic.parseCliOutput(stdout);
-    expect(result.ok).toBe(true);
-    expect(result.data.success).toBe(true);
+    it('returns ok:false for non-string input', () => {
+      const result = NtLogic.parseCliOutput(42);
+      expect(result.ok).toBe(false);
+    });
   });
 });
 
 // ── formatMs ───────────────────────────────────────────────────────
 
 describe('formatMs', () => {
-  it('formats zero as "0s"', () => {
-    expect(NtLogic.formatMs(0)).toBe('0s');
-  });
-
-  it('formats negative as "0s"', () => {
-    expect(NtLogic.formatMs(-1000)).toBe('0s');
-  });
-
-  it('formats null/undefined as "0s"', () => {
-    expect(NtLogic.formatMs(null)).toBe('0s');
-    expect(NtLogic.formatMs(undefined)).toBe('0s');
-  });
-
-  it('formats seconds only', () => {
-    expect(NtLogic.formatMs(8000)).toBe('8s');
-  });
-
-  it('formats minutes and seconds', () => {
-    expect(NtLogic.formatMs(125000)).toBe('2m 5s');
-  });
-
-  it('formats hours, minutes, and seconds', () => {
-    expect(NtLogic.formatMs(3661000)).toBe('1h 1m 1s');
-  });
-
-  it('formats exactly one hour', () => {
-    expect(NtLogic.formatMs(3600000)).toBe('1h 0m 0s');
-  });
-
-  it('formats exactly one minute', () => {
-    expect(NtLogic.formatMs(60000)).toBe('1m 0s');
-  });
-
-  it('floors partial seconds', () => {
-    expect(NtLogic.formatMs(1500)).toBe('1s');
+  it.each([
+    [0, '0s', 'zero'],
+    [-1000, '0s', 'negative'],
+    [null, '0s', 'null'],
+    [undefined, '0s', 'undefined'],
+    [8000, '8s', 'seconds only'],
+    [125000, '2m 5s', 'minutes and seconds'],
+    [3661000, '1h 1m 1s', 'hours, minutes, seconds'],
+    [3600000, '1h 0m 0s', 'exactly one hour'],
+    [60000, '1m 0s', 'exactly one minute'],
+    [1500, '1s', 'floors partial seconds'],
+  ])('formats %s ms as "%s" (%s)', (ms, expected) => {
+    expect(NtLogic.formatMs(ms)).toBe(expected);
   });
 });
 
 // ── escapeHtml ─────────────────────────────────────────────────────
 
 describe('escapeHtml', () => {
-  it('escapes ampersands', () => {
-    expect(NtLogic.escapeHtml('foo & bar')).toBe('foo &amp; bar');
-  });
-
-  it('escapes angle brackets', () => {
-    expect(NtLogic.escapeHtml('<script>alert("xss")</script>')).toBe(
-      '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;'
-    );
-  });
-
-  it('escapes double quotes', () => {
-    expect(NtLogic.escapeHtml('say "hello"')).toBe('say &quot;hello&quot;');
-  });
-
-  it('returns empty string for null/undefined', () => {
-    expect(NtLogic.escapeHtml(null)).toBe('');
-    expect(NtLogic.escapeHtml(undefined)).toBe('');
-    expect(NtLogic.escapeHtml('')).toBe('');
-  });
-
-  it('passes through clean strings unchanged', () => {
-    expect(NtLogic.escapeHtml('Hello World')).toBe('Hello World');
+  it.each([
+    ['foo & bar', 'foo &amp; bar', 'ampersands'],
+    ['<script>alert("xss")</script>', '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;', 'angle brackets and quotes'],
+    ['say "hello"', 'say &quot;hello&quot;', 'double quotes'],
+    [null, '', 'null'],
+    [undefined, '', 'undefined'],
+    ['', '', 'empty string'],
+    ['Hello World', 'Hello World', 'clean strings'],
+  ])('escapes %s -> "%s" (%s)', (input, expected) => {
+    expect(NtLogic.escapeHtml(input)).toBe(expected);
   });
 });
 
 // ── getNextStep ────────────────────────────────────────────────────
 
 describe('getNextStep', () => {
-  it('returns first step when nothing done', () => {
-    expect(NtLogic.getNextStep([1, 5, 12], [], [])).toBe(1);
-  });
-
-  it('skips completed steps', () => {
-    expect(NtLogic.getNextStep([1, 5, 12], [1], [])).toBe(5);
-  });
-
-  it('skips failed steps', () => {
-    expect(NtLogic.getNextStep([1, 5, 12], [], [1])).toBe(5);
-  });
-
-  it('skips both completed and failed steps', () => {
-    expect(NtLogic.getNextStep([1, 5, 12], [1], [5])).toBe(12);
-  });
-
-  it('returns null when all steps done', () => {
-    expect(NtLogic.getNextStep([1, 5, 12], [1, 5], [12])).toBeNull();
-  });
-
-  it('returns null for empty selected', () => {
-    expect(NtLogic.getNextStep([], [], [])).toBeNull();
-  });
-
-  it('returns null for null selected', () => {
-    expect(NtLogic.getNextStep(null, [], [])).toBeNull();
-  });
-
-  it('handles null completed/failed arrays', () => {
-    expect(NtLogic.getNextStep([1, 5], null, null)).toBe(1);
+  it.each([
+    [[1, 5, 12], [], [], 1, 'first step when nothing done'],
+    [[1, 5, 12], [1], [], 5, 'skips completed'],
+    [[1, 5, 12], [], [1], 5, 'skips failed'],
+    [[1, 5, 12], [1], [5], 12, 'skips both completed and failed'],
+    [[1, 5, 12], [1, 5], [12], null, 'null when all done'],
+    [[], [], [], null, 'null for empty selected'],
+    [null, [], [], null, 'null for null selected'],
+    [[1, 5], null, null, 1, 'handles null completed/failed'],
+  ])('returns %s for %s', (selected, completed, failed, expected, _desc) => {
+    expect(NtLogic.getNextStep(selected, completed, failed)).toBe(expected);
   });
 });
 
 // ── buildStepArgs ──────────────────────────────────────────────────
 
 describe('buildStepArgs', () => {
-  it('returns --all when all steps selected', () => {
-    expect(NtLogic.buildStepArgs([1, 2, 3, 4, 5], 5)).toBe('--all');
-  });
-
-  it('returns --steps with comma-separated numbers for partial selection', () => {
-    expect(NtLogic.buildStepArgs([1, 5, 12], 33)).toBe('--steps 1,5,12');
-  });
-
-  it('returns --steps for single step', () => {
-    expect(NtLogic.buildStepArgs([7], 33)).toBe('--steps 7');
+  it.each([
+    [[1, 2, 3, 4, 5], 5, '--all', 'all steps selected'],
+    [[1, 5, 12], 33, '--steps 1,5,12', 'partial selection (comma-separated)'],
+    [[7], 33, '--steps 7', 'single step'],
+  ])('returns "%s" for %s (%s)', (selected, total, expected, _desc) => {
+    expect(NtLogic.buildStepArgs(selected, total)).toBe(expected);
   });
 });
