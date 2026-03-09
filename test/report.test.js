@@ -75,19 +75,12 @@ describe('generateReport', () => {
 });
 
 describe('formatDuration', () => {
-  it('formats 30 seconds correctly', () => {
-    expect(formatDuration(30000)).toBe('0m 30s');
-  });
-
-  it('formats 1 hour and 2 minutes correctly', () => {
-    expect(formatDuration(3720000)).toBe('1h 02m');
-  });
-
-  it('formats exact minutes with zero seconds', () => {
-    expect(formatDuration(120000)).toBe('2m 00s');
-  });
-
-  it('formats sub-minute durations with padded seconds', () => {
-    expect(formatDuration(5000)).toBe('0m 05s');
+  it.each([
+    [30000, '0m 30s', '30 seconds'],
+    [3720000, '1h 02m', '1 hour and 2 minutes'],
+    [120000, '2m 00s', 'exact minutes with zero seconds'],
+    [5000, '0m 05s', 'sub-minute with padded seconds'],
+  ])('formats %i ms as "%s" (%s)', (ms, expected) => {
+    expect(formatDuration(ms)).toBe(expected);
   });
 });
