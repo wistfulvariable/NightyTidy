@@ -129,7 +129,12 @@ function showInitOverlay() {
 
   let idx = 0;
   state.initMsgTimer = setInterval(() => {
-    idx = (idx + 1) % INIT_MESSAGES.length;
+    if (idx >= INIT_MESSAGES.length - 1) {
+      clearInterval(state.initMsgTimer);
+      state.initMsgTimer = null;
+      return;
+    }
+    idx++;
     statusEl.style.opacity = '0';
     setTimeout(() => {
       statusEl.textContent = INIT_MESSAGES[idx];
@@ -882,7 +887,7 @@ function enterPauseMode(stepNum, retryAfterMs) {
   startCountdownTimer();
 
   // Add paused visual to the step item
-  const stepItem = document.querySelector(`.step-item[data-step="${stepNum}"]`);
+  const stepItem = document.getElementById(`run-step-${stepNum}`);
   if (stepItem) stepItem.classList.add('step-paused');
 
   return new Promise(resolve => {
@@ -900,7 +905,7 @@ function enterPauseMode(stepNum, retryAfterMs) {
     state._pauseTimer = null;
 
     // Remove paused visual
-    const el = document.querySelector(`.step-item[data-step="${stepNum}"]`);
+    const el = document.getElementById(`run-step-${stepNum}`);
     if (el) el.classList.remove('step-paused');
   });
 }
