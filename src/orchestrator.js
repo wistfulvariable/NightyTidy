@@ -105,19 +105,20 @@ function buildExecutionResults(state) {
 }
 
 function buildProgressState(state) {
-  const doneNums = new Set([
-    ...state.completedSteps.map(s => s.number),
-    ...state.failedSteps.map(s => s.number),
-  ]);
+  // Pre-index for O(1) lookups instead of O(n) find() calls
+  const stepsMap = new Map(STEPS.map(s => [s.number, s]));
+  const completedMap = new Map(state.completedSteps.map(s => [s.number, s]));
+  const failedMap = new Map(state.failedSteps.map(s => [s.number, s]));
+
   return {
     status: 'running',
     totalSteps: state.selectedSteps.length,
     currentStepIndex: -1,
     currentStepName: '',
     steps: state.selectedSteps.map(num => {
-      const step = STEPS.find(s => s.number === num);
-      const completed = state.completedSteps.find(s => s.number === num);
-      const failed = state.failedSteps.find(s => s.number === num);
+      const step = stepsMap.get(num);
+      const completed = completedMap.get(num);
+      const failed = failedMap.get(num);
       return {
         number: num,
         name: step?.name || `Step ${num}`,
