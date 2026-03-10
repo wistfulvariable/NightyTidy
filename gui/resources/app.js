@@ -942,7 +942,11 @@ function showPauseOverlay(stepNum, waitMs, hasRetryAfter) {
     : `Auto-retry in ${NtLogic.formatMs(waitMs)} (attempt ${state.backoffAttempt}).`;
   document.getElementById('pause-source').textContent = sourceText;
 
-  document.getElementById('pause-overlay').classList.remove('hidden');
+  const pauseOverlay = document.getElementById('pause-overlay');
+  pauseOverlay.classList.remove('hidden');
+  // Focus the Resume button (primary action)
+  const resumeBtn = document.getElementById('btn-resume-now');
+  if (resumeBtn) resumeBtn.focus();
 
   const subtitle = document.getElementById('running-subtitle');
   subtitle.textContent = 'Paused \u2014 Rate Limit';
@@ -978,13 +982,25 @@ function stopCountdownTimer() {
 
 // ── Stop Run ───────────────────────────────────────────────────────
 
+let lastFocusedElement = null;
+
 function confirmStopRun() {
   if (state.stopping) return;
-  document.getElementById('confirm-stop-overlay').classList.remove('hidden');
+  lastFocusedElement = document.activeElement;
+  const overlay = document.getElementById('confirm-stop-overlay');
+  overlay.classList.remove('hidden');
+  // Focus the cancel button (safer default action)
+  const cancelBtn = document.getElementById('btn-confirm-stop-cancel');
+  if (cancelBtn) cancelBtn.focus();
 }
 
 function cancelStopRun() {
   document.getElementById('confirm-stop-overlay').classList.add('hidden');
+  // Restore focus to the element that opened the modal
+  if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+    lastFocusedElement.focus();
+    lastFocusedElement = null;
+  }
 }
 
 async function stopRun() {
@@ -1273,6 +1289,25 @@ function bindEvents() {
   document.getElementById('btn-close-app').addEventListener('click', () => {
     api('exit').catch(() => {});
     window.close();
+  });
+
+  // Keyboard accessibility for modals — Escape key to close
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const confirmOverlay = document.getElementById('confirm-stop-overlay');
+      if (!confirmOverlay.classList.contains('hidden')) {
+        cancelStopRun();
+        return;
+      }
+      // Don't allow Escape on pause overlay — require explicit action
+    }
+  });
+
+  // Click outside modal to close (confirm dialog only)
+  document.getElementById('confirm-stop-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'confirm-stop-overlay') {
+      cancelStopRun();
+    }
   });
 }
 

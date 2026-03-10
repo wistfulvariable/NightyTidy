@@ -45,7 +45,32 @@ body {
   font-size: 0.85rem;
 }
 
+/* ── Skip link (keyboard accessibility) ── */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--cyan);
+  color: #000;
+  padding: 8px 16px;
+  z-index: 1000;
+  text-decoration: none;
+  font-weight: 500;
+  border-radius: 0 0 4px 0;
+  transition: top 0.2s;
+}
+.skip-link:focus {
+  top: 0;
+}
+
 /* ── Focus styles (keyboard accessibility) ── */
+:focus {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
 :focus-visible {
   outline: 2px solid var(--cyan);
   outline-offset: 2px;
@@ -628,6 +653,12 @@ body {
   gap: 12px;
   justify-content: center;
   margin-top: 24px;
+}
+
+.log-path-hint {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  margin: 8px 0 0;
 }
 
 /* ── Confirm Modal ── */
