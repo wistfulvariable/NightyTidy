@@ -274,6 +274,8 @@ async function handleSelectFolder(res) {
 
 // ── API: Run Command ───────────────────────────────────────────────
 
+const PROCESS_TIMEOUT_MS = 48 * 60_000; // 48 min — must exceed step timeout (45 min) + overhead
+
 async function handleRunCommand(req, res) {
   const body = await readBody(req);
   const { command, id } = body;
@@ -283,8 +285,12 @@ async function handleRunCommand(req, res) {
     return;
   }
 
+  const startTime = Date.now();
+  // Truncate command for logging (avoid logging huge prompts)
+  const cmdPreview = command.length > 200 ? command.slice(0, 200) + '...' : command;
+
   try {
-    guiLog('info', `Spawning process id=${id || 'none'}`);
+    guiLog('info', `Spawning process id=${id || 'none'} cmd=${cmdPreview}`);
     const proc = spawn(command, [], {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
@@ -294,27 +300,48 @@ async function handleRunCommand(req, res) {
     let stdout = '';
     let stderr = '';
     let responded = false;
+    let lastActivity = Date.now();
 
-    proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
-    proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    proc.stdout.on('data', (chunk) => {
+      stdout += chunk.toString();
+      lastActivity = Date.now();
+    });
+    proc.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+      lastActivity = Date.now();
+    });
 
     // Track for cleanup
     if (id) activeProcesses.set(id, proc);
 
-    proc.on('close', (exitCode) => {
-      if (id) activeProcesses.delete(id);
+    // Safety timeout: kill process if it runs longer than allowed.
+    // This prevents hung processes from holding the HTTP response forever.
+    const safetyTimer = setTimeout(() => {
+      if (responded) return;
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      const idle = Math.round((Date.now() - lastActivity) / 1000);
+      guiLog('error', `Process ${id || 'unknown'} hit safety timeout after ${elapsed}s (idle ${idle}s, stdout=${stdout.length} bytes, stderr=${stderr.length} bytes)`);
+      try { killProcess(proc); } catch { /* ignore */ }
+    }, PROCESS_TIMEOUT_MS);
+    safetyTimer.unref();
+
+    function respond(data) {
       if (responded) return;
       responded = true;
-      guiLog('info', `Process ${id || 'unknown'} exited code=${exitCode ?? 1}`);
-      sendJson(res, { ok: true, exitCode: exitCode ?? 1, stdout, stderr });
+      clearTimeout(safetyTimer);
+      if (id) activeProcesses.delete(id);
+      const elapsed = Math.round((Date.now() - startTime) / 1000);
+      guiLog('info', `Process ${id || 'unknown'} done in ${elapsed}s (stdout=${stdout.length} bytes, stderr=${stderr.length} bytes, code=${data.exitCode ?? 'n/a'})`);
+      sendJson(res, data);
+    }
+
+    proc.on('close', (exitCode) => {
+      respond({ ok: true, exitCode: exitCode ?? 1, stdout, stderr });
     });
 
     proc.on('error', (err) => {
-      if (id) activeProcesses.delete(id);
-      if (responded) return;
-      responded = true;
       guiLog('error', `Process ${id || 'unknown'} error: ${err.message}`);
-      sendJson(res, { ok: false, error: err.message });
+      respond({ ok: false, error: err.message });
     });
   } catch (err) {
     guiLog('error', `Spawn failed: ${err.message}`);
@@ -585,8 +612,11 @@ function cleanup() {
 const server = createServer(handleRequest);
 serverInstance = server;
 
-// Prevent slow clients from holding connections indefinitely.
-server.requestTimeout = 30_000;  // 30s — max time for entire request
+// Request timeouts:
+// - headersTimeout: reject connections that are slow to send headers (DoS protection)
+// - requestTimeout: disabled (0) because run-command can legitimately take 45+ min per step.
+//   The per-process safety timeout in handleRunCommand() handles stuck processes instead.
+server.requestTimeout = 0;
 server.headersTimeout = 15_000;  // 15s — max time to receive headers
 
 server.listen(0, '127.0.0.1', () => {
