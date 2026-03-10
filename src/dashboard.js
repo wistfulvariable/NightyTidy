@@ -85,7 +85,7 @@ function handleStop(req, res, onStop) {
     body += chunk;
     if (body.length > MAX_BODY_BYTES) {
       req.destroy();
-      res.writeHead(413, { 'Content-Type': 'application/json' });
+      res.writeHead(413, { 'Content-Type': 'application/json', ...SECURITY_HEADERS });
       res.end(JSON.stringify({ error: 'Request body too large' }));
       return;
     }
@@ -95,17 +95,17 @@ function handleStop(req, res, onStop) {
     try {
       const parsed = JSON.parse(body || '{}');
       if (parsed.token !== ds.csrfToken) {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.writeHead(403, { 'Content-Type': 'application/json', ...SECURITY_HEADERS });
         res.end(JSON.stringify({ error: 'Invalid token' }));
         return;
       }
     } catch {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.writeHead(403, { 'Content-Type': 'application/json', ...SECURITY_HEADERS });
       res.end(JSON.stringify({ error: 'Invalid token' }));
       return;
     }
     try { onStop(); } catch { /* abort may throw if already aborted */ }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, { 'Content-Type': 'application/json', ...SECURITY_HEADERS });
     res.end(JSON.stringify({ ok: true }));
   });
 }

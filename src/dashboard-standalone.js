@@ -92,7 +92,7 @@ function handleRequest(req, res) {
       body += chunk;
       if (body.length > MAX_BODY_BYTES) {
         req.destroy();
-        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.writeHead(413, { 'Content-Type': 'application/json', ...SECURITY_HEADERS });
         res.end(JSON.stringify({ error: 'Request body too large' }));
         return;
       }
@@ -101,16 +101,16 @@ function handleRequest(req, res) {
       try {
         const parsed = JSON.parse(body || '{}');
         if (parsed.token !== csrfToken) {
-          res.writeHead(403, { 'Content-Type': 'application/json' });
+          res.writeHead(403, { 'Content-Type': 'application/json', ...SECURITY_HEADERS });
           res.end(JSON.stringify({ error: 'Invalid token' }));
           return;
         }
       } catch {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.writeHead(403, { 'Content-Type': 'application/json', ...SECURITY_HEADERS });
         res.end(JSON.stringify({ error: 'Invalid token' }));
         return;
       }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.writeHead(200, { 'Content-Type': 'application/json', ...SECURITY_HEADERS });
       res.end(JSON.stringify({ ok: true, message: 'Stop not supported in orchestrator mode' }));
     });
   } else {
