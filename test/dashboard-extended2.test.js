@@ -5,8 +5,13 @@
  * Tests added for:
  * - spawnTuiWindow on different platforms (coverage for lines 142-159)
  * - updateDashboard when server is null
- * - broadcastOutput SSE client error handling (lines 308-313)
+ * - broadcastOutput buffer accumulation
  * - startDashboard when server fails to start
+ * - output write timer cleanup on stop
+ *
+ * NOTE: Some edge case tests were consolidated:
+ * - no-throw tests for broadcastOutput/clearOutputBuffer/stopDashboard → dashboard.test.js
+ * - scheduleShutdown tests → dashboard-extended.test.js (uses fake timers for proper verification)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -103,15 +108,6 @@ describe('dashboard.js extended', () => {
   });
 
   describe('broadcastOutput edge cases', () => {
-    it('handles broadcastOutput when no server is running', async () => {
-      const dashboard = await import('../src/dashboard.js');
-      dashboard.resetDashboardState();
-
-      // Call broadcastOutput without starting a server
-      // Should not throw
-      expect(() => dashboard.broadcastOutput('test output')).not.toThrow();
-    });
-
     it('accumulates output in buffer even without server', async () => {
       const dashboard = await import('../src/dashboard.js');
       dashboard.resetDashboardState();
@@ -132,32 +128,7 @@ describe('dashboard.js extended', () => {
     });
   });
 
-  describe('clearOutputBuffer edge cases', () => {
-    it('handles clearOutputBuffer when currentState is null', async () => {
-      const dashboard = await import('../src/dashboard.js');
-      dashboard.resetDashboardState();
-
-      // Should not throw when state is null
-      expect(() => dashboard.clearOutputBuffer()).not.toThrow();
-    });
-  });
-
   describe('stopDashboard edge cases', () => {
-    it('handles multiple stopDashboard calls without error', async () => {
-      const dashboard = await import('../src/dashboard.js');
-      dashboard.resetDashboardState();
-
-      await dashboard.startDashboard(
-        { status: 'running', steps: [] },
-        { onStop: () => {}, projectDir: tempDir }
-      );
-
-      // Multiple stop calls should not throw
-      dashboard.stopDashboard();
-      dashboard.stopDashboard();
-      dashboard.stopDashboard();
-    });
-
     it('clears output write timer on stop', async () => {
       const dashboard = await import('../src/dashboard.js');
       dashboard.resetDashboardState();
@@ -175,40 +146,6 @@ describe('dashboard.js extended', () => {
 
       // Wait a bit to ensure no timer fires after stop
       await new Promise(resolve => setTimeout(resolve, 600));
-    });
-  });
-
-  describe('scheduleShutdown', () => {
-    it('schedules shutdown after delay', async () => {
-      const dashboard = await import('../src/dashboard.js');
-      dashboard.resetDashboardState();
-
-      await dashboard.startDashboard(
-        { status: 'completed', steps: [] },
-        { onStop: () => {}, projectDir: tempDir }
-      );
-
-      dashboard.scheduleShutdown();
-
-      // Shutdown is scheduled but not immediate
-      // The timer is internal - we just verify it doesn't throw
-
-      // Clean up
-      dashboard.stopDashboard();
-    });
-
-    it('stopDashboard clears scheduled shutdown timer', async () => {
-      const dashboard = await import('../src/dashboard.js');
-      dashboard.resetDashboardState();
-
-      await dashboard.startDashboard(
-        { status: 'completed', steps: [] },
-        { onStop: () => {}, projectDir: tempDir }
-      );
-
-      dashboard.scheduleShutdown();
-      // Immediately stop - should clear the shutdown timer
-      dashboard.stopDashboard();
     });
   });
 });
