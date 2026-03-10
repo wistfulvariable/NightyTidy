@@ -71,27 +71,24 @@ function buildSummarySection(results, metadata) {
 function buildStepTable(results) {
   const hasCost = results.results.some(r => r.cost?.costUSD != null);
 
-  let table = `## Step Results\n\n`;
-  if (hasCost) {
-    table += `| # | Step | Status | Duration | Attempts | Cost |\n`;
-    table += `|---|------|--------|----------|----------|------|\n`;
-  } else {
-    table += `| # | Step | Status | Duration | Attempts |\n`;
-    table += `|---|------|--------|----------|----------|\n`;
-  }
+  // Define columns dynamically based on data
+  const baseColumns = ['#', 'Step', 'Status', 'Duration', 'Attempts'];
+  const columns = hasCost ? [...baseColumns, 'Cost'] : baseColumns;
 
-  for (const r of results.results) {
+  // Build header row and separator
+  const headerRow = `| ${columns.join(' | ')} |`;
+  const separator = `|${columns.map(() => '---').join('|')}|`;
+
+  // Build data rows
+  const rows = results.results.map(r => {
     const status = r.status === 'completed' ? '\u2705 Completed' : '\u274C Failed';
     const duration = formatDuration(r.duration);
-    if (hasCost) {
-      const cost = formatCost(r.cost?.costUSD) || '\u2014';
-      table += `| ${r.step.number} | ${r.step.name} | ${status} | ${duration} | ${r.attempts} | ${cost} |\n`;
-    } else {
-      table += `| ${r.step.number} | ${r.step.name} | ${status} | ${duration} | ${r.attempts} |\n`;
-    }
-  }
+    const baseCells = [r.step.number, r.step.name, status, duration, r.attempts];
+    const cells = hasCost ? [...baseCells, formatCost(r.cost?.costUSD) || '\u2014'] : baseCells;
+    return `| ${cells.join(' | ')} |`;
+  });
 
-  return table + '\n';
+  return `## Step Results\n\n${headerRow}\n${separator}\n${rows.join('\n')}\n\n`;
 }
 
 function buildFailedSection(results) {
