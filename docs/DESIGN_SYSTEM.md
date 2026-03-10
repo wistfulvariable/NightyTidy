@@ -4,6 +4,8 @@ Current design tokens and patterns extracted from the codebase. This is document
 
 **Files**: `gui/resources/styles.css` (GUI), `src/dashboard-html.js` (dashboard inline styles)
 
+**Last Visual Audit**: 2026-03-10 (see `audit-reports/UI_DESIGN_QUALITY_REPORT_01_2026-03-10.md`)
+
 ---
 
 ## Color Palette
@@ -252,11 +254,28 @@ border-top-color: var(--cyan);
 
 ## Layout
 
-- **No max-width** on content -- relies on Chrome `--app` mode at `900x700`
+- **Max-width**: `1200px` on screen content (prevents wide-viewport stretching)
 - **Body padding**: `24px` on all sides
 - **Screen switching**: `display: none` / `display: block` via `.screen.active`
-- **No media queries** -- desktop-only app
+- **Breakpoint**: `600px` for summary stats grid (6-col → 3-col)
 - **Flex-wrap** on `.steps-header` and `.options-bar` for narrow-window graceful degradation
+
+### Container Constraints
+
+| Element | Max Width |
+|---------|-----------|
+| Screen content | `1200px` |
+| Folder display | `600px` |
+| Modal | `400px` |
+| Pause modal | `460px` |
+
+### Scroll Containers
+
+| Container | Max Height |
+|-----------|------------|
+| Step checklist | `380px` |
+| Step list | `300px` |
+| Output panel | `300px` |
 
 ---
 
