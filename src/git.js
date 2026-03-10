@@ -78,7 +78,7 @@ export function excludeEphemeralFiles() {
     appendFileSync(excludePath, separator + '# NightyTidy ephemeral files\n' + toAdd.join('\n') + '\n', 'utf8');
     debug('Added ephemeral file exclusions to .git/info/exclude');
   } catch (err) {
-    warn(`Could not add ephemeral file exclusions: ${err.message}`);
+    warn(`Could not add ephemeral file exclusions (${err.code || 'unknown'}): ${err.message}`);
   }
 }
 

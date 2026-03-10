@@ -73,7 +73,7 @@ describe('executor.js extended', () => {
 
       expect(result.status).toBe('completed');
       expect(fallbackCommit).toHaveBeenCalled();
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('fallback commit failed'));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('automatic commit failed'));
       expect(warn).toHaveBeenCalledWith(expect.stringContaining('permission denied'));
     });
 
@@ -89,9 +89,9 @@ describe('executor.js extended', () => {
       // Both steps should complete despite fallbackCommit errors
       expect(result.completedCount).toBe(2);
       expect(result.failedCount).toBe(0);
-      // Verify fallback commit errors were logged (there's also a hash mismatch warning)
-      const fallbackWarnings = warn.mock.calls.filter(c => c[0]?.includes('fallback commit'));
-      expect(fallbackWarnings).toHaveLength(2); // Once per step
+      // Verify automatic commit errors were logged (there's also a hash mismatch warning)
+      const commitWarnings = warn.mock.calls.filter(c => c[0]?.includes('automatic commit failed'));
+      expect(commitWarnings).toHaveLength(2); // Once per step
     });
   });
 

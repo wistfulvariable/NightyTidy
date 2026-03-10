@@ -251,7 +251,7 @@ export async function executeSingleStep(step, projectDir, { signal, timeout, onO
     try {
       await fallbackCommit(step.number, step.name);
     } catch (err) {
-      warn(`${stepLabel}: fallback commit failed — ${err.message}`);
+      warn(`${stepLabel}: automatic commit failed (${err.message}) — changes remain staged`);
     }
   }
 

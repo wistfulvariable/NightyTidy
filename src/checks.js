@@ -177,8 +177,8 @@ async function checkDiskSpace(projectDir) {
 
   try {
     freeBytes = await getFreeBytes(projectDir);
-  } catch {
-    debug('Disk space check failed — skipping');
+  } catch (err) {
+    debug(`Disk space check failed (${err.code || err.message}) — skipping`);
     info('Pre-check: disk space (skipped) \u2713');
     return;
   }
@@ -220,9 +220,9 @@ async function checkCleanWorkingTree(git) {
     } else {
       info('Pre-check: clean working tree \u2713');
     }
-  } catch {
+  } catch (err) {
     // Non-critical — skip silently
-    debug('Working tree check failed — skipping');
+    debug(`Working tree check failed (${err.message}) — skipping`);
   }
 }
 
@@ -233,8 +233,8 @@ async function checkExistingBranches(git) {
     if (nightyBranches.length > 0) {
       info(`Note: Found ${nightyBranches.length} existing NightyTidy branch(es) from previous run(s). These won't affect this run.`);
     }
-  } catch {
-    // Non-critical — ignore
+  } catch (err) {
+    debug(`Branch check failed (${err.message}) — skipping`);
   }
   info('Pre-check: no branch conflicts \u2713');
 }

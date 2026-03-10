@@ -125,7 +125,13 @@ function writeState(projectDir, state) {
  * @returns {void}
  */
 function deleteState(projectDir) {
-  try { unlinkSync(statePath(projectDir)); } catch { /* already gone */ }
+  try {
+    unlinkSync(statePath(projectDir));
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      warn(`Failed to delete state file: ${err.message}`);
+    }
+  }
 }
 
 /**
@@ -335,7 +341,7 @@ function spawnDashboardServer(projectDir) {
       const timer = setTimeout(() => {
         child.stdout.removeAllListeners();
         child.unref();
-        info('Dashboard server did not respond in time — continuing without dashboard');
+        info('Dashboard server startup timed out — continuing without live progress display');
         resolve(null);
       }, DASHBOARD_STARTUP_TIMEOUT);
 
@@ -348,14 +354,16 @@ function spawnDashboardServer(projectDir) {
           try {
             const parsed = JSON.parse(output.trim());
             return resolve({ url: parsed.url, pid: parsed.pid });
-          } catch {
+          } catch (parseErr) {
+            info(`Dashboard startup response was not valid JSON: ${parseErr.message}`);
             resolve(null);
           }
         }
       });
 
-      child.on('error', () => {
+      child.on('error', (err) => {
         clearTimeout(timer);
+        info(`Dashboard server spawn failed: ${err.message}`);
         resolve(null);
       });
     });
@@ -408,7 +416,7 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
 
     // Check for existing run
     if (readState(projectDir)) {
-      return fail('A run is already in progress. Call --finish-run first, or delete nightytidy-run-state.json to reset.');
+      return fail('A run is already in progress. Call --finish-run to complete it, or delete nightytidy-run-state.json to force-reset.');
     }
 
     await acquireLock(projectDir, { persistent: true });
@@ -428,7 +436,7 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
       }
       const validNums = nums.filter(n => !Number.isNaN(n));
       if (validNums.length === 0) {
-        return fail('No valid step numbers provided. Use --list to see available steps.');
+        return fail('No valid step numbers provided. Use --list --json to see available steps.');
       }
       const err = validateStepNumbers(validNums);
       if (err) return err;

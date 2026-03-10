@@ -4,7 +4,7 @@ import { spawn } from 'child_process';
 import { writeFileSync, unlinkSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import { info, warn } from './logger.js';
+import { info, warn, debug } from './logger.js';
 import { getHTML } from './dashboard-html.js';
 
 const SHUTDOWN_DELAY = 3000;
@@ -195,7 +195,9 @@ export async function startDashboard(initialState, { onStop, projectDir }) {
 
         try {
           writeFileSync(ds.urlFilePath, url + '\n', 'utf8');
-        } catch { /* non-critical */ }
+        } catch (urlErr) {
+          debug(`Could not write dashboard URL file: ${urlErr.message}`);
+        }
 
         info(`Dashboard server at ${url}`);
         resolve({ url, port });
