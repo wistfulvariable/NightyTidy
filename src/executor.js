@@ -248,32 +248,35 @@ export async function executeSteps(selectedSteps, projectDir, { signal, timeout,
     const stepResult = await executeSingleStep(step, projectDir, { signal, timeout, onOutput });
     results.push(stepResult);
 
-    if (stepResult.status === 'failed') {
-      // Rate-limit: pause and wait instead of continuing
-      if (stepResult.errorType === ERROR_TYPE.RATE_LIMIT) {
-        info('Rate limit detected — pausing run');
-        onRateLimitPause?.(stepResult.retryAfterMs);
-
-        const resumed = await waitForRateLimit(stepResult.retryAfterMs, signal, projectDir);
-        if (!resumed) {
-          info('Rate limit wait ended — stopping run');
-          break;
-        }
-        onRateLimitResume?.();
-        info('Rate limit cleared — resuming run');
-
-        // Remove the failed result and retry the same step
-        results.pop();
-        i--;
-        continue;
-      }
-
-      failedCount++;
-      onStepFail?.(step, i, totalSteps);
-    } else {
+    // Success path — increment and notify
+    if (stepResult.status === 'completed') {
       completedCount++;
       onStepComplete?.(step, i, totalSteps);
+      continue;
     }
+
+    // Rate-limit: pause and wait, then retry the same step
+    if (stepResult.errorType === ERROR_TYPE.RATE_LIMIT) {
+      info('Rate limit detected — pausing run');
+      onRateLimitPause?.(stepResult.retryAfterMs);
+
+      const resumed = await waitForRateLimit(stepResult.retryAfterMs, signal, projectDir);
+      if (!resumed) {
+        info('Rate limit wait ended — stopping run');
+        break;
+      }
+      onRateLimitResume?.();
+      info('Rate limit cleared — resuming run');
+
+      // Remove the failed result and retry the same step
+      results.pop();
+      i--;
+      continue;
+    }
+
+    // Other failure — record and notify
+    failedCount++;
+    onStepFail?.(step, i, totalSteps);
   }
 
   const totalDuration = Date.now() - runStart;
