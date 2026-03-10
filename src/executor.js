@@ -5,6 +5,62 @@ import { STEPS, DOC_UPDATE_PROMPT } from './prompts/loader.js';
 import { notify } from './notifications.js';
 import { info, warn, error as logError } from './logger.js';
 
+/**
+ * @fileoverview Core step execution loop for NightyTidy.
+ *
+ * Executes improvement prompts sequentially, handles retries, rate-limit
+ * pause/resume, fast-completion detection, and doc updates.
+ *
+ * Error contract: This module NEVER throws. Failed steps are recorded in
+ * results. Rate-limit failures trigger pause/auto-resume with exponential backoff.
+ */
+
+/**
+ * @typedef {import('./claude.js').CostData} CostData
+ * @typedef {import('./claude.js').ErrorType} ErrorType
+ */
+
+/**
+ * @typedef {Object} Step
+ * @property {number} number - Step number (1-based)
+ * @property {string} name - Human-readable step name
+ * @property {string} prompt - The improvement prompt text
+ */
+
+/**
+ * @typedef {Object} StepResult
+ * @property {{number: number, name: string}} step - Step identifier
+ * @property {'completed' | 'failed'} status - Step completion status
+ * @property {string} output - Claude's output text
+ * @property {number} duration - Step duration in milliseconds
+ * @property {number} attempts - Number of attempts made
+ * @property {string|null} error - Error message if failed
+ * @property {CostData|null} cost - Cost and token usage data
+ * @property {boolean} [suspiciousFast] - True if step was retried for fast completion
+ * @property {ErrorType} [errorType] - Error type if failed
+ * @property {number|null} [retryAfterMs] - Suggested retry delay for rate limits
+ */
+
+/**
+ * @typedef {Object} ExecutionResults
+ * @property {StepResult[]} results - Array of step results
+ * @property {number} totalDuration - Total execution time in milliseconds
+ * @property {number} completedCount - Number of successfully completed steps
+ * @property {number} failedCount - Number of failed steps
+ */
+
+/**
+ * @typedef {Object} ExecuteStepsOptions
+ * @property {AbortSignal} [signal] - Abort signal for cancellation
+ * @property {number} [timeout] - Timeout per step in milliseconds
+ * @property {(step: Step, index: number, total: number) => void} [onStepStart]
+ * @property {(step: Step, index: number, total: number) => void} [onStepComplete]
+ * @property {(step: Step, index: number, total: number) => void} [onStepFail]
+ * @property {(chunk: string) => void} [onOutput] - Streaming output callback
+ * @property {(retryAfterMs: number|null) => void} [onRateLimitPause]
+ * @property {() => void} [onRateLimitResume]
+ */
+
 // SHA-256 of all STEPS[].prompt content — update when prompts change.
 // Detects unexpected modification of prompt data before passing to
 // Claude Code with --dangerously-skip-permissions.
@@ -24,6 +80,13 @@ const FAST_RETRY_PREFIX =
   '- Commit your changes when done\n\n' +
   'Here is the original task:\n\n';
 
+/**
+ * Verify the integrity of step prompts against the stored hash.
+ * Warns but does not block if hash mismatches (user may have legitimate changes).
+ *
+ * @param {Step[]} steps - Array of step objects to verify
+ * @returns {boolean} True if hash matches, false if mismatch
+ */
 function verifyStepsIntegrity(steps) {
   const content = steps.map(s => s.prompt).join('');
   const hash = createHash('sha256').update(content).digest('hex');
@@ -49,6 +112,13 @@ export const SAFETY_PREAMBLE =
   '- Commit your changes with a descriptive message when done.\n' +
   '---\n\n';
 
+/**
+ * Sum two cost objects, handling null values gracefully.
+ *
+ * @param {CostData|null} a - First cost object
+ * @param {CostData|null} b - Second cost object
+ * @returns {CostData|null} Combined cost, or null if both inputs are null
+ */
 function sumCosts(a, b) {
   if (!a && !b) return null;
   if (!a) return b;
@@ -63,6 +133,16 @@ function sumCosts(a, b) {
   };
 }
 
+/**
+ * Create a standardized step result object.
+ *
+ * @param {Step} step - The step that was executed
+ * @param {'completed' | 'failed'} status - Completion status
+ * @param {import('./claude.js').RunPromptResult} result - Claude result
+ * @param {number} duration - Step duration in milliseconds
+ * @param {Object} [extra={}] - Additional fields to include
+ * @returns {StepResult} Normalized step result
+ */
 function makeStepResult(step, status, result, duration, extra = {}) {
   return {
     step: { number: step.number, name: step.name },
@@ -76,6 +156,20 @@ function makeStepResult(step, status, result, duration, extra = {}) {
   };
 }
 
+/**
+ * Execute a single improvement step with doc update.
+ *
+ * Runs the improvement prompt, optionally retries if suspiciously fast,
+ * runs the doc update in the same session, and handles fallback commits.
+ *
+ * @param {Step} step - The step to execute
+ * @param {string} projectDir - Target project directory
+ * @param {Object} [options] - Execution options
+ * @param {AbortSignal} [options.signal] - Abort signal
+ * @param {number} [options.timeout] - Timeout in milliseconds
+ * @param {(chunk: string) => void} [options.onOutput] - Streaming callback
+ * @returns {Promise<StepResult>} Step result (never throws)
+ */
 export async function executeSingleStep(step, projectDir, { signal, timeout, onOutput } = {}) {
   const stepLabel = `Step ${step.number}: ${step.name}`;
   info(`${stepLabel} — starting`);
@@ -180,7 +274,14 @@ const BACKOFF_SCHEDULE_MS = [
 
 /**
  * Wait for a rate-limit to clear using exponential backoff and API probes.
- * Returns true if the API is available again, false if we gave up or were aborted.
+ *
+ * Uses exponential backoff (2min → 2hr cap) and periodic API probes to
+ * detect when the rate limit has cleared.
+ *
+ * @param {number|null} retryAfterMs - Suggested retry delay from API, or null
+ * @param {AbortSignal|undefined} signal - Abort signal for cancellation
+ * @param {string} projectDir - Project directory for probe prompts
+ * @returns {Promise<boolean>} True if API available, false if gave up or aborted
  */
 async function waitForRateLimit(retryAfterMs, signal, projectDir) {
   if (signal?.aborted) return false;
@@ -227,6 +328,22 @@ async function waitForRateLimit(retryAfterMs, signal, projectDir) {
   return false;
 }
 
+/**
+ * Execute multiple improvement steps sequentially.
+ *
+ * Handles:
+ * - Sequential step execution with callbacks
+ * - Rate-limit pause/resume with exponential backoff
+ * - Abort signal support for graceful cancellation
+ * - Progress callbacks for UI updates
+ *
+ * Error contract: NEVER throws. Failed steps are recorded in results.
+ *
+ * @param {Step[]} selectedSteps - Steps to execute
+ * @param {string} projectDir - Target project directory
+ * @param {ExecuteStepsOptions} [options] - Execution options
+ * @returns {Promise<ExecutionResults>} Results object (never throws)
+ */
 export async function executeSteps(selectedSteps, projectDir, { signal, timeout, onStepStart, onStepComplete, onStepFail, onOutput, onRateLimitPause, onRateLimitResume } = {}) {
   verifyStepsIntegrity(STEPS);
 

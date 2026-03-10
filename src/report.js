@@ -1,9 +1,46 @@
+/**
+ * @fileoverview Report generation and CLAUDE.md auto-update.
+ *
+ * Generates NIGHTYTIDY-REPORT.md with run summary, step results, and
+ * undo instructions. Also updates the target project's CLAUDE.md with
+ * a "Last Run" section.
+ *
+ * Error contract: Warns but NEVER throws. Report failure must not crash a run.
+ */
+
 import { writeFileSync, readFileSync, existsSync } from 'fs';
 import path from 'path';
 import { info, warn } from './logger.js';
 
+/**
+ * @typedef {import('./executor.js').ExecutionResults} ExecutionResults
+ * @typedef {import('./executor.js').StepResult} StepResult
+ */
+
+/**
+ * @typedef {Object} ReportMetadata
+ * @property {string} projectDir - Target project directory
+ * @property {string} branchName - Run branch name
+ * @property {string} tagName - Safety tag name
+ * @property {string} originalBranch - Original branch name
+ * @property {number} startTime - Run start timestamp (ms)
+ * @property {number} endTime - Run end timestamp (ms)
+ * @property {number|null} [totalCostUSD] - Total cost in USD
+ */
+
+/**
+ * @typedef {Object} ReportOptions
+ * @property {boolean} [actionPlan] - Whether action plan was generated
+ */
+
+/** @type {string|undefined} */
 let cachedVersion;
 
+/**
+ * Get the NightyTidy version from package.json.
+ *
+ * @returns {string} Version string (e.g., "0.1.0")
+ */
 export function getVersion() {
   if (cachedVersion) return cachedVersion;
   try {
@@ -15,6 +52,12 @@ export function getVersion() {
   return cachedVersion;
 }
 
+/**
+ * Format a duration in milliseconds to a human-readable string.
+ *
+ * @param {number} ms - Duration in milliseconds
+ * @returns {string} Formatted duration (e.g., "2h 15m", "45m 12s")
+ */
 export function formatDuration(ms) {
   if (!Number.isFinite(ms) || ms < 0) return '0m 00s';
 
@@ -28,10 +71,22 @@ export function formatDuration(ms) {
   return `${minutes}m ${String(seconds % 60).padStart(2, '0')}s`;
 }
 
+/**
+ * Format a timestamp to YYYY-MM-DD date string.
+ *
+ * @param {number} timestamp - Unix timestamp in milliseconds
+ * @returns {string} Date string (e.g., "2025-01-15")
+ */
 function formatDate(timestamp) {
   return new Date(timestamp).toISOString().split('T')[0];
 }
 
+/**
+ * Generate fallback narration when changelog generation fails.
+ *
+ * @param {ExecutionResults} results - Execution results
+ * @returns {string} Fallback narration text
+ */
 function fallbackNarration(results) {
   return (
     `NightyTidy ran ${results.completedCount + results.failedCount} improvement steps on your codebase. ` +
@@ -42,11 +97,24 @@ function fallbackNarration(results) {
   );
 }
 
+/**
+ * Format a cost in USD for display.
+ *
+ * @param {number|null|undefined} costUSD - Cost in USD
+ * @returns {string|null} Formatted cost (e.g., "$0.1234"), or null if no cost
+ */
 function formatCost(costUSD) {
   if (costUSD == null) return null;
   return `$${costUSD.toFixed(4)}`;
 }
 
+/**
+ * Build the run summary section of the report.
+ *
+ * @param {ExecutionResults} results - Execution results
+ * @param {ReportMetadata} metadata - Report metadata
+ * @returns {string} Markdown section
+ */
 function buildSummarySection(results, metadata) {
   const date = formatDate(metadata.startTime);
   const duration = formatDuration(metadata.endTime - metadata.startTime);
@@ -68,6 +136,12 @@ function buildSummarySection(results, metadata) {
   return section + '\n';
 }
 
+/**
+ * Build the step results table for the report.
+ *
+ * @param {ExecutionResults} results - Execution results
+ * @returns {string} Markdown table section
+ */
 function buildStepTable(results) {
   const hasCost = results.results.some(r => r.cost?.costUSD != null);
 
@@ -91,6 +165,12 @@ function buildStepTable(results) {
   return `## Step Results\n\n${headerRow}\n${separator}\n${rows.join('\n')}\n\n`;
 }
 
+/**
+ * Build the failed steps section of the report.
+ *
+ * @param {ExecutionResults} results - Execution results
+ * @returns {string} Markdown section with failure details
+ */
 function buildFailedSection(results) {
   let section = `## Failed Steps\n\n`;
 
@@ -105,6 +185,12 @@ function buildFailedSection(results) {
   return section;
 }
 
+/**
+ * Build the undo instructions section.
+ *
+ * @param {ReportMetadata} metadata - Report metadata
+ * @returns {string} Markdown section with undo instructions
+ */
 function buildUndoSection(metadata) {
   return (
     `## How to Undo This Run\n\n` +
@@ -119,6 +205,18 @@ function buildUndoSection(metadata) {
   );
 }
 
+/**
+ * Generate the complete NIGHTYTIDY-REPORT.md file.
+ *
+ * Writes the report file and updates CLAUDE.md with run information.
+ * Error contract: Warns but NEVER throws.
+ *
+ * @param {ExecutionResults} results - Execution results
+ * @param {string|null} narration - AI-generated changelog, or null for fallback
+ * @param {ReportMetadata} metadata - Report metadata
+ * @param {ReportOptions} [options] - Report options
+ * @returns {void}
+ */
 export function generateReport(results, narration, metadata, { actionPlan = false } = {}) {
   const date = formatDate(metadata.startTime);
 
@@ -154,6 +252,11 @@ export function generateReport(results, narration, metadata, { actionPlan = fals
 /**
  * Update or append a markdown section in content.
  * Replaces existing section (from marker to next ## or EOF) or appends if not found.
+ *
+ * @param {string} content - Existing file content
+ * @param {string} marker - Section marker to find (e.g., "## NightyTidy")
+ * @param {string} newSection - New section content
+ * @returns {string} Updated content
  */
 function updateOrAppendSection(content, marker, newSection) {
   const markerIndex = content.indexOf(marker);
@@ -168,6 +271,13 @@ function updateOrAppendSection(content, marker, newSection) {
   return beforeSection + newSection.trim() + '\n' + afterSection;
 }
 
+/**
+ * Update the target project's CLAUDE.md with run information.
+ * Creates the file if it doesn't exist.
+ *
+ * @param {ReportMetadata} metadata - Report metadata
+ * @returns {void}
+ */
 function updateClaudeMd(metadata) {
   const claudePath = path.join(metadata.projectDir, 'CLAUDE.md');
   const date = formatDate(metadata.startTime);

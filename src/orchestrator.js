@@ -1,3 +1,13 @@
+/**
+ * @fileoverview Claude Code orchestrator mode for NightyTidy.
+ *
+ * Provides a JSON-based API for step-by-step runs where Claude Code
+ * (or another orchestrator) controls the workflow conversationally.
+ *
+ * Error contract: This module NEVER throws. All functions return
+ * { success: boolean, ...data } or { success: false, error: string }.
+ */
+
 import { readFileSync, writeFileSync, renameSync, unlinkSync, existsSync } from 'fs';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
@@ -14,6 +24,47 @@ import { generateReport, formatDuration, getVersion } from './report.js';
 import { generateActionPlan } from './consolidation.js';
 import { acquireLock, releaseLock } from './lock.js';
 
+/**
+ * @typedef {import('./executor.js').CostData} CostData
+ * @typedef {import('./executor.js').StepResult} StepResult
+ */
+
+/**
+ * @typedef {Object} OrchestratorState
+ * @property {number} version - State format version
+ * @property {string} originalBranch - Branch to return to after run
+ * @property {string} runBranch - Branch for run changes
+ * @property {string} tagName - Safety tag name
+ * @property {number[]} selectedSteps - Step numbers selected for this run
+ * @property {StepEntry[]} completedSteps - Successfully completed steps
+ * @property {StepEntry[]} failedSteps - Failed steps
+ * @property {number} startTime - Run start timestamp (ms)
+ * @property {number|null} timeout - Per-step timeout in ms
+ * @property {number|null} dashboardPid - Dashboard server process ID
+ * @property {string|null} dashboardUrl - Dashboard server URL
+ */
+
+/**
+ * @typedef {Object} StepEntry
+ * @property {number} number - Step number
+ * @property {string} name - Step name
+ * @property {'completed' | 'failed'} status - Step status
+ * @property {number} duration - Duration in milliseconds
+ * @property {number} attempts - Number of attempts
+ * @property {string} output - Truncated output (max 6000 chars)
+ * @property {string|null} error - Error message if failed
+ * @property {CostData|null} cost - Cost data
+ * @property {boolean} suspiciousFast - True if flagged as suspicious
+ * @property {string|null} errorType - Error type if failed
+ * @property {number|null} retryAfterMs - Retry delay for rate limits
+ */
+
+/**
+ * @typedef {Object} OrchestratorResult
+ * @property {boolean} success - Whether operation succeeded
+ * @property {string} [error] - Error message if failed
+ */
+
 const PROGRESS_FILENAME = 'nightytidy-progress.json';
 const URL_FILENAME = 'nightytidy-dashboard.url';
 
@@ -22,10 +73,22 @@ const STATE_VERSION = 1;
 const DASHBOARD_STARTUP_TIMEOUT = 5000; // ms — max wait for dashboard server to respond
 const SSE_FLUSH_DELAY = 500; // ms — brief delay to let last SSE event reach clients
 
+/**
+ * Get the path to the state file for a project.
+ *
+ * @param {string} projectDir - Project directory
+ * @returns {string} Absolute path to state file
+ */
 function statePath(projectDir) {
   return path.join(projectDir, STATE_FILENAME);
 }
 
+/**
+ * Read the orchestrator state file.
+ *
+ * @param {string} projectDir - Project directory
+ * @returns {OrchestratorState|null} State object, or null if not found/invalid
+ */
 function readState(projectDir) {
   const fp = statePath(projectDir);
   if (!existsSync(fp)) return null;
@@ -38,6 +101,14 @@ function readState(projectDir) {
   }
 }
 
+/**
+ * Write the orchestrator state file atomically.
+ * Uses write-to-temp + rename to prevent truncation on crash.
+ *
+ * @param {string} projectDir - Project directory
+ * @param {OrchestratorState} state - State to write
+ * @returns {void}
+ */
 function writeState(projectDir, state) {
   // Write to temp file then rename for atomic replacement.
   // Prevents truncated JSON on crash (FINDING-06, audit #21).
@@ -47,18 +118,43 @@ function writeState(projectDir, state) {
   renameSync(tmp, target);
 }
 
+/**
+ * Delete the orchestrator state file.
+ *
+ * @param {string} projectDir - Project directory
+ * @returns {void}
+ */
 function deleteState(projectDir) {
   try { unlinkSync(statePath(projectDir)); } catch { /* already gone */ }
 }
 
+/**
+ * Create a success result object.
+ *
+ * @template T
+ * @param {T} data - Data to include in result
+ * @returns {{success: true} & T}
+ */
 function ok(data) {
   return { success: true, ...data };
 }
 
+/**
+ * Create a failure result object.
+ *
+ * @param {string} error - Error message
+ * @returns {{success: false, error: string}}
+ */
 function fail(error) {
   return { success: false, error };
 }
 
+/**
+ * Validate that step numbers are within valid range.
+ *
+ * @param {number[]} numbers - Step numbers to validate
+ * @returns {{success: false, error: string}|null} Error result, or null if valid
+ */
 function validateStepNumbers(numbers) {
   const valid = STEPS.map(s => s.number);
   const invalid = numbers.filter(n => !valid.includes(n));
@@ -70,7 +166,10 @@ function validateStepNumbers(numbers) {
 
 /**
  * Validate that a step can be run in the current orchestrator state.
- * Returns an error string if invalid, or null if valid.
+ *
+ * @param {number} stepNumber - Step number to validate
+ * @param {OrchestratorState} state - Current orchestrator state
+ * @returns {string|null} Error string if invalid, null if valid
  */
 function validateStepCanRun(stepNumber, state) {
   if (!state.selectedSteps.includes(stepNumber)) {
@@ -85,6 +184,12 @@ function validateStepCanRun(stepNumber, state) {
   return null;
 }
 
+/**
+ * Build execution results from orchestrator state for report generation.
+ *
+ * @param {OrchestratorState} state - Orchestrator state
+ * @returns {import('./executor.js').ExecutionResults} Execution results
+ */
 function buildExecutionResults(state) {
   const allStepResults = [...state.completedSteps, ...state.failedSteps]
     .sort((a, b) => state.selectedSteps.indexOf(a.number) - state.selectedSteps.indexOf(b.number));
@@ -104,6 +209,25 @@ function buildExecutionResults(state) {
   };
 }
 
+/**
+ * @typedef {Object} ProgressState
+ * @property {'running' | 'paused' | 'completed' | 'error'} status
+ * @property {number} totalSteps
+ * @property {number} currentStepIndex
+ * @property {string} currentStepName
+ * @property {Array<{number: number, name: string, status: string, duration: number|null}>} steps
+ * @property {number} completedCount
+ * @property {number} failedCount
+ * @property {number} startTime
+ * @property {string|null} error
+ */
+
+/**
+ * Build progress state for dashboard display.
+ *
+ * @param {OrchestratorState} state - Orchestrator state
+ * @returns {ProgressState} Progress state for JSON serialization
+ */
 function buildProgressState(state) {
   // Pre-index for O(1) lookups instead of O(n) find() calls
   const stepsMap = new Map(STEPS.map(s => [s.number, s]));
@@ -133,6 +257,13 @@ function buildProgressState(state) {
   };
 }
 
+/**
+ * Write progress state to JSON file for dashboard consumption.
+ *
+ * @param {string} projectDir - Project directory
+ * @param {ProgressState} progressState - Progress state to write
+ * @returns {void}
+ */
 function writeProgress(projectDir, progressState) {
   try {
     writeFileSync(path.join(projectDir, PROGRESS_FILENAME), JSON.stringify(progressState), 'utf8');
@@ -142,6 +273,13 @@ function writeProgress(projectDir, progressState) {
 const OUTPUT_BUFFER_SIZE = 100 * 1024;
 const OUTPUT_WRITE_INTERVAL = 500;
 
+/**
+ * Create a throttled output handler for streaming Claude output.
+ *
+ * @param {ProgressState} progress - Progress state object (mutated)
+ * @param {string} projectDir - Project directory for progress file
+ * @returns {(chunk: string) => void} Output handler callback
+ */
 function createOutputHandler(progress, projectDir) {
   let buffer = '';
   let writePending = false;
@@ -162,12 +300,24 @@ function createOutputHandler(progress, projectDir) {
   };
 }
 
+/**
+ * Clean up dashboard ephemeral files.
+ *
+ * @param {string} projectDir - Project directory
+ * @returns {void}
+ */
 function cleanupDashboard(projectDir) {
   for (const f of [PROGRESS_FILENAME, URL_FILENAME]) {
     try { unlinkSync(path.join(projectDir, f)); } catch { /* already gone */ }
   }
 }
 
+/**
+ * Spawn a detached dashboard server process.
+ *
+ * @param {string} projectDir - Project directory
+ * @returns {Promise<{url: string, pid: number}|null>} Dashboard info, or null on failure
+ */
 function spawnDashboardServer(projectDir) {
   try {
     const serverScript = fileURLToPath(new URL('./dashboard-standalone.js', import.meta.url));
@@ -215,6 +365,12 @@ function spawnDashboardServer(projectDir) {
   }
 }
 
+/**
+ * Stop the dashboard server process.
+ *
+ * @param {number|null} pid - Process ID to kill
+ * @returns {void}
+ */
 function stopDashboardServer(pid) {
   if (!pid) return;
   try {
@@ -222,6 +378,29 @@ function stopDashboardServer(pid) {
   } catch { /* already dead */ }
 }
 
+/**
+ * @typedef {Object} InitRunResult
+ * @property {boolean} success
+ * @property {string} [error]
+ * @property {string} [runBranch]
+ * @property {string} [tagName]
+ * @property {string} [originalBranch]
+ * @property {number[]} [selectedSteps]
+ * @property {string|null} [dashboardUrl]
+ */
+
+/**
+ * Initialize an orchestrated run.
+ *
+ * Performs pre-checks, git setup, and creates state file. The run can then
+ * be executed step-by-step via runStep().
+ *
+ * @param {string} projectDir - Target project directory
+ * @param {Object} [options] - Options
+ * @param {string} [options.steps] - Comma-separated step numbers
+ * @param {number} [options.timeout] - Per-step timeout in ms
+ * @returns {Promise<InitRunResult>} Result object (never throws)
+ */
 export async function initRun(projectDir, { steps, timeout } = {}) {
   try {
     initLogger(projectDir, { quiet: true });
@@ -302,6 +481,35 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
   }
 }
 
+/**
+ * @typedef {Object} RunStepResult
+ * @property {boolean} success
+ * @property {string} [error]
+ * @property {number} [step]
+ * @property {string} [name]
+ * @property {'completed' | 'failed'} [status]
+ * @property {string} [output]
+ * @property {number} [duration]
+ * @property {string} [durationFormatted]
+ * @property {number} [attempts]
+ * @property {number|null} [costUSD]
+ * @property {number|null} [inputTokens]
+ * @property {number|null} [outputTokens]
+ * @property {boolean} [suspiciousFast]
+ * @property {string|null} [errorType]
+ * @property {number|null} [retryAfterMs]
+ * @property {number[]} [remainingSteps]
+ */
+
+/**
+ * Run a single step in an orchestrated run.
+ *
+ * @param {string} projectDir - Target project directory
+ * @param {number} stepNumber - Step number to run
+ * @param {Object} [options] - Options
+ * @param {number} [options.timeout] - Step timeout in ms (overrides state)
+ * @returns {Promise<RunStepResult>} Result object (never throws)
+ */
 export async function runStep(projectDir, stepNumber, { timeout } = {}) {
   try {
     if (!Number.isFinite(stepNumber) || stepNumber < 1) {
@@ -386,6 +594,33 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
   }
 }
 
+/**
+ * @typedef {Object} FinishRunResult
+ * @property {boolean} success
+ * @property {string} [error]
+ * @property {number} [completed]
+ * @property {number} [failed]
+ * @property {string} [totalDurationFormatted]
+ * @property {number|null} [totalCostUSD]
+ * @property {number|null} [totalInputTokens]
+ * @property {number|null} [totalOutputTokens]
+ * @property {boolean} [merged]
+ * @property {boolean} [mergeConflict]
+ * @property {string} [reportPath]
+ * @property {string|null} [actionsPath]
+ * @property {string} [tagName]
+ * @property {string} [runBranch]
+ */
+
+/**
+ * Finish an orchestrated run.
+ *
+ * Generates changelog, action plan, report, commits, merges back to original
+ * branch, and cleans up state.
+ *
+ * @param {string} projectDir - Target project directory
+ * @returns {Promise<FinishRunResult>} Result object (never throws)
+ */
 export async function finishRun(projectDir) {
   try {
     initLogger(projectDir, { quiet: true });
