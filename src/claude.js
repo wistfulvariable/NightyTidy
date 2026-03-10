@@ -344,7 +344,9 @@ function formatEventLine(line) {
  */
 function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {}) {
   return new Promise((resolve) => {
-    let stdout = '';
+    // Use array accumulation instead of string concatenation to avoid O(n²) memory
+    // allocations on large outputs. Join once at the end when needed.
+    const stdoutChunks = [];
     let settled = false;
     let lineBuffer = ''; // Buffers incomplete NDJSON lines for onOutput parsing
 
@@ -354,6 +356,7 @@ function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {
       settled = true;
       clearTimeout(timer);
       if (onAbort) signal?.removeEventListener('abort', onAbort);
+      const stdout = stdoutChunks.join('');
       resolve({ ...result, output: result.output ?? stdout });
     };
 
@@ -362,7 +365,7 @@ function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {
 
     child.stdout.on('data', (chunk) => {
       const text = chunk.toString();
-      stdout += text;
+      stdoutChunks.push(text);
       if (verbose) debug(text.trimEnd());
       if (onOutput) {
         // Parse complete NDJSON lines and extract display text
@@ -379,10 +382,10 @@ function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {
       }
     });
 
-    let stderrText = '';
+    const stderrChunks = [];
     child.stderr.on('data', (chunk) => {
       const text = chunk.toString();
-      stderrText += text;
+      stderrChunks.push(text);
       if (verbose && text.trim()) warn(`Claude Code warning output: ${text.trimEnd()}`);
     });
 
@@ -391,12 +394,13 @@ function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {
     });
 
     child.on('close', (code) => {
+      const stdout = stdoutChunks.join('');
       const ok = code === 0 && stdout.trim().length > 0;
       settle({
         success: ok,
         error: ok ? null : (code === 0 ? 'Claude Code returned empty output' : `Claude Code exited with error code ${code}`),
         exitCode: code,
-        stderr: stderrText,
+        stderr: stderrChunks.join(''),
       });
     });
   });
