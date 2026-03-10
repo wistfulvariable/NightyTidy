@@ -557,14 +557,20 @@ function updateStepItemStatus(stepNum, status, duration) {
         if (tokStr) tokensEl.textContent = tokStr + ' tokens';
       }
       el.classList.add('step-clickable');
+      el.setAttribute('role', 'button');
+      el.setAttribute('tabindex', '0');
       el.onclick = () => viewStepOutput(stepNum);
+      el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); viewStepOutput(stepNum); } };
       break;
     }
     case 'skipped':
       iconEl.textContent = '\u27A0';
       if (duration) durEl.textContent = NtLogic.formatMs(duration);
       el.classList.add('step-clickable');
+      el.setAttribute('role', 'button');
+      el.setAttribute('tabindex', '0');
       el.onclick = () => viewStepOutput(stepNum);
+      el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); viewStepOutput(stepNum); } };
       break;
     default:
       iconEl.innerHTML = '&#9675;';
@@ -1139,6 +1145,8 @@ function showPauseOverlay(stepNum, waitMs, hasRetryAfter) {
 
   const pauseOverlay = document.getElementById('pause-overlay');
   pauseOverlay.classList.remove('hidden');
+  // Set up focus trap
+  pauseFocusTrapCleanup = trapFocus(pauseOverlay.querySelector('.modal'));
   // Focus the Resume button (primary action)
   const resumeBtn = document.getElementById('btn-resume-now');
   if (resumeBtn) resumeBtn.focus();
@@ -1153,6 +1161,8 @@ function showPauseOverlay(stepNum, waitMs, hasRetryAfter) {
 
 function hidePauseOverlay() {
   document.getElementById('pause-overlay').classList.add('hidden');
+  // Clean up focus trap
+  if (pauseFocusTrapCleanup) { pauseFocusTrapCleanup(); pauseFocusTrapCleanup = null; }
   document.getElementById('btn-skip-step').disabled = false;
 
   const subtitle = document.getElementById('running-subtitle');
@@ -1201,6 +1211,29 @@ function resetSkipButton() {
   btn.textContent = 'Skip Step';
 }
 
+// ── Focus Trap (for modal accessibility) ────────────────────────────
+
+function trapFocus(modalEl) {
+  const focusable = modalEl.querySelectorAll('button:not([disabled]), [tabindex]:not([tabindex="-1"])');
+  if (focusable.length === 0) return null;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+
+  const handler = (e) => {
+    if (e.key !== 'Tab') return;
+    if (e.shiftKey) {
+      if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+    } else {
+      if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  };
+  modalEl.addEventListener('keydown', handler);
+  return () => modalEl.removeEventListener('keydown', handler);
+}
+
+let confirmStopFocusTrapCleanup = null;
+let pauseFocusTrapCleanup = null;
+
 // ── Stop Run ───────────────────────────────────────────────────────
 
 let lastFocusedElement = null;
@@ -1210,6 +1243,8 @@ function confirmStopRun() {
   lastFocusedElement = document.activeElement;
   const overlay = document.getElementById('confirm-stop-overlay');
   overlay.classList.remove('hidden');
+  // Set up focus trap
+  confirmStopFocusTrapCleanup = trapFocus(overlay.querySelector('.modal'));
   // Focus the cancel button (safer default action)
   const cancelBtn = document.getElementById('btn-confirm-stop-cancel');
   if (cancelBtn) cancelBtn.focus();
@@ -1217,6 +1252,8 @@ function confirmStopRun() {
 
 function cancelStopRun() {
   document.getElementById('confirm-stop-overlay').classList.add('hidden');
+  // Clean up focus trap
+  if (confirmStopFocusTrapCleanup) { confirmStopFocusTrapCleanup(); confirmStopFocusTrapCleanup = null; }
   // Restore focus to the element that opened the modal
   if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
     lastFocusedElement.focus();
@@ -1226,6 +1263,8 @@ function cancelStopRun() {
 
 async function stopRun() {
   document.getElementById('confirm-stop-overlay').classList.add('hidden');
+  // Clean up focus trap
+  if (confirmStopFocusTrapCleanup) { confirmStopFocusTrapCleanup(); confirmStopFocusTrapCleanup = null; }
   if (state.stopping) return;
   state.stopping = true;
   logToServer('info', `stopRun: stopping run (currentStep=${state.currentStepNum}, processId=${state.currentProcessId})`);
@@ -1474,7 +1513,7 @@ function renderSummary(finishData) {
     const tokens = NtLogic.formatTokens(stepTotalTokens);
     const tokensStr = tokens ? tokens + ' tokens' : '';
     return `
-      <div class="step-item step-${status} step-clickable" data-step="${r.step}">
+      <div class="step-item step-${status} step-clickable" data-step="${r.step}" role="button" tabindex="0">
         <span class="step-icon">${icon}</span>
         <span class="step-num">${r.step}.</span>
         <span class="step-name">${NtLogic.escapeHtml(name)}</span>
@@ -1485,11 +1524,15 @@ function renderSummary(finishData) {
     `;
   }).join('');
 
-  // Attach click handlers for viewing step output
+  // Attach click and keyboard handlers for viewing step output
   listEl.querySelectorAll('.step-item[data-step]').forEach(el => {
-    el.addEventListener('click', () => {
-      const stepNum = parseInt(el.getAttribute('data-step'), 10);
-      viewSummaryStepOutput(stepNum);
+    const stepNum = parseInt(el.getAttribute('data-step'), 10);
+    el.addEventListener('click', () => viewSummaryStepOutput(stepNum));
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        viewSummaryStepOutput(stepNum);
+      }
     });
   });
 }

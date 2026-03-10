@@ -174,6 +174,10 @@ export function getHTML(csrfToken) {
     transition: opacity 0.2s;
   }
   .stop-btn:hover { opacity: 0.85; }
+  .stop-btn:focus-visible {
+    outline: 2px solid var(--cyan);
+    outline-offset: 2px;
+  }
   .stop-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
