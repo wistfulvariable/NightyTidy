@@ -86,6 +86,15 @@ const FAST_RETRY_PREFIX =
   '- Commit your changes when done\n\n' +
   'Here is the original task:\n\n';
 
+export const PROD_PREAMBLE =
+  'RECOVERY CONTEXT: Your previous attempt at this task was interrupted. ' +
+  'You are resuming in the same session. Before starting fresh:\n' +
+  '- Check what work was already done (look at recent git changes, modified files)\n' +
+  '- Continue from where you left off rather than starting over\n' +
+  '- If substantial work was already committed, focus on completing remaining items\n' +
+  '- If no meaningful work was done, proceed with the full task\n\n' +
+  'Here is the task:\n\n';
+
 /**
  * Verify the integrity of step prompts against the stored hash.
  * Warns but does not block if hash mismatches (user may have legitimate changes).
@@ -125,7 +134,7 @@ export const SAFETY_PREAMBLE =
  * @param {CostData|null} b - Second cost object
  * @returns {CostData|null} Combined cost, or null if both inputs are null
  */
-function sumCosts(a, b) {
+export function sumCosts(a, b) {
   if (!a && !b) return null;
   if (!a) return b;
   if (!b) return a;
@@ -176,7 +185,7 @@ function makeStepResult(step, status, result, duration, extra = {}) {
  * @param {(chunk: string) => void} [options.onOutput] - Streaming callback
  * @returns {Promise<StepResult>} Step result (never throws)
  */
-export async function executeSingleStep(step, projectDir, { signal, timeout, onOutput } = {}) {
+export async function executeSingleStep(step, projectDir, { signal, timeout, onOutput, continueSession, promptOverride } = {}) {
   const stepLabel = `Step ${step.number}: ${step.name}`;
   info(`${stepLabel} — starting`);
 
@@ -202,11 +211,13 @@ export async function executeSingleStep(step, projectDir, { signal, timeout, onO
     const preStepHash = await getHeadHash();
 
     // Run improvement prompt
-    const result = await runPrompt(SAFETY_PREAMBLE + step.prompt, projectDir, {
-      label: `Step ${step.number} — ${step.name}`,
+    const improvementPrompt = promptOverride || (SAFETY_PREAMBLE + step.prompt);
+    const result = await runPrompt(improvementPrompt, projectDir, {
+      label: `Step ${step.number} — ${step.name}${continueSession ? ' (prod)' : ''}`,
       signal: effectiveSignal,
       timeout,
       onOutput,
+      continueSession: continueSession || false,
     });
 
     if (!result.success) {
@@ -226,7 +237,7 @@ export async function executeSingleStep(step, projectDir, { signal, timeout, onO
     let improvementResult = result;
     let fastRetried = false;
 
-    if (result.duration < FAST_COMPLETION_THRESHOLD_MS) {
+    if (!continueSession && result.duration < FAST_COMPLETION_THRESHOLD_MS) {
       warn(
         `${stepLabel}: completed in ${Math.round(result.duration / 1000)}s — ` +
         `suspiciously fast (threshold: ${FAST_COMPLETION_THRESHOLD_MS / 1000}s). Retrying with context.`

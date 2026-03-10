@@ -50,7 +50,13 @@ vi.mock('../src/claude.js', () => ({
 
 vi.mock('../src/executor.js', () => ({
   executeSingleStep: vi.fn(),
+  sumCosts: vi.fn((a, b) => {
+    if (!a && !b) return null;
+    const sa = a || {}; const sb = b || {};
+    return { input: (sa.input || 0) + (sb.input || 0), output: (sa.output || 0) + (sb.output || 0), cacheRead: (sa.cacheRead || 0) + (sb.cacheRead || 0), cacheCreate: (sa.cacheCreate || 0) + (sb.cacheCreate || 0), total: (sa.total || 0) + (sb.total || 0) };
+  }),
   SAFETY_PREAMBLE: 'MOCK_PREAMBLE\n',
+  PROD_PREAMBLE: 'MOCK_PROD\n',
 }));
 
 vi.mock('../src/notifications.js', () => ({
@@ -97,7 +103,7 @@ import { initRun, runStep, finishRun } from '../src/orchestrator.js';
 import { initLogger } from '../src/logger.js';
 import { runPreChecks } from '../src/checks.js';
 import { getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from '../src/git.js';
-import { executeSingleStep } from '../src/executor.js';
+import { executeSingleStep, sumCosts } from '../src/executor.js';
 import { runPrompt } from '../src/claude.js';
 import { acquireLock, releaseLock } from '../src/lock.js';
 import { generateReport } from '../src/report.js';
@@ -824,5 +830,188 @@ describe('runStep rate-limit propagation', () => {
 
     expect(result.errorType).toBeNull();
     expect(result.retryAfterMs).toBeNull();
+  });
+});
+
+// ── 3-tier step recovery in runStep ──────────────────────────────
+
+describe('runStep 3-tier recovery', () => {
+  const validState = {
+    version: 1,
+    originalBranch: 'main',
+    runBranch: 'nightytidy/run-2026-03-06-1430',
+    tagName: 'nightytidy-before-2026-03-06-1430',
+    selectedSteps: [1, 2],
+    completedSteps: [],
+    failedSteps: [],
+    startTime: Date.now(),
+    timeout: null,
+  };
+
+  const failedResult = (overrides = {}) => ({
+    step: { number: 1, name: 'Documentation' },
+    status: 'failed',
+    output: '',
+    duration: 5000,
+    attempts: 4,
+    error: 'Claude timed out',
+    errorType: 'unknown',
+    ...overrides,
+  });
+
+  const completedResult = (overrides = {}) => ({
+    step: { number: 1, name: 'Documentation' },
+    status: 'completed',
+    output: 'Fixed docs',
+    duration: 10000,
+    attempts: 1,
+    error: null,
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify(validState));
+  });
+
+  it('Tier 2 (prod) is attempted before fresh retry with continueSession', async () => {
+    executeSingleStep
+      .mockResolvedValueOnce(failedResult())
+      .mockResolvedValueOnce(completedResult());
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('completed');
+    expect(executeSingleStep).toHaveBeenCalledTimes(2);
+
+    // Second call (prod) should have continueSession and promptOverride
+    const prodCall = executeSingleStep.mock.calls[1][2];
+    expect(prodCall.continueSession).toBe(true);
+    expect(prodCall.promptOverride).toContain('MOCK_PROD');
+    expect(prodCall.promptOverride).toContain('MOCK_PREAMBLE');
+  });
+
+  it('all 3 tiers execute when first two fail — Tier 3 has no continueSession', async () => {
+    executeSingleStep
+      .mockResolvedValueOnce(failedResult())                    // Tier 1
+      .mockResolvedValueOnce(failedResult({ attempts: 3 }))     // Tier 2 prod
+      .mockResolvedValueOnce(completedResult());                 // Tier 3 fresh
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('completed');
+    expect(executeSingleStep).toHaveBeenCalledTimes(3);
+
+    // Tier 3 (fresh retry) should NOT have continueSession or promptOverride
+    const freshCall = executeSingleStep.mock.calls[2][2];
+    expect(freshCall.continueSession).toBeUndefined();
+    expect(freshCall.promptOverride).toBeUndefined();
+  });
+
+  it('does NOT attempt recovery on rate-limit failure', async () => {
+    executeSingleStep.mockResolvedValue(failedResult({
+      errorType: 'rate_limit',
+      retryAfterMs: 120000,
+      error: 'Rate limit exceeded',
+    }));
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('failed');
+    expect(result.errorType).toBe('rate_limit');
+    expect(executeSingleStep).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips Tier 3 if Tier 2 hits rate limit', async () => {
+    executeSingleStep
+      .mockResolvedValueOnce(failedResult())
+      .mockResolvedValueOnce(failedResult({
+        errorType: 'rate_limit',
+        retryAfterMs: 60000,
+        error: 'Rate limit exceeded',
+      }));
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('failed');
+    expect(executeSingleStep).toHaveBeenCalledTimes(2);
+  });
+
+  it('combines costs across all 3 tiers', async () => {
+    executeSingleStep
+      .mockResolvedValueOnce(failedResult({
+        cost: { input: 100, output: 50, cacheRead: 10, cacheCreate: 5, total: 165 },
+      }))
+      .mockResolvedValueOnce(failedResult({
+        cost: { input: 200, output: 100, cacheRead: 20, cacheCreate: 10, total: 330 },
+      }))
+      .mockResolvedValueOnce(completedResult({
+        cost: { input: 300, output: 150, cacheRead: 30, cacheCreate: 15, total: 495 },
+      }));
+
+    await runStep('/fake/project', 1);
+
+    // sumCosts called twice: Tier1+Tier2, then combined+Tier3
+    expect(sumCosts).toHaveBeenCalledTimes(2);
+  });
+
+  it('combines attempts across all 3 tiers', async () => {
+    executeSingleStep
+      .mockResolvedValueOnce(failedResult({ attempts: 4 }))
+      .mockResolvedValueOnce(failedResult({ attempts: 3 }))
+      .mockResolvedValueOnce(completedResult({ attempts: 2 }));
+
+    await runStep('/fake/project', 1);
+
+    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
+    const updatedState = JSON.parse(stateCall[1]);
+    expect(updatedState.completedSteps[0].attempts).toBe(9); // 4 + 3 + 2
+  });
+
+  it('writes prodding flag before Tier 2 and retrying flag before Tier 3', async () => {
+    executeSingleStep
+      .mockResolvedValueOnce(failedResult())
+      .mockResolvedValueOnce(failedResult())
+      .mockResolvedValueOnce(completedResult());
+
+    await runStep('/fake/project', 1);
+
+    const progressWrites = writeFileSync.mock.calls.filter(c => c[0].includes('nightytidy-progress.json'));
+
+    // Should find a write with prodding: true
+    const proddingWrite = progressWrites.find(c => {
+      const data = JSON.parse(c[1]);
+      return data.prodding === true;
+    });
+    expect(proddingWrite).toBeDefined();
+    const prodProgress = JSON.parse(proddingWrite[1]);
+    expect(prodProgress.retrying).toBe(false);
+    expect(prodProgress.currentStepOutput).toBe('');
+
+    // Should find a write with retrying: true
+    const retryingWrite = progressWrites.find(c => {
+      const data = JSON.parse(c[1]);
+      return data.retrying === true && data.prodding === false;
+    });
+    expect(retryingWrite).toBeDefined();
+  });
+
+  it('records as failed when all 3 tiers fail', async () => {
+    executeSingleStep.mockResolvedValue(failedResult({ attempts: 4 }));
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('failed');
+    expect(executeSingleStep).toHaveBeenCalledTimes(3);
+
+    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
+    const updatedState = JSON.parse(stateCall[1]);
+    expect(updatedState.failedSteps).toHaveLength(1);
+    expect(updatedState.failedSteps[0].attempts).toBe(12); // 4 + 4 + 4
   });
 });

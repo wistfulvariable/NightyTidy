@@ -501,6 +501,70 @@ describe('fast completion detection', () => {
   });
 });
 
+describe('executeSingleStep continueSession and promptOverride', () => {
+  it('passes continueSession to improvement runPrompt when provided', async () => {
+    const step = makeStep(1, 'Lint');
+    runPrompt.mockResolvedValue({
+      success: true, output: 'ok', error: null, exitCode: 0, attempts: 1, duration: 300_000, cost: null,
+    });
+
+    await executeSingleStep(step, '/fake/project', { continueSession: true });
+
+    // First call (improvement) should have continueSession: true
+    expect(runPrompt.mock.calls[0][2].continueSession).toBe(true);
+    // Label should include (prod) suffix
+    expect(runPrompt.mock.calls[0][2].label).toContain('(prod)');
+  });
+
+  it('uses promptOverride instead of SAFETY_PREAMBLE + step.prompt', async () => {
+    const step = makeStep(1, 'Lint');
+    const override = 'CUSTOM_OVERRIDE_PROMPT';
+    runPrompt.mockResolvedValue({
+      success: true, output: 'ok', error: null, exitCode: 0, attempts: 1, duration: 300_000, cost: null,
+    });
+
+    await executeSingleStep(step, '/fake/project', { promptOverride: override });
+
+    // First call uses the override prompt
+    expect(runPrompt.mock.calls[0][0]).toBe(override);
+    // Doc-update (second call) still uses the standard prompt
+    expect(runPrompt.mock.calls[1][0]).toContain('mock doc update prompt');
+  });
+
+  it('skips fast-completion detection when continueSession is true', async () => {
+    const step = makeStep(1, 'Lint');
+    // Return success in under 2 minutes (would normally trigger fast-retry)
+    runPrompt
+      .mockResolvedValueOnce({
+        success: true, output: 'ok', error: null, exitCode: 0, attempts: 1, duration: 30_000, cost: null,
+      })
+      .mockResolvedValueOnce({
+        success: true, output: 'docs', error: null, exitCode: 0, attempts: 1, duration: 5_000, cost: null,
+      });
+
+    await executeSingleStep(step, '/fake/project', { continueSession: true });
+
+    // Only 2 calls: improvement + doc-update (no fast-retry)
+    expect(runPrompt).toHaveBeenCalledTimes(2);
+    // No warning about suspicious fast
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('suspiciously fast'));
+  });
+
+  it('defaults continueSession to falsy for improvement prompt', async () => {
+    const step = makeStep(1, 'Lint');
+    runPrompt.mockResolvedValue({
+      success: true, output: 'ok', error: null, exitCode: 0, attempts: 1, duration: 300_000, cost: null,
+    });
+
+    await executeSingleStep(step, '/fake/project');
+
+    const firstCallOpts = runPrompt.mock.calls[0][2];
+    expect(firstCallOpts.continueSession).toBeFalsy();
+    // Label should NOT include (prod) suffix
+    expect(firstCallOpts.label).not.toContain('(prod)');
+  });
+});
+
 describe('executeSingleStep errorType propagation', () => {
   it('propagates errorType and retryAfterMs from rate-limit failure', async () => {
     const step = makeStep(1, 'Documentation');

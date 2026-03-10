@@ -63,8 +63,8 @@ test/
   logger.test.js           # 10 tests — real file I/O, level filtering, stderr fallback
   checks.test.js           # 4 tests — mock subprocess, mock git
   checks-extended.test.js  # 23 tests — auth paths, disk space characterization, branch warnings, empty repo, dirty working tree
-  claude.test.js           # 64 tests — fake child process, fake timers, abort signal, Windows shell mode, stream-json NDJSON parsing, classifyError, rate-limit retry skip, stderr capture
-  executor.test.js         # 38 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection, rate-limit pause/resume
+  claude.test.js           # 73 tests — fake child process, fake timers, abort signal, Windows shell mode, stream-json NDJSON parsing, classifyError, rate-limit retry skip, stderr capture, inactivity timeout
+  executor.test.js         # 42 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection, continueSession/promptOverride, rate-limit pause/resume
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 7 tests — getGitInstance, getHeadHash, tag/branch collision
   notifications.test.js    # 2 tests — mock node-notifier
@@ -78,7 +78,7 @@ test/
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
-  orchestrator.test.js     # 44 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync
+  orchestrator.test.js     # 52 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync, 3-tier step recovery
   contracts.test.js        # 39 tests — module API contract verification against CLAUDE.md
   gui-logic.test.js        # 138 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, formatTime, detectGitError, detectStaleState, detectRateLimit, formatCountdown, preprocessClaudeOutput, etc.)
   gui-server.test.js       # 45 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, log-error, log-path, security headers, traversal
@@ -246,6 +246,8 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **GUI server security**: Binds to `127.0.0.1` only. No CORS headers. Body limit 1 MB. Path traversal protection with trailing separator boundary check. Security headers on all responses (HTML, JSON, and error responses). CSP uses `'self'` only (no inline scripts). Frontend heartbeat every 5s; server watchdog self-terminates after 15s with no heartbeat (catches Chrome crash / force-kill).
 - **Security headers on error responses**: All HTTP servers must include `SECURITY_HEADERS` on error responses (403, 404), not just 200 responses. This prevents header-based fingerprinting of error vs success paths.
 - **Lock file is atomic**: `acquireLock()` uses `fs.openSync(path, 'wx')` (O_EXCL) to prevent TOCTOU races between concurrent processes.
+- **Inactivity timeout**: `waitForChild()` in `claude.js` kills the subprocess after 3 minutes of no stdout/stderr activity (`INACTIVITY_TIMEOUT_MS`). Prevents hung Claude Code processes from blocking runs. Configurable via `inactivityTimeout` option (0 disables). The retry loop in `runPrompt()` automatically retries after an inactivity kill.
+- **3-tier step recovery**: `runStep()` in `orchestrator.js` uses 3 recovery tiers for failed steps. Tier 1: normal `executeSingleStep` (fresh session, up to 4 retries). Tier 2 (prod): `executeSingleStep` with `continueSession: true` + `PROD_PREAMBLE` — resumes the killed session via `--continue` to recover partial work. Tier 3 (fresh retry): `executeSingleStep` with a clean slate. Rate-limit failures skip all recovery (handled by GUI pause/resume). Progress JSON gets `prodding: true` or `retrying: true` flags for GUI banners. Each step can use up to 12 Claude invocations before being marked failed.
 - **Prompt integrity check**: `executor.js` computes SHA-256 of all step prompts and compares against `STEPS_HASH`. After editing any markdown file in `src/prompts/steps/` or `src/prompts/specials/`, recompute and update the hash in `executor.js`. Warns but does not block (user may have legitimate prompt changes).
 - **`--dangerously-skip-permissions`**: Required for non-interactive Claude Code subprocess calls. NightyTidy is the permission layer — it controls what prompts are sent and operates on a safety branch.
 - **Prompt delivery threshold**: Prompts longer than 8000 chars (`STDIN_THRESHOLD` in `claude.js`) are piped via stdin instead of passed as a `-p` argument. This avoids OS command-line length limits. If prompts fail with argument-too-long errors, check this threshold.

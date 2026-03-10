@@ -105,6 +105,8 @@ const state = {
   backoffAttempt: 0,       // exponential backoff tier index
   manualResumeResolve: null, // resolve function for manual resume promise
   _pauseTimer: null,       // setTimeout ID for auto-resume (clearable on manual resume)
+  retrying: false,         // step is being auto-retried after failure
+  prodding: false,         // step is being prodded (session resume after failure)
 };
 
 // ── Init Overlay (shown during --init-run) ────────────────────────
@@ -765,6 +767,72 @@ function renderProgressFromFile(progress) {
   // Skip live output updates when user is viewing a stored step's output
   if (state.viewingStepOutput !== null) return;
 
+  // Detect prod signal from orchestrator (Tier 2: session resume)
+  if (progress.prodding && !state.prodding) {
+    state.prodding = true;
+    state.retrying = false;
+    lastRenderedOutput = '';
+    lastOutputChangeTime = Date.now();
+    hideWorkingIndicator();
+
+    const outputEl = document.getElementById('output-content');
+    outputEl.innerHTML = '<div class="prod-banner">' +
+      '<strong>\u26A1 Prodding</strong> \u2014 resuming previous session to recover work\u2026' +
+      '</div>';
+    const panel = document.getElementById('output-panel');
+    panel.scrollTop = panel.scrollHeight;
+
+    const subtitle = document.getElementById('running-subtitle');
+    if (subtitle && state.currentStepNum) {
+      const step = state.steps.find(s => s.number === state.currentStepNum);
+      const name = step ? step.name : `Step ${state.currentStepNum}`;
+      const done = state.completedSteps.length + state.failedSteps.length + state.skippedSteps.length;
+      subtitle.textContent = `Step ${done + 1} of ${state.selectedSteps.length} \u2014 Prodding: ${name}`;
+      subtitle.className = 'subtitle subtitle-prodding';
+    }
+    document.title = 'Prodding\u2026 \u2014 NightyTidy';
+    updateLastUpdateDisplay();
+    return;
+  }
+
+  // Clear prod flag when transitioning
+  if (!progress.prodding && state.prodding) {
+    state.prodding = false;
+  }
+
+  // Detect auto-retry signal from orchestrator (Tier 3: fresh session)
+  if (progress.retrying && !state.retrying) {
+    state.retrying = true;
+    state.prodding = false;
+    lastRenderedOutput = '';
+    lastOutputChangeTime = Date.now();
+    hideWorkingIndicator();
+
+    const outputEl = document.getElementById('output-content');
+    outputEl.innerHTML = '<div class="retry-banner">' +
+      '<strong>\u21BB Auto-recovering</strong> \u2014 retrying step with fresh session\u2026' +
+      '</div>';
+    const panel = document.getElementById('output-panel');
+    panel.scrollTop = panel.scrollHeight;
+
+    const subtitle = document.getElementById('running-subtitle');
+    if (subtitle && state.currentStepNum) {
+      const step = state.steps.find(s => s.number === state.currentStepNum);
+      const name = step ? step.name : `Step ${state.currentStepNum}`;
+      const done = state.completedSteps.length + state.failedSteps.length + state.skippedSteps.length;
+      subtitle.textContent = `Step ${done + 1} of ${state.selectedSteps.length} \u2014 Retrying: ${name}`;
+      subtitle.className = 'subtitle subtitle-retrying';
+    }
+    document.title = 'Retrying\u2026 \u2014 NightyTidy';
+    updateLastUpdateDisplay();
+    return;
+  }
+
+  // Clear retry flag once new output arrives
+  if (!progress.retrying && state.retrying) {
+    state.retrying = false;
+  }
+
   if (progress.currentStepOutput) {
     // Only re-render when the content has actually changed (polling is every 500ms)
     if (progress.currentStepOutput !== lastRenderedOutput) {
@@ -797,13 +865,19 @@ function updateWorkingIndicator() {
   }
 }
 
+const WORKING_ESCALATION_MS = 2 * 60 * 1000; // 2 minutes — escalate message
+
 function showWorkingIndicator(elapsedMs) {
   const el = document.getElementById('working-indicator');
   if (!el) return;
   el.style.display = 'flex';
   const textEl = el.querySelector('.working-text');
   if (textEl && elapsedMs > 0) {
-    textEl.textContent = `Claude is working (${NtLogic.formatMs(elapsedMs)})`;
+    if (elapsedMs >= WORKING_ESCALATION_MS) {
+      textEl.textContent = `Claude may be stuck \u2014 will auto-recover soon (${NtLogic.formatMs(elapsedMs)})`;
+    } else {
+      textEl.textContent = `Claude is working (${NtLogic.formatMs(elapsedMs)})`;
+    }
   }
 }
 
@@ -1374,6 +1448,8 @@ function resetApp() {
   state.manualResumeResolve = null;
   if (state._pauseTimer) clearTimeout(state._pauseTimer);
   state._pauseTimer = null;
+  state.retrying = false;
+  state.prodding = false;
 
   clearError('setup');
   clearError('steps');

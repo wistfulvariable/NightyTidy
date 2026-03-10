@@ -67,6 +67,7 @@ Every error message should follow this pattern:
 | Non-zero exit code | `Claude Code exited with error code [N]` | Subprocess failed |
 | Spawn failure (non-Windows) | `Failed to start Claude Code. Ensure the "claude" command is installed and on your PATH.` | Cannot find/execute claude binary |
 | All retries exhausted | `Failed after [N] attempts` | After max retries consumed |
+| Inactivity timeout (3 min default) | `Claude Code stalled — no output for [N] minutes` | No stdout/stderr data for 3 min; process killed, retry loop retries |
 
 ## CLI / Run Lifecycle (`src/cli.js`)
 

@@ -46,6 +46,7 @@ import { cleanEnv } from './env.js';
  * @property {AbortSignal} [signal] - Abort signal for cancellation
  * @property {boolean} [continueSession] - Use --continue flag for session continuity
  * @property {(chunk: string) => void} [onOutput] - Callback for streaming output
+ * @property {number} [inactivityTimeout] - Max silence per attempt in ms (default: 5 min; 0 disables)
  */
 
 const DEFAULT_TIMEOUT = 45 * 60 * 1000; // 45 minutes
@@ -53,6 +54,7 @@ const DEFAULT_RETRIES = 3;
 const RETRY_DELAY = 10000; // 10 seconds
 const STDIN_THRESHOLD = 8000; // chars
 const SIGKILL_DELAY = 5000; // grace period before SIGKILL after initial kill
+export const INACTIVITY_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes — no stdout or stderr data
 
 // ── Rate-limit error classification ─────────────────────────────────
 
@@ -145,6 +147,17 @@ function forceKillChild(child) {
 function timeoutMessage(ms) {
   const minutes = Math.round(ms / 60000);
   return `Claude Code timed out after ${minutes} minutes`;
+}
+
+/**
+ * Generate a human-readable inactivity timeout error message.
+ *
+ * @param {number} ms - Inactivity timeout duration in milliseconds
+ * @returns {string} Error message
+ */
+function inactivityMessage(ms) {
+  const minutes = Math.round(ms / 60000);
+  return `Claude Code stalled — no output for ${minutes} minutes`;
 }
 
 /**
@@ -357,9 +370,10 @@ function formatEventLine(line) {
  * @param {boolean} [options.verbose=true] - Whether to log debug output
  * @param {AbortSignal} [options.signal] - Abort signal for cancellation
  * @param {(chunk: string) => void} [options.onOutput] - Callback for streaming output
+ * @param {number} [options.inactivityTimeout] - Max silence before kill (default: INACTIVITY_TIMEOUT_MS; 0 disables)
  * @returns {Promise<WaitResult>} Result object with success, output, error, exitCode
  */
-function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {}) {
+function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput, inactivityTimeout } = {}) {
   return new Promise((resolve) => {
     // Use array accumulation instead of string concatenation to avoid O(n²) memory
     // allocations on large outputs. Join once at the end when needed.
@@ -372,6 +386,7 @@ function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (inactivityTimer) clearTimeout(inactivityTimer);
       if (onAbort) signal?.removeEventListener('abort', onAbort);
       const stdout = stdoutChunks.join('');
       resolve({ ...result, output: result.output ?? stdout });
@@ -380,7 +395,29 @@ function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {
     const timer = setupTimeout(child, timeoutMs, verbose, settle);
     const onAbort = setupAbortHandler(child, signal, settle);
 
+    // ── Inactivity timer ────────────────────────────────────────────
+    // Resets on every stdout or stderr data event. If no data arrives
+    // within the inactivity window, the process is presumed stalled
+    // and force-killed so the retry loop can attempt recovery.
+    const inactivityMs = inactivityTimeout ?? INACTIVITY_TIMEOUT_MS;
+    let inactivityTimer = null;
+
+    function resetInactivityTimer() {
+      if (inactivityTimer) clearTimeout(inactivityTimer);
+      if (inactivityMs > 0) {
+        inactivityTimer = setTimeout(() => {
+          warn(`Claude Code inactivity timeout (${Math.round(inactivityMs / 60000)} min) — killing stalled process`);
+          forceKillChild(child);
+          settle({ success: false, error: inactivityMessage(inactivityMs), exitCode: -1 });
+        }, inactivityMs);
+        inactivityTimer.unref();
+      }
+    }
+
+    resetInactivityTimer();
+
     child.stdout.on('data', (chunk) => {
+      resetInactivityTimer();
       const text = chunk.toString();
       stdoutChunks.push(text);
       if (verbose) debug(text.trimEnd());
@@ -401,6 +438,7 @@ function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {
 
     const stderrChunks = [];
     child.stderr.on('data', (chunk) => {
+      resetInactivityTimer();
       const text = chunk.toString();
       stderrChunks.push(text);
       if (verbose && text.trim()) warn(`Claude Code warning output: ${text.trimEnd()}`);
@@ -502,7 +540,7 @@ function parseJsonOutput(result) {
  * @param {(chunk: string) => void} [onOutput] - Streaming output callback
  * @returns {Promise<RunPromptResult>} Result with success, output, error, cost, etc.
  */
-async function runOnce(prompt, cwd, timeoutMs, signal, continueSession = false, onOutput) {
+async function runOnce(prompt, cwd, timeoutMs, signal, continueSession = false, onOutput, inactivityTimeout) {
   // On Windows, always use shell — 'claude' is a .cmd script that
   // requires shell interpretation. Spawning without shell always gets
   // ENOENT, and the failed-spawn + shell-retry pattern can exhaust
@@ -516,7 +554,7 @@ async function runOnce(prompt, cwd, timeoutMs, signal, continueSession = false, 
     return { success: false, output: '', error: err.message || 'Failed to start Claude Code', exitCode: -1, cost: null };
   }
 
-  const result = await waitForChild(child, timeoutMs, { signal, onOutput });
+  const result = await waitForChild(child, timeoutMs, { signal, onOutput, inactivityTimeout });
 
   delete result._errorCode;
   const parsed = parseJsonOutput(result);
@@ -549,6 +587,7 @@ export async function runPrompt(prompt, cwd, options = {}) {
   const signal = options.signal;
   const continueSession = options.continueSession ?? false;
   const onOutput = options.onOutput;
+  const inactivityTimeout = options.inactivityTimeout;
   const totalAttempts = maxRetries + 1;
 
   const startTime = Date.now();
@@ -562,7 +601,7 @@ export async function runPrompt(prompt, cwd, options = {}) {
 
     info(`Running Claude Code: ${label} (attempt ${attempt}/${totalAttempts})`);
 
-    const result = await runOnce(prompt, cwd, timeoutMs, signal, continueSession, onOutput);
+    const result = await runOnce(prompt, cwd, timeoutMs, signal, continueSession, onOutput, inactivityTimeout);
     lastResult = result;
 
     // Abort detected — return immediately without retry

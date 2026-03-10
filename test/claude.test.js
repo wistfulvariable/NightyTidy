@@ -24,7 +24,7 @@ vi.mock('../src/logger.js', () => createLoggerMock());
 
 import { spawn, execFileSync } from 'child_process';
 import { platform } from 'os';
-import { runPrompt, classifyError, ERROR_TYPE } from '../src/claude.js';
+import { runPrompt, classifyError, ERROR_TYPE, INACTIVITY_TIMEOUT_MS } from '../src/claude.js';
 import { warn } from '../src/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -1335,6 +1335,214 @@ describe('runPrompt', () => {
       expect(result.success).toBe(true);
       // But errorType still reflects the stderr classification
       expect(result.errorType).toBe(ERROR_TYPE.RATE_LIMIT);
+    });
+  });
+
+  // ── Inactivity timeout ──────────────────────────────────────────────
+
+  describe('inactivity timeout', () => {
+    it('kills the process when no data arrives within inactivity window', async () => {
+      let capturedChild;
+      setupSpawnSequence((child) => {
+        capturedChild = child;
+        // Emit initial data then go silent — simulate a stall
+        child.emitStdout('Starting...');
+      });
+
+      const promise = runPrompt('do something', '/tmp', {
+        timeout: 600_000,
+        retries: 0,
+        label: 'inactivity-kill-test',
+        inactivityTimeout: 200,
+      });
+
+      await vi.advanceTimersByTimeAsync(500);
+
+      const result = await promise;
+
+      expect(capturedChild.kill).toHaveBeenCalled();
+      expect(result.success).toBe(false);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('inactivity timeout'));
+    });
+
+    it('resets inactivity timer on stdout data — process completes normally', async () => {
+      setupSpawnSequence((child) => {
+        // Emit data at intervals shorter than the inactivity window
+        setTimeout(() => child.emitStdout('chunk-1\n'), 100);
+        setTimeout(() => child.emitStdout('chunk-2\n'), 200);
+        setTimeout(() => child.emitStdout('chunk-3\n'), 300);
+        setTimeout(() => child.emitClose(0), 400);
+      });
+
+      const promise = runPrompt('do something', '/tmp', {
+        timeout: 5000,
+        retries: 0,
+        label: 'inactivity-reset-test',
+        inactivityTimeout: 250,
+      });
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      const result = await promise;
+
+      expect(result.success).toBe(true);
+    });
+
+    it('resets inactivity timer on stderr data', async () => {
+      setupSpawnSequence((child) => {
+        // Only stderr for a while, then stdout and close
+        setTimeout(() => child.emitStderr('warning 1'), 100);
+        setTimeout(() => child.emitStderr('warning 2'), 250);
+        setTimeout(() => {
+          child.emitStdout('final output');
+          child.emitClose(0);
+        }, 400);
+      });
+
+      const promise = runPrompt('do something', '/tmp', {
+        timeout: 5000,
+        retries: 0,
+        label: 'inactivity-stderr-test',
+        inactivityTimeout: 200,
+      });
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      const result = await promise;
+
+      expect(result.success).toBe(true);
+    });
+
+    it('retries after inactivity timeout via runPrompt retry loop', async () => {
+      setupSpawnSequence(
+        // Attempt 1: stalls after initial output
+        (child) => {
+          child.emitStdout('starting');
+          // No more data — will hit inactivity timeout
+        },
+        // Attempt 2: succeeds normally
+        (child) => {
+          child.emitStdout('Success output');
+          child.emitClose(0);
+        },
+      );
+
+      const promise = runPrompt('do something', '/tmp', {
+        timeout: 600_000,
+        retries: 1,
+        label: 'inactivity-retry-test',
+        inactivityTimeout: 200,
+      });
+
+      // Advance past inactivity timeout + retry delay + second attempt
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      const result = await promise;
+
+      expect(result.success).toBe(true);
+      expect(result.attempts).toBe(2);
+    });
+
+    it('uses default 3-minute inactivity timeout when not specified', async () => {
+      let capturedChild;
+      setupSpawnSequence((child) => {
+        capturedChild = child;
+        child.emitStdout('initial data');
+        // Stall — no more data
+      });
+
+      const promise = runPrompt('do something', '/tmp', {
+        timeout: 3600_000,
+        retries: 0,
+        label: 'default-inactivity-test',
+      });
+
+      // Advance 2 minutes — should NOT have fired yet
+      await vi.advanceTimersByTimeAsync(2 * 60_000);
+      expect(capturedChild.kill).not.toHaveBeenCalled();
+
+      // Advance past 3 minutes total
+      await vi.advanceTimersByTimeAsync(1.5 * 60_000);
+
+      const result = await promise;
+
+      expect(capturedChild.kill).toHaveBeenCalled();
+      expect(result.success).toBe(false);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('inactivity timeout'));
+    });
+
+    it('does not fire when process closes before inactivity window', async () => {
+      setupSpawnSequence((child) => {
+        child.emitStdout('output');
+        // Close immediately — well before inactivity window
+        child.emitClose(0);
+      });
+
+      const result = await runPrompt('do something', '/tmp', {
+        timeout: 5000,
+        retries: 0,
+        label: 'no-inactivity-fire-test',
+        inactivityTimeout: 200,
+      });
+
+      // Advance past window to confirm timer was cleared
+      await vi.advanceTimersByTimeAsync(1000);
+
+      expect(result.success).toBe(true);
+    });
+
+    it('is cleared when abort signal fires first', async () => {
+      const controller = new AbortController();
+
+      setupSpawnSequence((child) => {
+        child.emitStdout('initial');
+        // Goes silent — but abort will fire before inactivity
+      });
+
+      const promise = runPrompt('do something', '/tmp', {
+        timeout: 600_000,
+        retries: 0,
+        label: 'inactivity-abort-test',
+        inactivityTimeout: 5000,
+        signal: controller.signal,
+      });
+
+      // Abort before inactivity fires
+      await vi.advanceTimersByTimeAsync(100);
+      controller.abort();
+      await vi.advanceTimersByTimeAsync(100);
+
+      const result = await promise;
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('Aborted by user');
+    });
+
+    it('is disabled when set to 0', async () => {
+      setupSpawnSequence((child) => {
+        // Go silent for 500ms then produce output and close
+        setTimeout(() => {
+          child.emitStdout('delayed output');
+          child.emitClose(0);
+        }, 500);
+      });
+
+      const promise = runPrompt('do something', '/tmp', {
+        timeout: 5000,
+        retries: 0,
+        label: 'inactivity-disabled-test',
+        inactivityTimeout: 0,
+      });
+
+      await vi.advanceTimersByTimeAsync(1000);
+
+      const result = await promise;
+
+      expect(result.success).toBe(true);
+    });
+
+    it('exports the default inactivity timeout constant', () => {
+      expect(INACTIVITY_TIMEOUT_MS).toBe(3 * 60 * 1000);
     });
   });
 });

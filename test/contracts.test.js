@@ -921,6 +921,7 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
     vi.doMock('../src/executor.js', () => ({
       executeSingleStep: vi.fn(),
       SAFETY_PREAMBLE: 'MOCK\n',
+      PROD_PREAMBLE: 'MOCK_PROD\n',
     }));
 
     vi.doMock('../src/notifications.js', () => ({

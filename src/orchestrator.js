@@ -16,9 +16,9 @@ import path from 'path';
 import { initLogger, info, warn, error as logError } from './logger.js';
 import { runPreChecks } from './checks.js';
 import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from './git.js';
-import { runPrompt } from './claude.js';
+import { runPrompt, ERROR_TYPE } from './claude.js';
 import { STEPS, reloadSteps } from './prompts/loader.js';
-import { executeSingleStep, SAFETY_PREAMBLE } from './executor.js';
+import { executeSingleStep, sumCosts, SAFETY_PREAMBLE, PROD_PREAMBLE } from './executor.js';
 import { notify } from './notifications.js';
 import { generateReport, formatDuration, getVersion } from './report.js';
 import { acquireLock, releaseLock } from './lock.js';
@@ -578,7 +578,65 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
     // Stream Claude output to progress file for dashboard consumption
     const onOutput = createOutputHandler(progress, projectDir);
 
-    const result = await executeSingleStep(step, projectDir, { timeout: stepTimeout, onOutput });
+    let result = await executeSingleStep(step, projectDir, { timeout: stepTimeout, onOutput });
+
+    // ── 3-Tier Recovery ──────────────────────────────────────────────
+    // Tier 1 already ran above. If it failed (non-rate-limit), try:
+    //   Tier 2 (prod): --continue to resume the killed session
+    //   Tier 3 (fresh): clean slate with a new session
+    if (result.status === 'failed' && result.errorType !== ERROR_TYPE.RATE_LIMIT) {
+      // ── Tier 2: PROD — continue killed session ──
+      warn(`Step ${stepNumber} failed (${result.error}) — prodding (resuming previous session)`);
+
+      progress.prodding = true;
+      progress.retrying = false;
+      progress.currentStepOutput = '';
+      writeProgress(projectDir, progress);
+
+      const prodOutput = createOutputHandler(progress, projectDir);
+      const prodPrompt = SAFETY_PREAMBLE + PROD_PREAMBLE + step.prompt;
+      const prodResult = await executeSingleStep(step, projectDir, {
+        timeout: stepTimeout, onOutput: prodOutput,
+        continueSession: true, promptOverride: prodPrompt,
+      });
+
+      result = {
+        ...prodResult,
+        attempts: (result.attempts || 0) + (prodResult.attempts || 0),
+        cost: sumCosts(result.cost, prodResult.cost),
+      };
+
+      if (result.status === 'completed') {
+        info(`Step ${stepNumber} succeeded on prod (session resume)`);
+      } else if (result.errorType !== ERROR_TYPE.RATE_LIMIT) {
+        // ── Tier 3: FRESH RETRY — clean slate ──
+        warn(`Step ${stepNumber} prod failed — fresh retry with new session`);
+
+        progress.prodding = false;
+        progress.retrying = true;
+        progress.currentStepOutput = '';
+        writeProgress(projectDir, progress);
+
+        const freshOutput = createOutputHandler(progress, projectDir);
+        const freshResult = await executeSingleStep(step, projectDir, {
+          timeout: stepTimeout, onOutput: freshOutput,
+        });
+
+        result = {
+          ...freshResult,
+          attempts: (result.attempts || 0) + (freshResult.attempts || 0),
+          cost: sumCosts(result.cost, freshResult.cost),
+        };
+
+        if (result.status === 'completed') {
+          info(`Step ${stepNumber} succeeded on fresh retry`);
+        } else {
+          warn(`Step ${stepNumber} failed on all 3 tiers — recording as failed`);
+        }
+      } else {
+        warn(`Step ${stepNumber} prod hit rate limit — recording as failed`);
+      }
+    }
 
     // Update state
     const output = (result.output || '').slice(0, 6000);
