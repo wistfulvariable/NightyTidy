@@ -72,6 +72,8 @@ vi.mock('../src/git.js', () => ({
 
 vi.mock('../src/claude.js', () => ({
   runPrompt: vi.fn(),
+  ERROR_TYPE: { RATE_LIMIT: 'rate_limit', UNKNOWN: 'unknown' },
+  sleep: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../src/prompts/loader.js', () => ({

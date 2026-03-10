@@ -9,6 +9,43 @@ const RETRY_DELAY = 10000; // 10 seconds
 const STDIN_THRESHOLD = 8000; // chars
 const SIGKILL_DELAY = 5000; // grace period before SIGKILL after initial kill
 
+// ── Rate-limit error classification ─────────────────────────────────
+export const ERROR_TYPE = Object.freeze({
+  RATE_LIMIT: 'rate_limit',
+  UNKNOWN: 'unknown',
+});
+
+const RATE_LIMIT_PATTERNS = [
+  /429/i,
+  /rate.?limit/i,
+  /quota/i,
+  /exceeded/i,
+  /overloaded/i,
+  /capacity/i,
+  /too many requests/i,
+  /usage.?limit/i,
+  /throttl/i,
+  /billing/i,
+  /plan.?limit/i,
+];
+
+const RETRY_AFTER_PATTERN = /retry.?after[:\s]+(\d+)/i;
+
+/**
+ * Classify a Claude Code subprocess error based on stderr content.
+ * Returns { type, retryAfterMs } where type is an ERROR_TYPE value.
+ */
+export function classifyError(stderr, exitCode) {
+  if (!stderr) return { type: ERROR_TYPE.UNKNOWN, retryAfterMs: null };
+  const isRateLimit = RATE_LIMIT_PATTERNS.some(p => p.test(stderr));
+  if (isRateLimit) {
+    const match = stderr.match(RETRY_AFTER_PATTERN);
+    const retryAfterMs = match ? parseInt(match[1], 10) * 1000 : null;
+    return { type: ERROR_TYPE.RATE_LIMIT, retryAfterMs };
+  }
+  return { type: ERROR_TYPE.UNKNOWN, retryAfterMs: null };
+}
+
 function forceKillChild(child) {
   child.kill();
   const killTimer = setTimeout(() => {
@@ -22,7 +59,7 @@ function timeoutMessage(ms) {
   return `Claude Code timed out after ${minutes} minutes`;
 }
 
-function sleep(ms, signal) {
+export function sleep(ms, signal) {
   return new Promise((resolve) => {
     if (signal?.aborted) { resolve(); return; }
     const timer = setTimeout(resolve, ms);
@@ -202,8 +239,10 @@ function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {
       }
     });
 
+    let stderrText = '';
     child.stderr.on('data', (chunk) => {
       const text = chunk.toString();
+      stderrText += text;
       if (verbose && text.trim()) warn(`Claude Code warning output: ${text.trimEnd()}`);
     });
 
@@ -217,6 +256,7 @@ function waitForChild(child, timeoutMs, { verbose = true, signal, onOutput } = {
         success: ok,
         error: ok ? null : (code === 0 ? 'Claude Code returned empty output' : `Claude Code exited with error code ${code}`),
         exitCode: code,
+        stderr: stderrText,
       });
     });
   });
@@ -296,7 +336,9 @@ async function runOnce(prompt, cwd, timeoutMs, signal, continueSession = false, 
   const result = await waitForChild(child, timeoutMs, { signal, onOutput });
 
   delete result._errorCode;
-  return parseJsonOutput(result);
+  const parsed = parseJsonOutput(result);
+  const classification = classifyError(result.stderr || '', result.exitCode);
+  return { ...parsed, errorType: classification.type, retryAfterMs: classification.retryAfterMs };
 }
 
 export async function runPrompt(prompt, cwd, options = {}) {
@@ -332,6 +374,23 @@ export async function runPrompt(prompt, cwd, options = {}) {
       const duration = Date.now() - startTime;
       info(`Claude Code completed: ${label} — ${Math.round(duration / 1000)}s`);
       return { ...result, duration, attempts: attempt };
+    }
+
+    // Rate-limit errors won't resolve in 10s — fail fast so caller can pause
+    if (result.errorType === ERROR_TYPE.RATE_LIMIT) {
+      const duration = Date.now() - startTime;
+      warn(`Claude Code rate limited: ${label} — not retrying (would fail again)`);
+      return {
+        success: false,
+        output: result.output || '',
+        error: result.error || 'Rate limit exceeded',
+        exitCode: result.exitCode,
+        duration,
+        attempts: attempt,
+        cost: result.cost ?? null,
+        errorType: result.errorType,
+        retryAfterMs: result.retryAfterMs,
+      };
     }
 
     warn(`Claude Code failed: ${label} — ${result.error} (attempt ${attempt}/${totalAttempts})`);

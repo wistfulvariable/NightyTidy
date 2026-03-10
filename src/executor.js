@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { runPrompt } from './claude.js';
+import { runPrompt, ERROR_TYPE, sleep } from './claude.js';
 import { getHeadHash, hasNewCommit, fallbackCommit } from './git.js';
 import { STEPS, DOC_UPDATE_PROMPT } from './prompts/loader.js';
 import { notify } from './notifications.js';
@@ -98,7 +98,10 @@ export async function executeSingleStep(step, projectDir, { signal, timeout, onO
       `NightyTidy: Step ${step.number} Failed`,
       `Step ${step.number} (${step.name}) failed after ${result.attempts} attempts. Skipped — run continuing.`
     );
-    return makeStepResult(step, 'failed', result, duration);
+    const failExtra = {};
+    if (result.errorType) failExtra.errorType = result.errorType;
+    if (result.retryAfterMs) failExtra.retryAfterMs = result.retryAfterMs;
+    return makeStepResult(step, 'failed', result, duration, failExtra);
   }
 
   // Fast completion detection: retry once if suspiciously fast
@@ -165,7 +168,66 @@ export async function executeSingleStep(step, projectDir, { signal, timeout, onO
   return makeStepResult(step, 'completed', { ...improvementResult, cost: combinedCost }, duration, extra);
 }
 
-export async function executeSteps(selectedSteps, projectDir, { signal, timeout, onStepStart, onStepComplete, onStepFail, onOutput } = {}) {
+// Exponential backoff schedule for rate-limit waits (ms)
+const BACKOFF_SCHEDULE_MS = [
+  2 * 60_000,     // 2 min
+  5 * 60_000,     // 5 min
+  15 * 60_000,    // 15 min
+  30 * 60_000,    // 30 min
+  60 * 60_000,    // 1 hr
+  120 * 60_000,   // 2 hr (cap)
+];
+
+/**
+ * Wait for a rate-limit to clear using exponential backoff and API probes.
+ * Returns true if the API is available again, false if we gave up or were aborted.
+ */
+async function waitForRateLimit(retryAfterMs, signal, projectDir) {
+  if (signal?.aborted) return false;
+
+  // If API gave us a retry-after, use it (plus 10s buffer)
+  if (retryAfterMs && retryAfterMs > 0) {
+    info(`Rate limit: API says retry after ${Math.ceil(retryAfterMs / 1000)}s`);
+    await sleep(retryAfterMs + 10_000, signal);
+    return !signal?.aborted;
+  }
+
+  // Otherwise, exponential backoff with probe attempts
+  for (let attempt = 0; attempt < BACKOFF_SCHEDULE_MS.length; attempt++) {
+    const waitMs = BACKOFF_SCHEDULE_MS[attempt];
+    info(`Rate limit: waiting ${Math.ceil(waitMs / 60_000)} minutes before probe (attempt ${attempt + 1}/${BACKOFF_SCHEDULE_MS.length})`);
+
+    await sleep(waitMs, signal);
+    if (signal?.aborted) return false;
+
+    // Probe: run a tiny prompt to check if rate limit is lifted
+    info('Rate limit: probing API availability...');
+    const probe = await runPrompt('Reply with the single word OK.', projectDir, {
+      label: 'rate-limit-probe',
+      retries: 0,
+      timeout: 60_000,
+    });
+
+    if (probe.success) {
+      info('Rate limit: probe succeeded — API available again');
+      return true;
+    }
+
+    if (probe.errorType !== ERROR_TYPE.RATE_LIMIT) {
+      // Different error — let the main loop handle it
+      info('Rate limit: probe returned non-rate-limit error — resuming');
+      return true;
+    }
+
+    warn(`Rate limit: probe still rate-limited (attempt ${attempt + 1}/${BACKOFF_SCHEDULE_MS.length})`);
+  }
+
+  // Exhausted all backoff attempts
+  logError('Rate limit: exhausted all retry attempts — stopping run');
+  return false;
+}
+
+export async function executeSteps(selectedSteps, projectDir, { signal, timeout, onStepStart, onStepComplete, onStepFail, onOutput, onRateLimitPause, onRateLimitResume } = {}) {
   verifyStepsIntegrity(STEPS);
 
   const results = [];
@@ -187,6 +249,25 @@ export async function executeSteps(selectedSteps, projectDir, { signal, timeout,
     results.push(stepResult);
 
     if (stepResult.status === 'failed') {
+      // Rate-limit: pause and wait instead of continuing
+      if (stepResult.errorType === ERROR_TYPE.RATE_LIMIT) {
+        info('Rate limit detected — pausing run');
+        onRateLimitPause?.(stepResult.retryAfterMs);
+
+        const resumed = await waitForRateLimit(stepResult.retryAfterMs, signal, projectDir);
+        if (!resumed) {
+          info('Rate limit wait ended — stopping run');
+          break;
+        }
+        onRateLimitResume?.();
+        info('Rate limit cleared — resuming run');
+
+        // Remove the failed result and retry the same step
+        results.pop();
+        i--;
+        continue;
+      }
+
       failedCount++;
       onStepFail?.(step, i, totalSteps);
     } else {

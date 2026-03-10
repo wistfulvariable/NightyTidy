@@ -12,6 +12,8 @@ import simpleGit from 'simple-git';
 
 vi.mock('../src/claude.js', () => ({
   runPrompt: vi.fn(),
+  ERROR_TYPE: { RATE_LIMIT: 'rate_limit', UNKNOWN: 'unknown' },
+  sleep: vi.fn(() => Promise.resolve()),
 }));
 
 import { createLoggerMock } from './helpers/mocks.js';

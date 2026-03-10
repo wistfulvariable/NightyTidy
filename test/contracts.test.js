@@ -247,6 +247,8 @@ describe('contract: executor.js — never throws, returns result object', () => 
       runPrompt: vi.fn().mockResolvedValue({
         success: false, output: '', error: 'fail', exitCode: 1, attempts: 4,
       }),
+      ERROR_TYPE: { RATE_LIMIT: 'rate_limit', UNKNOWN: 'unknown' },
+      sleep: vi.fn(() => Promise.resolve()),
     }));
 
     vi.doMock('../src/git.js', () => ({
@@ -679,6 +681,8 @@ describe('contract: executor.js — callbacks are optional and receive correct a
       runPrompt: vi.fn().mockResolvedValue({
         success: true, output: 'ok', error: null, exitCode: 0, attempts: 1,
       }),
+      ERROR_TYPE: { RATE_LIMIT: 'rate_limit', UNKNOWN: 'unknown' },
+      sleep: vi.fn(() => Promise.resolve()),
     }));
 
     vi.doMock('../src/git.js', () => ({
@@ -902,6 +906,8 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
 
     vi.doMock('../src/claude.js', () => ({
       runPrompt: vi.fn(),
+      ERROR_TYPE: { RATE_LIMIT: 'rate_limit', UNKNOWN: 'unknown' },
+      sleep: vi.fn(() => Promise.resolve()),
     }));
 
     vi.doMock('../src/executor.js', () => ({

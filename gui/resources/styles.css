@@ -666,6 +666,45 @@ body {
   justify-content: flex-end;
 }
 
+/* ── Pause / Rate Limit ── */
+.subtitle-paused { color: var(--yellow); }
+
+.modal-pause { text-align: center; max-width: 460px; }
+.modal-pause .pause-icon { font-size: 3rem; margin-bottom: 12px; }
+.modal-pause p { margin: 8px 0; }
+.modal-pause .pause-step { color: var(--text); font-weight: 500; }
+.modal-pause .pause-source { font-size: 0.82rem; }
+.modal-pause .pause-hint { font-size: 0.8rem; margin-top: 16px; }
+.modal-pause .modal-actions { justify-content: center; margin-top: 20px; }
+
+.countdown-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 20px 0;
+  padding: 16px;
+  background: var(--surface);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+.countdown-label { color: var(--text-dim); font-size: 0.9rem; }
+.countdown-value {
+  font-size: 1.8rem;
+  font-weight: 600;
+  color: var(--yellow);
+  font-variant-numeric: tabular-nums;
+}
+
+.step-item.step-paused {
+  border-left: 3px solid var(--yellow);
+  animation: pulse-yellow 2s ease-in-out infinite;
+}
+@keyframes pulse-yellow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

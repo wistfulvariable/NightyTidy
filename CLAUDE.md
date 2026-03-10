@@ -63,8 +63,8 @@ test/
   logger.test.js           # 10 tests — real file I/O, level filtering, stderr fallback
   checks.test.js           # 4 tests — mock subprocess, mock git
   checks-extended.test.js  # 23 tests — auth paths, disk space characterization, branch warnings, empty repo, dirty working tree
-  claude.test.js           # 38 tests — fake child process, fake timers, abort signal, Windows shell mode, stream-json NDJSON parsing
-  executor.test.js         # 22 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection
+  claude.test.js           # 62 tests — fake child process, fake timers, abort signal, Windows shell mode, stream-json NDJSON parsing, classifyError, rate-limit retry skip, stderr capture
+  executor.test.js         # 32 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection, rate-limit pause/resume
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 7 tests — getGitInstance, getHeadHash, tag/branch collision
   notifications.test.js    # 2 tests — mock node-notifier
@@ -78,9 +78,9 @@ test/
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
-  orchestrator.test.js     # 36 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough
+  orchestrator.test.js     # 40 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation
   contracts.test.js        # 38 tests — module API contract verification against CLAUDE.md
-  gui-logic.test.js        # 112 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, formatTime, detectGitError, detectStaleState, preprocessClaudeOutput, etc.)
+  gui-logic.test.js        # 133 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, formatTime, detectGitError, detectStaleState, detectRateLimit, formatCountdown, preprocessClaudeOutput, etc.)
   gui-server.test.js       # 44 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, log-error, log-path, security headers, traversal
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks
@@ -117,9 +117,9 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 |------|---------------|-------------|
 | `bin/nightytidy.js` | Entry point — calls `run()` | cli |
 | `src/cli.js` | Commander + Inquirer + full lifecycle | all modules |
-| `src/executor.js` | Core step loop + single-step execution, prompt integrity check, fast-completion detection | crypto, claude, git, notifications, prompts |
+| `src/executor.js` | Core step loop + single-step execution, prompt integrity check, fast-completion detection, rate-limit pause/resume with exponential backoff | crypto, claude, git, notifications, prompts |
 | `src/orchestrator.js` | Claude Code orchestrator mode (JSON API for step-by-step runs) + dashboard | logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone |
-| `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue) | logger, env |
+| `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue, error classification via `classifyError`/`ERROR_TYPE`, exported `sleep`) | logger, env |
 | `src/git.js` | Git operations via simple-git | logger |
 | `src/checks.js` | Pre-run validation (8 checks) | logger, env |
 | `src/env.js` | Shared environment helpers (cleanEnv with allowlist filtering) | logger |
@@ -136,8 +136,8 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/sync.js` | Google Doc prompt sync — fetches published doc, parses HTML, updates prompt files + manifest + STEPS_HASH | crypto, logger |
 | `src/prompts/loader.js` | Loads 33 prompts + special prompts (doc-update, changelog, consolidation) from markdown files via manifest.json | fs (data loader) |
 | `gui/server.js` | Desktop GUI backend — HTTP server + native folder dialog + Chrome launcher + session logging | node:http, node:fs, node:child_process |
-| `gui/resources/logic.js` | GUI pure logic — command building, JSON parsing, formatting | none (browser + Node.js dual) |
-| `gui/resources/app.js` | GUI state machine — screen transitions, process spawning, progress polling | logic.js, marked, server.js (via fetch) |
+| `gui/resources/logic.js` | GUI pure logic — command building, JSON parsing, formatting, rate-limit detection | none (browser + Node.js dual) |
+| `gui/resources/app.js` | GUI state machine — screen transitions, process spawning, progress polling, rate-limit pause/resume overlay | logic.js, marked, server.js (via fetch) |
 
 ## Build & Run Commands
 
@@ -261,8 +261,8 @@ NightyTidy creates these files/artifacts in the project it runs against:
 |--------|----------|
 | `checks.js` | **Throws** with user-friendly messages → caught by cli.js |
 | `lock.js` | **Async, throws** with user-friendly messages → awaited + caught by cli.js. Prompts for override in TTY when lock appears active. |
-| `claude.js` | **Never throws** → returns `{ success, output, error, exitCode, duration, attempts, cost }` |
-| `executor.js` | **Never throws** → failed steps recorded, run continues |
+| `claude.js` | **Never throws** → returns `{ success, output, error, exitCode, duration, attempts, cost, errorType, retryAfterMs }`. `errorType` is `'rate_limit'` or `'unknown'`. Rate-limit errors skip retries. |
+| `executor.js` | **Never throws** → failed steps recorded. Rate-limit failures trigger pause/auto-resume (exponential backoff with API probes). |
 | `git.js` `mergeRunBranch` | **Never throws** → returns `{ success: false, conflict: true }` on conflict |
 | `notifications.js` | **Swallows all errors** silently (try/catch in `notify()`) |
 | `dashboard.js` | **Swallows all errors** silently — dashboard failure must not crash a run |
@@ -309,9 +309,10 @@ bin/nightytidy.js
 3. **Step selection**: `--all` runs everything; `--steps 1,5,12` picks by number; non-TTY requires `--all` or `--steps` (exits with error otherwise); interactive checkbox otherwise
 4. **Git setup**: Save branch → safety tag → run branch
 5. **Execution**: Run each step (improvement + doc update in same session via `--continue`), with fallback commits
-6. **Abort handling**: SIGINT generates partial report; second SIGINT force-exits
-7. **Reporting**: Changelog → action plan (NIGHTYTIDY-ACTIONS.md) → NIGHTYTIDY-REPORT.md → commit → merge back to original branch
-8. **Notifications**: Desktop notifications at start, on step failure, and on completion
+6. **Rate-limit handling**: If a step hits a rate limit, the run pauses with exponential backoff (2min → 2hr cap). API is probed periodically; on success the failed step is retried. SIGINT during pause stops the run and gets partial results. GUI mode shows a pause overlay with countdown, "Resume Now", and "Finish with Partial Results" buttons.
+7. **Abort handling**: SIGINT generates partial report; second SIGINT force-exits
+8. **Reporting**: Changelog → action plan (NIGHTYTIDY-ACTIONS.md) → NIGHTYTIDY-REPORT.md → commit → merge back to original branch
+9. **Notifications**: Desktop notifications at start, on step failure, and on completion
 
 ### Orchestrator Mode (Claude Code)
 

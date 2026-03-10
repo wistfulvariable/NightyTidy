@@ -101,6 +101,28 @@ function buildStepCallbacks(spinner, selected, dashState) {
       startNextSpinner(idx, total);
       updateStepDash(idx, 'failed');
     },
+    onRateLimitPause: (retryAfterMs) => {
+      if (spinner.isSpinning) spinner.stop();
+      const waitStr = retryAfterMs
+        ? formatDuration(retryAfterMs)
+        : 'unknown (using exponential backoff)';
+      console.log(chalk.yellow(
+        `\n\u26a0  Rate limit reached \u2014 pausing run.\n` +
+        `   Estimated wait: ${waitStr}\n` +
+        `   Press Ctrl+C to stop and get partial results.\n`
+      ));
+      if (dashState) {
+        dashState.status = 'paused';
+        updateDashboard(dashState);
+      }
+    },
+    onRateLimitResume: () => {
+      console.log(chalk.green('\n\u2713 Rate limit cleared \u2014 resuming run.\n'));
+      if (dashState) {
+        dashState.status = 'running';
+        updateDashboard(dashState);
+      }
+    },
   };
 }
 

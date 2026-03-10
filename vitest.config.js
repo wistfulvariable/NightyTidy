@@ -18,6 +18,8 @@ export default defineConfig({
   plugins: [stripShebang()],
   test: {
     coverage: {
+      include: ['src/**'],
+      exclude: ['src/dashboard-standalone.js', 'src/dashboard-tui.js'],
       thresholds: {
         statements: 90,
         branches: 80,

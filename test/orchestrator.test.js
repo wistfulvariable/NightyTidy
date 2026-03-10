@@ -44,6 +44,8 @@ vi.mock('../src/git.js', () => ({
 
 vi.mock('../src/claude.js', () => ({
   runPrompt: vi.fn(),
+  ERROR_TYPE: { RATE_LIMIT: 'rate_limit', UNKNOWN: 'unknown' },
+  sleep: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('../src/executor.js', () => ({
@@ -668,5 +670,99 @@ describe('dashboard integration', () => {
     expect(finalProgress.status).toBe('completed');
 
     process.kill.mockRestore();
+  });
+});
+
+// ── Rate-limit propagation in runStep ────────────────────────────
+
+describe('runStep rate-limit propagation', () => {
+  const validState = {
+    version: 1,
+    originalBranch: 'main',
+    runBranch: 'nightytidy/run-2026-03-06-1430',
+    tagName: 'nightytidy-before-2026-03-06-1430',
+    selectedSteps: [1, 2],
+    completedSteps: [],
+    failedSteps: [],
+    startTime: Date.now(),
+    timeout: null,
+  };
+
+  beforeEach(() => {
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify(validState));
+  });
+
+  it('includes errorType and retryAfterMs in response when step is rate-limited', async () => {
+    executeSingleStep.mockResolvedValue({
+      step: { number: 1, name: 'Documentation' },
+      status: 'failed',
+      output: '',
+      duration: 5000,
+      attempts: 1,
+      error: 'Rate limit exceeded',
+      errorType: 'rate_limit',
+      retryAfterMs: 120000,
+    });
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('failed');
+    expect(result.errorType).toBe('rate_limit');
+    expect(result.retryAfterMs).toBe(120000);
+  });
+
+  it('includes null errorType for non-rate-limit failures', async () => {
+    executeSingleStep.mockResolvedValue({
+      step: { number: 1, name: 'Documentation' },
+      status: 'failed',
+      output: '',
+      duration: 30000,
+      attempts: 4,
+      error: 'Claude timed out',
+    });
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.success).toBe(true);
+    expect(result.errorType).toBeNull();
+    expect(result.retryAfterMs).toBeNull();
+  });
+
+  it('stores errorType in state file for rate-limited steps', async () => {
+    executeSingleStep.mockResolvedValue({
+      step: { number: 1, name: 'Documentation' },
+      status: 'failed',
+      output: '',
+      duration: 5000,
+      attempts: 1,
+      error: 'Rate limit exceeded',
+      errorType: 'rate_limit',
+      retryAfterMs: 60000,
+    });
+
+    await runStep('/fake/project', 1);
+
+    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
+    const updatedState = JSON.parse(stateCall[1]);
+    expect(updatedState.failedSteps[0].errorType).toBe('rate_limit');
+    expect(updatedState.failedSteps[0].retryAfterMs).toBe(60000);
+  });
+
+  it('includes errorType in completed step entries (null for success)', async () => {
+    executeSingleStep.mockResolvedValue({
+      step: { number: 1, name: 'Documentation' },
+      status: 'completed',
+      output: 'done',
+      duration: 120000,
+      attempts: 1,
+      error: null,
+    });
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.errorType).toBeNull();
+    expect(result.retryAfterMs).toBeNull();
   });
 });

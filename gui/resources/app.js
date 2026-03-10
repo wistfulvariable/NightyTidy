@@ -96,6 +96,13 @@ const state = {
   initMsgTimer: null,      // setInterval ID for init overlay rotating messages
   currentStepNum: null,    // step number currently running (for live elapsed timer)
   stepStartTime: null,     // timestamp ms when current step started
+  paused: false,           // run is paused due to rate limit
+  pausedStepNum: null,     // step number that triggered the pause
+  resumeCountdown: null,   // target timestamp for auto-resume
+  countdownTimer: null,    // setInterval ID for countdown display
+  backoffAttempt: 0,       // exponential backoff tier index
+  manualResumeResolve: null, // resolve function for manual resume promise
+  _pauseTimer: null,       // setTimeout ID for auto-resume (clearable on manual resume)
 };
 
 // ── Init Overlay (shown during --init-run) ────────────────────────
@@ -575,6 +582,7 @@ function hideCurrentStep() {
 
 async function runNextStep() {
   if (state.stopping) return;
+  if (state.paused) return;
 
   const next = NtLogic.getNextStep(state.selectedSteps, state.completedSteps, state.failedSteps);
   if (next === null) {
@@ -598,6 +606,16 @@ async function runNextStep() {
   const liveSnapshot = lastRenderedOutput || '';
 
   if (!result.ok) {
+    // Check for rate-limit before recording as failed
+    const rl = NtLogic.detectRateLimit({ error: result.error });
+    if (rl.detected) {
+      logToServer('warn', `Rate limit detected on step ${next}`);
+      updateStepItemStatus(next, 'pending');
+      await enterPauseMode(next, rl.retryAfterMs);
+      if (!state.stopping) runNextStep();
+      return;
+    }
+
     logToServer('warn', `Step ${next} failed: ${result.error}`);
     state.failedSteps.push(next);
     state.stepResults.push({ step: next, status: 'failed', error: result.error, output: liveSnapshot, costUSD: null, inputTokens: null, outputTokens: null });
@@ -606,6 +624,18 @@ async function runNextStep() {
     const data = result.data;
     const status = data.status || (data.success ? 'completed' : 'failed');
     const duration = data.duration || null;
+
+    // Check for rate-limit on orchestrator-detected failures
+    if (status === 'failed') {
+      const rl = NtLogic.detectRateLimit(data);
+      if (rl.detected) {
+        logToServer('warn', `Rate limit detected on step ${next}`);
+        updateStepItemStatus(next, 'pending');
+        await enterPauseMode(next, rl.retryAfterMs);
+        if (!state.stopping) runNextStep();
+        return;
+      }
+    }
 
     if (status === 'completed') {
       state.completedSteps.push(next);
@@ -827,6 +857,118 @@ function closeSummaryOutput() {
   state.viewingStepOutput = null;
   document.getElementById('summary-output-panel').style.display = 'none';
   document.querySelectorAll('#summary-step-list .step-item').forEach(el => el.classList.remove('step-active'));
+}
+
+// ── Rate Limit Pause / Resume ──────────────────────────────────────
+
+const BACKOFF_SCHEDULE_MS = [
+  2 * 60_000,     // 2 min
+  5 * 60_000,     // 5 min
+  15 * 60_000,    // 15 min
+  30 * 60_000,    // 30 min
+  60 * 60_000,    // 1 hr
+  120 * 60_000,   // 2 hr (cap)
+];
+
+function enterPauseMode(stepNum, retryAfterMs) {
+  state.paused = true;
+  state.pausedStepNum = stepNum;
+
+  const waitMs = retryAfterMs || BACKOFF_SCHEDULE_MS[Math.min(state.backoffAttempt, BACKOFF_SCHEDULE_MS.length - 1)];
+  state.resumeCountdown = Date.now() + waitMs;
+  state.backoffAttempt++;
+
+  showPauseOverlay(stepNum, waitMs, retryAfterMs != null);
+  startCountdownTimer();
+
+  // Add paused visual to the step item
+  const stepItem = document.querySelector(`.step-item[data-step="${stepNum}"]`);
+  if (stepItem) stepItem.classList.add('step-paused');
+
+  return new Promise(resolve => {
+    state.manualResumeResolve = resolve;
+    state._pauseTimer = setTimeout(() => {
+      if (state.paused) resolve();
+    }, waitMs);
+  }).then(() => {
+    hidePauseOverlay();
+    stopCountdownTimer();
+    state.paused = false;
+    state.pausedStepNum = null;
+    state.resumeCountdown = null;
+    state.manualResumeResolve = null;
+    state._pauseTimer = null;
+
+    // Remove paused visual
+    const el = document.querySelector(`.step-item[data-step="${stepNum}"]`);
+    if (el) el.classList.remove('step-paused');
+  });
+}
+
+function manualResume() {
+  if (!state.paused) return;
+  if (state._pauseTimer) clearTimeout(state._pauseTimer);
+  state.backoffAttempt = 0; // Reset backoff on manual resume
+  if (state.manualResumeResolve) state.manualResumeResolve();
+}
+
+function finishNow() {
+  if (!state.paused) return;
+  if (state._pauseTimer) clearTimeout(state._pauseTimer);
+  state.stopping = true;
+  if (state.manualResumeResolve) state.manualResumeResolve();
+  // After promise resolves, runNextStep sees state.stopping and bails
+  // Then we explicitly call finishRun
+  hidePauseOverlay();
+  stopCountdownTimer();
+  state.paused = false;
+  finishRun();
+}
+
+function showPauseOverlay(stepNum, waitMs, hasRetryAfter) {
+  const step = state.steps.find(s => s.number === stepNum);
+  const name = step ? step.name : `Step ${stepNum}`;
+
+  document.getElementById('pause-step-name').textContent = `Step ${stepNum}: ${name}`;
+  document.getElementById('pause-countdown').textContent = NtLogic.formatCountdown(waitMs);
+
+  const sourceText = hasRetryAfter
+    ? 'API indicated a retry window.'
+    : `Auto-retry in ${NtLogic.formatMs(waitMs)} (attempt ${state.backoffAttempt}).`;
+  document.getElementById('pause-source').textContent = sourceText;
+
+  document.getElementById('pause-overlay').classList.remove('hidden');
+
+  const subtitle = document.getElementById('running-subtitle');
+  subtitle.textContent = 'Paused \u2014 Rate Limit';
+  subtitle.className = 'subtitle subtitle-paused';
+  document.title = 'Paused \u2014 NightyTidy';
+}
+
+function hidePauseOverlay() {
+  document.getElementById('pause-overlay').classList.add('hidden');
+
+  const subtitle = document.getElementById('running-subtitle');
+  subtitle.textContent = '';
+  subtitle.className = 'subtitle';
+  document.title = 'NightyTidy';
+}
+
+function startCountdownTimer() {
+  stopCountdownTimer();
+  state.countdownTimer = setInterval(() => {
+    if (!state.resumeCountdown) return;
+    const remaining = Math.max(0, state.resumeCountdown - Date.now());
+    document.getElementById('pause-countdown').textContent = NtLogic.formatCountdown(remaining);
+    if (remaining <= 0) stopCountdownTimer();
+  }, 1000);
+}
+
+function stopCountdownTimer() {
+  if (state.countdownTimer) {
+    clearInterval(state.countdownTimer);
+    state.countdownTimer = null;
+  }
 }
 
 // ── Stop Run ───────────────────────────────────────────────────────
@@ -1059,6 +1201,14 @@ function resetApp() {
   state.viewingStepOutput = null;
   state.currentStepNum = null;
   state.stepStartTime = null;
+  state.paused = false;
+  state.pausedStepNum = null;
+  state.resumeCountdown = null;
+  stopCountdownTimer();
+  state.backoffAttempt = 0;
+  state.manualResumeResolve = null;
+  if (state._pauseTimer) clearTimeout(state._pauseTimer);
+  state._pauseTimer = null;
 
   clearError('setup');
   clearError('steps');
@@ -1080,7 +1230,7 @@ function resetApp() {
 // ── Window Close Protection ────────────────────────────────────────
 
 function isRunInProgress() {
-  return state.screen === SCREENS.RUNNING || state.screen === SCREENS.FINISHING;
+  return state.screen === SCREENS.RUNNING || state.screen === SCREENS.FINISHING || state.paused;
 }
 
 // Native browser dialog when user tries to close window during a run
@@ -1110,6 +1260,8 @@ function bindEvents() {
   document.getElementById('btn-stop-run').addEventListener('click', confirmStopRun);
   document.getElementById('btn-confirm-stop-yes').addEventListener('click', stopRun);
   document.getElementById('btn-confirm-stop-cancel').addEventListener('click', cancelStopRun);
+  document.getElementById('btn-resume-now').addEventListener('click', manualResume);
+  document.getElementById('btn-finish-now').addEventListener('click', finishNow);
   document.getElementById('btn-back-to-live').addEventListener('click', backToLive);
   document.getElementById('btn-close-output').addEventListener('click', closeSummaryOutput);
   document.getElementById('btn-new-run').addEventListener('click', resetApp);

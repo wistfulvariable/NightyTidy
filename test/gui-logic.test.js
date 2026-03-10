@@ -441,3 +441,42 @@ describe('preprocessClaudeOutput', () => {
     expect(NtLogic.preprocessClaudeOutput(true)).toBe('');
   });
 });
+
+// ── detectRateLimit ──────────────────────────────────────────────────
+
+describe('detectRateLimit', () => {
+  it.each([
+    [{ errorType: 'rate_limit', retryAfterMs: 60000 }, { detected: true, retryAfterMs: 60000 }, 'errorType with retryAfterMs'],
+    [{ errorType: 'rate_limit' }, { detected: true, retryAfterMs: null }, 'errorType without retryAfterMs'],
+    [{ error: 'rate limit exceeded' }, { detected: true, retryAfterMs: null }, 'error string: rate limit'],
+    [{ error: '429 Too Many Requests' }, { detected: true, retryAfterMs: null }, 'error string: 429'],
+    [{ error: 'quota exceeded for model' }, { detected: true, retryAfterMs: null }, 'error string: quota exceeded'],
+    [{ error: 'API overloaded' }, { detected: true, retryAfterMs: null }, 'error string: overloaded'],
+    [{ error: 'too many requests' }, { detected: true, retryAfterMs: null }, 'error string: too many requests'],
+    [{ error: 'usage limit reached' }, { detected: true, retryAfterMs: null }, 'error string: usage limit'],
+    [{ error: 'throttled by API' }, { detected: true, retryAfterMs: null }, 'error string: throttled'],
+    [{ error: 'timeout after 45 minutes' }, { detected: false, retryAfterMs: null }, 'unrelated error: timeout'],
+    [{ error: 'ENOENT' }, { detected: false, retryAfterMs: null }, 'unrelated error: ENOENT'],
+    [{}, { detected: false, retryAfterMs: null }, 'empty object'],
+    [null, { detected: false, retryAfterMs: null }, 'null'],
+    [undefined, { detected: false, retryAfterMs: null }, 'undefined'],
+  ])('returns %j for %j (%s)', (input, expected, _desc) => {
+    expect(NtLogic.detectRateLimit(input)).toEqual(expected);
+  });
+});
+
+// ── formatCountdown ──────────────────────────────────────────────────
+
+describe('formatCountdown', () => {
+  it.each([
+    [0, '0s', 'zero'],
+    [-1000, '0s', 'negative'],
+    [null, '0s', 'null'],
+    [undefined, '0s', 'undefined'],
+    [45000, '45s', 'seconds only'],
+    [135000, '2m 15s', 'minutes and seconds'],
+    [3723000, '1h 2m 3s', 'hours, minutes, seconds'],
+  ])('formats %s ms as "%s" (%s)', (ms, expected, _desc) => {
+    expect(NtLogic.formatCountdown(ms)).toBe(expected);
+  });
+});

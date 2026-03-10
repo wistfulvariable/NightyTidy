@@ -23,7 +23,8 @@ vi.mock('../src/logger.js', () => createLoggerMock());
 
 import { spawn } from 'child_process';
 import { platform } from 'os';
-import { runPrompt } from '../src/claude.js';
+import { runPrompt, classifyError, ERROR_TYPE } from '../src/claude.js';
+import { warn } from '../src/logger.js';
 
 // ---------------------------------------------------------------------------
 // Helper: fake ChildProcess factory
@@ -987,6 +988,292 @@ describe('runPrompt', () => {
       });
 
       expect(chunks).toEqual(['Some plain text output\n']);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // classifyError — pure function tests
+  // -----------------------------------------------------------------------
+  describe('classifyError', () => {
+    // ── Rate-limit patterns (each individually) ──────────────────────
+    it('detects "429 Too Many Requests" as rate_limit', () => {
+      const result = classifyError('HTTP 429 Too Many Requests', 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+    });
+
+    it('detects "rate limit exceeded" as rate_limit', () => {
+      const result = classifyError('Error: rate limit exceeded for this API key', 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+    });
+
+    it('detects "Usage quota exceeded" as rate_limit', () => {
+      const result = classifyError('Usage quota exceeded, please upgrade your plan', 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+    });
+
+    it('detects "API overloaded" as rate_limit', () => {
+      const result = classifyError('The API is currently overloaded, try again later', 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+    });
+
+    it('detects "Capacity limit reached" as rate_limit', () => {
+      const result = classifyError('Capacity limit reached for your organization', 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+    });
+
+    it('detects "Too many requests" as rate_limit', () => {
+      const result = classifyError('Too many requests in the last minute', 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+    });
+
+    it('detects "Plan usage limit reached" as rate_limit', () => {
+      const result = classifyError('Plan usage limit reached for this billing cycle', 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+    });
+
+    it('detects "throttled by API" as rate_limit', () => {
+      const result = classifyError('Request was throttled by the API gateway', 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+    });
+
+    it('detects "billing limit reached" as rate_limit', () => {
+      const result = classifyError('Your billing limit has been reached', 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+    });
+
+    // ── Non-rate-limit errors ────────────────────────────────────────
+    it('classifies "Connection refused" as unknown', () => {
+      const result = classifyError('Error: Connection refused', 1);
+      expect(result.type).toBe(ERROR_TYPE.UNKNOWN);
+      expect(result.retryAfterMs).toBeNull();
+    });
+
+    it('classifies "ENOENT" as unknown', () => {
+      const result = classifyError('spawn claude ENOENT', 1);
+      expect(result.type).toBe(ERROR_TYPE.UNKNOWN);
+      expect(result.retryAfterMs).toBeNull();
+    });
+
+    it('classifies empty string as unknown', () => {
+      const result = classifyError('', 1);
+      expect(result.type).toBe(ERROR_TYPE.UNKNOWN);
+      expect(result.retryAfterMs).toBeNull();
+    });
+
+    it('classifies null as unknown', () => {
+      const result = classifyError(null, 1);
+      expect(result.type).toBe(ERROR_TYPE.UNKNOWN);
+      expect(result.retryAfterMs).toBeNull();
+    });
+
+    it('classifies undefined as unknown', () => {
+      const result = classifyError(undefined, 1);
+      expect(result.type).toBe(ERROR_TYPE.UNKNOWN);
+      expect(result.retryAfterMs).toBeNull();
+    });
+
+    // ── Retry-after extraction ───────────────────────────────────────
+    it('extracts retry-after seconds from "Retry-After: 120"', () => {
+      const result = classifyError('Rate limit exceeded. Retry-After: 120', 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+      expect(result.retryAfterMs).toBe(120000);
+    });
+
+    it('extracts retry-after seconds from "retry after 60"', () => {
+      const result = classifyError('Too many requests, retry after 60 seconds', 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+      expect(result.retryAfterMs).toBe(60000);
+    });
+
+    it('returns retryAfterMs null when rate-limited but no retry-after header', () => {
+      const result = classifyError('429 Too Many Requests', 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+      expect(result.retryAfterMs).toBeNull();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // runPrompt rate-limit handling — short-circuits retries
+  // -----------------------------------------------------------------------
+  describe('runPrompt rate-limit handling', () => {
+    it('returns immediately without retrying on rate-limit error', async () => {
+      setupSpawnSequence(
+        // Attempt 1: rate-limited stderr, exit 1
+        (child) => {
+          child.emitStderr('Error: 429 Too Many Requests');
+          child.emitClose(1);
+        },
+        // Attempt 2: should never be reached
+        (child) => {
+          child.emitStdout('ok');
+          child.emitClose(0);
+        },
+      );
+
+      const result = await runPrompt('do something', '/tmp', {
+        timeout: 500,
+        retries: 3,
+        label: 'rate-limit-test',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.errorType).toBe(ERROR_TYPE.RATE_LIMIT);
+      expect(result.attempts).toBe(1);
+      // Only one spawn call — no retries attempted
+      expect(spawn).toHaveBeenCalledTimes(1);
+    });
+
+    it('includes retryAfterMs in result when rate-limited with retry-after', async () => {
+      setupSpawnSequence(
+        (child) => {
+          child.emitStderr('Rate limit exceeded. Retry-After: 30');
+          child.emitClose(1);
+        },
+      );
+
+      const result = await runPrompt('do something', '/tmp', {
+        timeout: 500,
+        retries: 3,
+        label: 'rate-limit-retry-after-test',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.errorType).toBe(ERROR_TYPE.RATE_LIMIT);
+      expect(result.retryAfterMs).toBe(30000);
+      expect(result.attempts).toBe(1);
+    });
+
+    it('still retries normally for non-rate-limit errors', async () => {
+      setupSpawnSequence(
+        // Attempt 1: non-rate-limit failure
+        (child) => {
+          child.emitStderr('Some internal error occurred');
+          child.emitClose(1);
+        },
+        // Attempt 2: succeeds
+        (child) => {
+          child.emitStdout('Success output');
+          child.emitClose(0);
+        },
+      );
+
+      const promise = runPrompt('do something', '/tmp', {
+        timeout: 500,
+        retries: 3,
+        label: 'non-rate-limit-test',
+      });
+
+      // Advance past the 10-second retry delay
+      await vi.advanceTimersByTimeAsync(15_000);
+
+      const result = await promise;
+
+      expect(result.success).toBe(true);
+      expect(result.output).toBe('Success output');
+      expect(result.attempts).toBe(2);
+      // Two spawn calls — retry was attempted
+      expect(spawn).toHaveBeenCalledTimes(2);
+    });
+
+    it('preserves cost data when rate-limited', async () => {
+      const resultLine = JSON.stringify({
+        type: 'result',
+        result: '',
+        total_cost_usd: 0.003,
+        num_turns: 1,
+        duration_api_ms: 200,
+        session_id: 'sess-rl',
+        usage: { input_tokens: 10, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0 },
+      });
+
+      setupSpawnSequence(
+        (child) => {
+          child.emitStdout(resultLine + '\n');
+          child.emitStderr('429 Too Many Requests');
+          child.emitClose(1);
+        },
+      );
+
+      const result = await runPrompt('do something', '/tmp', {
+        timeout: 500,
+        retries: 3,
+        label: 'rate-limit-cost-test',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.errorType).toBe(ERROR_TYPE.RATE_LIMIT);
+      expect(result.cost).toBeDefined();
+      expect(result.attempts).toBe(1);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // stderr capture — verifies stderr is logged via warn()
+  // -----------------------------------------------------------------------
+  describe('stderr capture', () => {
+    it('logs stderr content via warn() when process fails', async () => {
+      setupSpawnSequence(
+        (child) => {
+          child.emitStderr('Error: something went wrong in subprocess');
+          child.emitClose(1);
+        },
+      );
+
+      await runPrompt('do something', '/tmp', {
+        timeout: 500,
+        retries: 0,
+        label: 'stderr-test',
+      });
+
+      // warn() should have been called with the stderr content
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('something went wrong in subprocess'),
+      );
+    });
+
+    it('accumulates stderr from multiple chunks', async () => {
+      setupSpawnSequence(
+        (child) => {
+          child.emitStderr('Error part 1');
+          child.emitStderr(' and part 2');
+          child.emitClose(1);
+        },
+      );
+
+      await runPrompt('test', '/tmp', {
+        timeout: 500,
+        retries: 0,
+        label: 'stderr-multi-chunk-test',
+      });
+
+      // warn() is called per-chunk as data arrives — verify both parts were logged
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('Error part 1'),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('and part 2'),
+      );
+    });
+
+    it('classifies accumulated stderr for error type even on success exit code', async () => {
+      setupSpawnSequence(
+        (child) => {
+          child.emitStdout('Some output');
+          child.emitStderr('429 rate limit warning');
+          child.emitClose(0);
+        },
+      );
+
+      const result = await runPrompt('test', '/tmp', {
+        timeout: 500,
+        retries: 0,
+        label: 'stderr-success-test',
+      });
+
+      // Successful because exit code 0 + non-empty stdout
+      expect(result.success).toBe(true);
+      // But errorType still reflects the stderr classification
+      expect(result.errorType).toBe(ERROR_TYPE.RATE_LIMIT);
     });
   });
 });

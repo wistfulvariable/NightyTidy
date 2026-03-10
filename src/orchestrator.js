@@ -337,7 +337,7 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
     // Update state
     const output = (result.output || '').slice(0, 6000);
     const stepError = result.status === 'failed' ? (result.error || 'Step failed during orchestrated run') : null;
-    const entry = { number: step.number, name: step.name, status: result.status, duration: result.duration, attempts: result.attempts, output, error: stepError, cost: result.cost || null, suspiciousFast: result.suspiciousFast || false };
+    const entry = { number: step.number, name: step.name, status: result.status, duration: result.duration, attempts: result.attempts, output, error: stepError, cost: result.cost || null, suspiciousFast: result.suspiciousFast || false, errorType: result.errorType || null, retryAfterMs: result.retryAfterMs || null };
     if (result.status === 'completed') {
       state.completedSteps.push(entry);
     } else {
@@ -367,6 +367,8 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
       inputTokens: result.cost?.inputTokens ?? null,
       outputTokens: result.cost?.outputTokens ?? null,
       suspiciousFast: result.suspiciousFast || false,
+      errorType: result.errorType || null,
+      retryAfterMs: result.retryAfterMs || null,
       remainingSteps: remaining,
     });
   } catch (err) {

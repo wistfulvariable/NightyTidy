@@ -225,6 +225,39 @@ function formatTime(timestamp) {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
 }
 
+/**
+ * Detect a rate-limit error from CLI response data.
+ * @param {object} data - Parsed CLI JSON response (from --run-step)
+ * @returns {{ detected: boolean, retryAfterMs: number|null }}
+ */
+function detectRateLimit(data) {
+  if (!data) return { detected: false, retryAfterMs: null };
+
+  // Explicit errorType from orchestrator (preferred path)
+  if (data.errorType === 'rate_limit') {
+    return { detected: true, retryAfterMs: data.retryAfterMs ?? null };
+  }
+
+  // Fallback: pattern-match the error string
+  const error = data.error || '';
+  if (/rate.?limit|429|quota|exceeded|overloaded|too many requests|usage.?limit|throttl/i.test(error)) {
+    return { detected: true, retryAfterMs: null };
+  }
+
+  return { detected: false, retryAfterMs: null };
+}
+
+/**
+ * Format a countdown duration for display.
+ * Delegates to formatMs, clamping negative values to '0s'.
+ * @param {number} ms - Remaining milliseconds
+ * @returns {string} e.g. '2m 15s', '45s', '1h 30m 0s'
+ */
+function formatCountdown(ms) {
+  if (ms === null || ms === undefined || !Number.isFinite(ms) || ms <= 0) return '0s';
+  return formatMs(ms);
+}
+
 // Export for browser (app.js) and for Node.js tests
 const NtLogic = {
   buildCommand,
@@ -238,6 +271,8 @@ const NtLogic = {
   buildStepArgs,
   detectGitError,
   detectStaleState,
+  detectRateLimit,
+  formatCountdown,
   preprocessClaudeOutput,
 };
 

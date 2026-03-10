@@ -17,6 +17,8 @@ import simpleGit from 'simple-git';
 // Mock only claude.js (subprocess) and logger.js (to avoid log file noise)
 vi.mock('../src/claude.js', () => ({
   runPrompt: vi.fn(),
+  ERROR_TYPE: { RATE_LIMIT: 'rate_limit', UNKNOWN: 'unknown' },
+  sleep: vi.fn(() => Promise.resolve()),
 }));
 
 import { createLoggerMock } from './helpers/mocks.js';
