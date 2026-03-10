@@ -17,8 +17,9 @@ import { initLogger, info, warn, error as logError } from './logger.js';
 import { runPreChecks } from './checks.js';
 import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from './git.js';
 import { runPrompt, ERROR_TYPE } from './claude.js';
-import { STEPS, reloadSteps } from './prompts/loader.js';
+import { STEPS, CHANGELOG_PROMPT, reloadSteps } from './prompts/loader.js';
 import { executeSingleStep, sumCosts, SAFETY_PREAMBLE, PROD_PREAMBLE } from './executor.js';
+import { generateActionPlan } from './consolidation.js';
 import { notify } from './notifications.js';
 import { generateReport, formatDuration, getVersion } from './report.js';
 import { acquireLock, releaseLock } from './lock.js';
@@ -729,8 +730,23 @@ export async function finishRun(projectDir) {
     const totalInputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.inputTokens || 0), 0) || null;
     const totalOutputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.outputTokens || 0), 0) || null;
 
-    // Generate report (no narration — report uses fallback text)
-    generateReport(executionResults, null, {
+    // Narrated changelog
+    info('Generating narrated changelog...');
+    const changelogResult = await runPrompt(SAFETY_PREAMBLE + CHANGELOG_PROMPT, projectDir, {
+      label: 'Narrated changelog',
+      timeout: state.timeout || undefined,
+    });
+    const narration = changelogResult.success ? changelogResult.output : null;
+    if (!narration) warn('Narrated changelog generation failed — using fallback text');
+
+    // Consolidated action plan
+    info('Generating consolidated action plan...');
+    const actionPlan = await generateActionPlan(executionResults, projectDir, {
+      timeout: state.timeout || undefined,
+    });
+
+    // Generate report
+    generateReport(executionResults, narration, {
       projectDir,
       branchName: state.runBranch,
       tagName: state.tagName,
@@ -738,12 +754,13 @@ export async function finishRun(projectDir) {
       startTime: state.startTime,
       endTime: Date.now(),
       totalCostUSD: totalCostUSD || null,
-    });
+    }, { actionPlan: !!actionPlan });
 
-    // Commit report
+    // Commit report + action plan
     const gitInstance = getGitInstance();
     try {
       const filesToCommit = ['NIGHTYTIDY-REPORT.md', 'CLAUDE.md'];
+      if (actionPlan) filesToCommit.push('NIGHTYTIDY-ACTIONS.md');
       await gitInstance.add(filesToCommit);
       await gitInstance.commit('NightyTidy: Add run report and update CLAUDE.md');
     } catch (err) {
@@ -782,7 +799,7 @@ export async function finishRun(projectDir) {
       merged: mergeResult.success,
       mergeConflict: mergeResult.conflict || false,
       reportPath: 'NIGHTYTIDY-REPORT.md',
-      actionsPath: null,
+      actionsPath: actionPlan ? 'NIGHTYTIDY-ACTIONS.md' : null,
       tagName: state.tagName,
       runBranch: state.runBranch,
     });

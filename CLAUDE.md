@@ -78,7 +78,7 @@ test/
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
-  orchestrator.test.js     # 52 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync, 3-tier step recovery
+  orchestrator.test.js     # 57 tests — initRun, runStep, finishRun (changelog + action plan), dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync, 3-tier step recovery
   contracts.test.js        # 39 tests — module API contract verification against CLAUDE.md
   gui-logic.test.js        # 138 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, formatTime, detectGitError, detectStaleState, detectRateLimit, formatCountdown, preprocessClaudeOutput, etc.)
   gui-server.test.js       # 45 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, log-error, log-path, security headers, traversal
@@ -326,7 +326,7 @@ For non-TTY environments where Claude Code drives the workflow conversationally:
 1. `--list --json` → Claude Code presents steps, user picks
 2. `--init-run --steps 1,5,12` → pre-checks, git setup, state file created, dashboard server spawned
 3. `--run-step N` (repeated) → one step at a time, progress JSON updated, Claude Code reports between steps
-4. `--finish-run` → report, merge, dashboard shutdown, cleanup (no AI calls — fast finish)
+4. `--finish-run` → narrated changelog + action plan (AI calls) → report, merge, dashboard shutdown, cleanup
 
 Each command is a separate process invocation. State persists via `nightytidy-run-state.json`. Lock file persists across invocations (persistent mode). Logger runs in quiet mode (no stdout, JSON output only).
 

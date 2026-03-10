@@ -5,9 +5,9 @@ NightyTidy: automated overnight codebase improvement via Claude Code subprocess 
 ## Current State
 
 - **Version**: 0.1.0
-- **Test count**: 765 (34 test files, all passing)
+- **Test count**: 789 (34 test files, all passing)
 - **Coverage**: src/ at 90% stmts, 80% branches, 80% functions (thresholds enforced by test:ci)
-- **Last major change**: Orchestrator `finishRun()` stripped of AI calls — fast finish by default
+- **Last major change**: Orchestrator `finishRun()` now generates narrated changelog + action plan (parity with CLI mode)
 
 ## Recent Changes
 
@@ -16,7 +16,7 @@ NightyTidy: automated overnight codebase improvement via Claude Code subprocess 
 - Prompt refactor: monolithic `steps.js` replaced with `manifest.json` + individual markdown files in `src/prompts/`
 - Dashboard standalone server for orchestrator mode (`dashboard-standalone.js`)
 - GUI test coverage: `gui-logic.test.js` (138 tests), `gui-server.test.js` (45 tests)
-- Orchestrator `finishRun()` no longer calls Claude — no changelog narration, no action plan. All operations are local (<2s). Interactive CLI `finalizeRun()` still does AI calls (user can Ctrl+C).
+- Orchestrator `finishRun()` now calls Claude for narrated changelog + action plan (same as CLI `finalizeRun()`). Both are non-blocking — failures fall back gracefully.
 - GUI FINISHING screen has escape hatch: skip button (10s delay) + 3-min auto-timeout + try/catch
 - `gui/server.js` `handleRunCommand` has `responded` guard to prevent double `sendJson` on spawn failure
 

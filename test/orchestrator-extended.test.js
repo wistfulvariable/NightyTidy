@@ -144,6 +144,10 @@ describe('finishRun edge cases', () => {
     dashboardUrl: null,
   };
 
+  beforeEach(() => {
+    runPrompt.mockResolvedValue({ success: true, output: 'Mock changelog' });
+  });
+
   it('warns but continues when git commit of report fails', async () => {
     existsSync.mockReturnValue(true);
     readFileSync.mockReturnValue(JSON.stringify(validState));

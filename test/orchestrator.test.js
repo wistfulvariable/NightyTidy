@@ -521,6 +521,8 @@ describe('finishRun', () => {
     readFileSync.mockReturnValue(JSON.stringify(validState));
     mergeRunBranch.mockResolvedValue({ success: true });
     getGitInstance.mockReturnValue({ add: vi.fn(), commit: vi.fn() });
+    runPrompt.mockResolvedValue({ success: true, output: 'Mock changelog narration' });
+    generateActionPlan.mockResolvedValue('Mock action plan content');
   });
 
   it('generates report and merges successfully', async () => {
@@ -533,15 +535,17 @@ describe('finishRun', () => {
     expect(result.reportPath).toBe('NIGHTYTIDY-REPORT.md');
   });
 
-  it('calls generateReport with accumulated results', async () => {
+  it('calls generateReport with accumulated results and narration', async () => {
     await finishRun('/fake/project');
 
     expect(generateReport).toHaveBeenCalledOnce();
-    const [results, narration, metadata] = generateReport.mock.calls[0];
+    const [results, narration, metadata, options] = generateReport.mock.calls[0];
     expect(results.completedCount).toBe(1);
     expect(results.failedCount).toBe(1);
     expect(results.results).toHaveLength(2);
     expect(metadata.branchName).toBe('nightytidy/run-2026-03-06-1430');
+    expect(narration).toBe('Mock changelog narration');
+    expect(options).toEqual({ actionPlan: true });
   });
 
   it('releases lock and deletes state file', async () => {
@@ -585,13 +589,71 @@ describe('finishRun', () => {
     expect(result.error).toContain('No active orchestrator run');
   });
 
-  it('never calls Claude (no AI operations in finish path)', async () => {
+  it('generates narrated changelog via runPrompt', async () => {
+    runPrompt.mockResolvedValue({ success: true, output: 'Test changelog text' });
+
     await finishRun('/fake/project');
 
-    expect(runPrompt).not.toHaveBeenCalled();
-    expect(generateActionPlan).not.toHaveBeenCalled();
+    expect(runPrompt).toHaveBeenCalledOnce();
+    const promptArg = runPrompt.mock.calls[0][0];
+    expect(promptArg).toContain('Generate changelog');
+    const [, narration] = generateReport.mock.calls[0];
+    expect(narration).toBe('Test changelog text');
+  });
+
+  it('generates action plan via generateActionPlan', async () => {
+    generateActionPlan.mockResolvedValue('Action plan content');
+
+    const result = await finishRun('/fake/project');
+
+    expect(generateActionPlan).toHaveBeenCalledOnce();
+    const [execResults, projDir] = generateActionPlan.mock.calls[0];
+    expect(execResults.completedCount).toBe(1);
+    expect(projDir).toBe('/fake/project');
+    expect(result.actionsPath).toBe('NIGHTYTIDY-ACTIONS.md');
+  });
+
+  it('commits NIGHTYTIDY-ACTIONS.md when action plan succeeds', async () => {
+    generateActionPlan.mockResolvedValue('Action plan content');
+    const mockGit = { add: vi.fn(), commit: vi.fn() };
+    getGitInstance.mockReturnValue(mockGit);
+
+    await finishRun('/fake/project');
+
+    const addedFiles = mockGit.add.mock.calls[0][0];
+    expect(addedFiles).toContain('NIGHTYTIDY-ACTIONS.md');
+  });
+
+  it('handles changelog failure gracefully (uses fallback narration)', async () => {
+    runPrompt.mockResolvedValue({ success: false, output: '', error: 'timeout' });
+
+    const result = await finishRun('/fake/project');
+
+    expect(result.success).toBe(true);
     const [, narration] = generateReport.mock.calls[0];
     expect(narration).toBeNull();
+  });
+
+  it('handles action plan failure gracefully', async () => {
+    generateActionPlan.mockResolvedValue(null);
+
+    const result = await finishRun('/fake/project');
+
+    expect(result.success).toBe(true);
+    expect(result.actionsPath).toBeNull();
+    const [, , , options] = generateReport.mock.calls[0];
+    expect(options).toEqual({ actionPlan: false });
+  });
+
+  it('does not commit NIGHTYTIDY-ACTIONS.md when action plan fails', async () => {
+    generateActionPlan.mockResolvedValue(null);
+    const mockGit = { add: vi.fn(), commit: vi.fn() };
+    getGitInstance.mockReturnValue(mockGit);
+
+    await finishRun('/fake/project');
+
+    const addedFiles = mockGit.add.mock.calls[0][0];
+    expect(addedFiles).not.toContain('NIGHTYTIDY-ACTIONS.md');
   });
 
   it('stops dashboard server and cleans up ephemeral files', async () => {
