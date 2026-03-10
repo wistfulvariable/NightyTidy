@@ -28,13 +28,34 @@ window.onunhandledrejection = (event) => {
 
 // ── API helpers ────────────────────────────────────────────────────
 
-async function api(endpoint, body = {}) {
-  const res = await fetch(`/api/${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return res.json();
+const API_DEFAULT_TIMEOUT_MS = 30_000;        // 30s for short API calls
+const API_COMMAND_TIMEOUT_MS = 50 * 60_000;   // 50 min for run-command (step timeout is 45 min)
+
+async function api(endpoint, body = {}, timeoutMs) {
+  const timeout = timeoutMs ?? (endpoint === 'run-command' ? API_COMMAND_TIMEOUT_MS : API_DEFAULT_TIMEOUT_MS);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const res = await fetch(`/api/${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+    return await res.json();
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      const msg = `API call to /api/${endpoint} timed out after ${Math.round(timeout / 1000)}s`;
+      logToServer('error', msg);
+      return { ok: false, error: msg, timedOut: true };
+    }
+    const msg = `API call to /api/${endpoint} failed: ${err.message}`;
+    logToServer('error', msg);
+    return { ok: false, error: msg, fetchError: true };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ── Markdown Rendering ────────────────────────────────────────────
@@ -196,17 +217,32 @@ async function runCli(args) {
   const id = `proc-${++processCounter}`;
   state.currentProcessId = id;
 
+  const startTime = Date.now();
+  logToServer('info', `runCli START: ${args} (id=${id})`);
+
   const result = await api('run-command', { command: cmd, id });
   state.currentProcessId = null;
 
+  const elapsed = Date.now() - startTime;
+  logToServer('info', `runCli END: ${args} (id=${id}, ${Math.round(elapsed / 1000)}s, ok=${result.ok})`);
+
   if (!result.ok) {
-    logToServer('warn', `CLI command failed: ${args}`);
+    const detail = result.timedOut ? 'timed out' : result.fetchError ? 'fetch error' : 'command failed';
+    logToServer('warn', `CLI ${detail}: ${args} — ${result.error || 'no error message'}`);
+
+    if (result.timedOut) {
+      return { ok: false, data: null, error: `NightyTidy command timed out after ${Math.round(elapsed / 1000)}s. The step may still be running — check nightytidy-run.log.` };
+    }
     return { ok: false, data: null, error: 'NightyTidy command did not complete. Check that the project folder is valid and try again.' };
+  }
+
+  if (result.exitCode !== 0) {
+    logToServer('info', `CLI exit code ${result.exitCode} for: ${args} (stderr: ${(result.stderr || '').slice(0, 500)})`);
   }
 
   const parsed = NtLogic.parseCliOutput(result.stdout);
   if (!parsed.ok) {
-    logToServer('warn', `CLI output parse failed for: ${args}`);
+    logToServer('warn', `CLI output parse failed for: ${args} (stdout length=${(result.stdout || '').length}, stderr length=${(result.stderr || '').length})`);
     return { ok: false, data: null, error: 'Could not read NightyTidy output. The command may have failed — check nightytidy-run.log for details.' };
   }
 
@@ -461,6 +497,8 @@ async function startRun() {
   state.runInfo = result.data;
   state.runStartTime = Date.now();
 
+  logToServer('info', `Run initialized: ${state.selectedSteps.length} steps, timeout=${state.timeout}m, branch=${result.data.runBranch || 'unknown'}`);
+
   showScreen(SCREENS.RUNNING);
   renderRunningStepList();
   updateProgressBar();
@@ -603,11 +641,19 @@ function hideCurrentStep() {
 }
 
 async function runNextStep() {
-  if (state.stopping) return;
-  if (state.paused) return;
+  if (state.stopping) {
+    logToServer('info', 'runNextStep: bailing — state.stopping=true');
+    return;
+  }
+  if (state.paused) {
+    logToServer('info', 'runNextStep: bailing — state.paused=true');
+    return;
+  }
 
   const next = NtLogic.getNextStep(state.selectedSteps, state.completedSteps, state.failedSteps, state.skippedSteps);
+  logToServer('info', `runNextStep: next=${next} (completed=${state.completedSteps}, failed=${state.failedSteps}, skipped=${state.skippedSteps})`);
   if (next === null) {
+    logToServer('info', 'runNextStep: all steps done, calling finishRun()');
     await finishRun();
     return;
   }
@@ -722,6 +768,7 @@ async function runNextStep() {
 
 function startProgressPolling() {
   stopProgressPolling();
+  pollFailureCount = 0;
   state.pollTimer = setInterval(pollProgress, 500);
 }
 
@@ -744,6 +791,10 @@ function stopElapsedTimer() {
   }
 }
 
+let pollFailureCount = 0;
+const POLL_FAILURE_WARN_THRESHOLD = 10; // Warn after 5s of consecutive failures (10 polls × 500ms)
+const POLL_FAILURE_LOG_INTERVAL = 20;   // Log every 10s of continuous failure
+
 async function pollProgress() {
   if (!state.projectDir) return;
 
@@ -751,21 +802,45 @@ async function pollProgress() {
   const progressPath = `${state.projectDir}${sep}nightytidy-progress.json`;
 
   try {
-    const result = await api('read-file', { path: progressPath });
+    const result = await api('read-file', { path: progressPath }, 5000); // 5s timeout for polling
     if (result.ok && result.content) {
       const progress = JSON.parse(result.content);
+      if (pollFailureCount >= POLL_FAILURE_WARN_THRESHOLD) {
+        logToServer('info', `Progress polling recovered after ${pollFailureCount} failures`);
+      }
+      pollFailureCount = 0;
       renderProgressFromFile(progress);
+    } else if (result.timedOut || result.fetchError) {
+      pollFailureCount++;
+      if (pollFailureCount === POLL_FAILURE_WARN_THRESHOLD) {
+        logToServer('warn', `Progress polling failing for ${pollFailureCount} consecutive ticks: ${result.error}`);
+      } else if (pollFailureCount > POLL_FAILURE_WARN_THRESHOLD && pollFailureCount % POLL_FAILURE_LOG_INTERVAL === 0) {
+        logToServer('warn', `Progress polling still failing (${pollFailureCount} ticks): ${result.error}`);
+      }
     }
-  } catch {
-    // File may not exist yet — skip this tick
+    // result.ok but no content = file doesn't exist yet, normal for early ticks
+  } catch (err) {
+    pollFailureCount++;
+    if (pollFailureCount === POLL_FAILURE_WARN_THRESHOLD) {
+      logToServer('warn', `Progress polling error for ${pollFailureCount} consecutive ticks: ${err.message}`);
+    } else if (pollFailureCount > POLL_FAILURE_WARN_THRESHOLD && pollFailureCount % POLL_FAILURE_LOG_INTERVAL === 0) {
+      logToServer('warn', `Progress polling still erroring (${pollFailureCount} ticks): ${err.message}`);
+    }
   }
 }
 
 function renderProgressFromFile(progress) {
   if (!progress) return;
 
-  // Skip live output updates when user is viewing a stored step's output
-  if (state.viewingStepOutput !== null) return;
+  // When viewing stored output, still track output changes for the "Last update" display
+  // but skip DOM updates so the user can read undisturbed
+  if (state.viewingStepOutput !== null) {
+    if (progress.currentStepOutput && progress.currentStepOutput !== lastRenderedOutput) {
+      lastRenderedOutput = progress.currentStepOutput;
+      lastOutputChangeTime = Date.now();
+    }
+    return;
+  }
 
   // Detect prod signal from orchestrator (Tier 2: session resume)
   if (progress.prodding && !state.prodding) {
@@ -995,6 +1070,7 @@ const BACKOFF_SCHEDULE_MS = [
 ];
 
 function enterPauseMode(stepNum, retryAfterMs) {
+  logToServer('info', `enterPauseMode: step=${stepNum}, retryAfterMs=${retryAfterMs}, backoffAttempt=${state.backoffAttempt}`);
   state.paused = true;
   state.pausedStepNum = stepNum;
 
@@ -1152,6 +1228,7 @@ async function stopRun() {
   document.getElementById('confirm-stop-overlay').classList.add('hidden');
   if (state.stopping) return;
   state.stopping = true;
+  logToServer('info', `stopRun: stopping run (currentStep=${state.currentStepNum}, processId=${state.currentProcessId})`);
 
   document.getElementById('btn-stop-run').disabled = true;
   document.getElementById('btn-stop-run').textContent = 'Stopping...';
@@ -1178,6 +1255,7 @@ const FINISH_SKIP_DELAY_MS = 10_000;  // Show skip button after 10s
 const FINISH_TIMEOUT_MS = 180_000;    // Auto-skip after 3 minutes
 
 async function finishRun() {
+  logToServer('info', 'finishRun: starting');
   stopProgressPolling();
   stopElapsedTimer();
 
@@ -1542,7 +1620,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Heartbeat — lets the server detect if the browser window is gone
   // (e.g. Chrome crashed or was force-killed). Server self-terminates if stale.
   setInterval(() => {
-    fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
+    const hbController = new AbortController();
+    const hbTimer = setTimeout(() => hbController.abort(), 5000); // 5s timeout on heartbeat
+    fetch('/api/heartbeat', { method: 'POST', signal: hbController.signal })
+      .catch(() => {}) // Ignore failures — server will self-terminate if it doesn't receive heartbeats
+      .finally(() => clearTimeout(hbTimer));
   }, 5000);
 
   // Load server config (nightytidy binary path)
