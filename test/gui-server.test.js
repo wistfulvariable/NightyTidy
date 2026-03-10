@@ -43,7 +43,7 @@ const MAX_BODY_BYTES = 1024 * 1024; // 1 MB — mirrors server.js
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
-  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'",
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; worker-src blob:",
 };
 
 // Track spawned processes — mirrors server.js activeProcesses
