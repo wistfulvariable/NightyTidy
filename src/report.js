@@ -151,6 +151,23 @@ export function generateReport(results, narration, metadata, { actionPlan = fals
   updateClaudeMd(metadata);
 }
 
+/**
+ * Update or append a markdown section in content.
+ * Replaces existing section (from marker to next ## or EOF) or appends if not found.
+ */
+function updateOrAppendSection(content, marker, newSection) {
+  const markerIndex = content.indexOf(marker);
+  if (markerIndex === -1) {
+    return content + newSection;
+  }
+
+  const nextSectionIndex = content.indexOf('\n## ', markerIndex + marker.length);
+  const beforeSection = content.slice(0, markerIndex);
+  const afterSection = nextSectionIndex !== -1 ? content.slice(nextSectionIndex) : '';
+
+  return beforeSection + newSection.trim() + '\n' + afterSection;
+}
+
 function updateClaudeMd(metadata) {
   const claudePath = path.join(metadata.projectDir, 'CLAUDE.md');
   const date = formatDate(metadata.startTime);
@@ -160,23 +177,9 @@ function updateClaudeMd(metadata) {
 
   try {
     if (existsSync(claudePath)) {
-      let content = readFileSync(claudePath, 'utf8');
-      const marker = '## NightyTidy';
-      const markerIndex = content.indexOf(marker);
-
-      if (markerIndex !== -1) {
-        // Find the end of this section (next ## or end of file)
-        const nextSection = content.indexOf('\n## ', markerIndex + marker.length);
-        if (nextSection !== -1) {
-          content = content.slice(0, markerIndex) + section.trim() + '\n' + content.slice(nextSection);
-        } else {
-          content = content.slice(0, markerIndex) + section.trim() + '\n';
-        }
-      } else {
-        content += section;
-      }
-
-      writeFileSync(claudePath, content, 'utf8');
+      const content = readFileSync(claudePath, 'utf8');
+      const updated = updateOrAppendSection(content, '## NightyTidy', section);
+      writeFileSync(claudePath, updated, 'utf8');
     } else {
       writeFileSync(claudePath, section.trim() + '\n', 'utf8');
     }
