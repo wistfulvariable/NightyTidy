@@ -272,6 +272,7 @@ describe('contract: executor.js — never throws, returns result object', () => 
       STEPS: [],
       DOC_UPDATE_PROMPT: 'mock doc update',
       CONSOLIDATION_PROMPT: 'mock consolidation',
+      reloadSteps: vi.fn(),
     }));
   });
 
@@ -493,6 +494,12 @@ describe('contract: steps.js — data shape', () => {
     expect(typeof CONSOLIDATION_PROMPT).toBe('string');
     expect(CONSOLIDATION_PROMPT.length).toBeGreaterThan(50);
   });
+
+  it('exports reloadSteps as a function', async () => {
+    const { reloadSteps } = await import('../src/prompts/loader.js');
+
+    expect(typeof reloadSteps).toBe('function');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -706,6 +713,7 @@ describe('contract: executor.js — callbacks are optional and receive correct a
       STEPS: [],
       DOC_UPDATE_PROMPT: 'mock doc update',
       CONSOLIDATION_PROMPT: 'mock consolidation',
+      reloadSteps: vi.fn(),
     }));
   });
 
@@ -938,6 +946,7 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
       DOC_UPDATE_PROMPT: 'doc',
       CHANGELOG_PROMPT: 'log',
       CONSOLIDATION_PROMPT: 'consolidate',
+      reloadSteps: vi.fn(),
     }));
   });
 

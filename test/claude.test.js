@@ -7,6 +7,7 @@ import { EventEmitter } from 'events';
 
 vi.mock('child_process', () => ({
   spawn: vi.fn(),
+  execFileSync: vi.fn(),
 }));
 
 vi.mock('os', () => ({
@@ -21,7 +22,7 @@ vi.mock('../src/logger.js', () => createLoggerMock());
 // Imports — after mocks are registered
 // ---------------------------------------------------------------------------
 
-import { spawn } from 'child_process';
+import { spawn, execFileSync } from 'child_process';
 import { platform } from 'os';
 import { runPrompt, classifyError, ERROR_TYPE } from '../src/claude.js';
 import { warn } from '../src/logger.js';
@@ -285,6 +286,66 @@ describe('runPrompt', () => {
       // With retries: 0 the single attempt times out, then runPrompt wraps
       // it with the "Failed after N attempts" message
       expect(result.error).toBe('Failed after 1 attempts');
+    });
+
+    it('uses taskkill /F /T for process tree kill on Windows', async () => {
+      // Switch platform to win32 for this test
+      platform.mockReturnValue('win32');
+      const timeoutMs = 100;
+
+      setupSpawnSequence((child) => {
+        child.pid = 12345;
+        // Never emit close — simulate a hanging process
+      });
+
+      const promise = runPrompt('do something', '/tmp', {
+        timeout: timeoutMs,
+        retries: 0,
+        label: 'win-kill-test',
+      });
+
+      await vi.advanceTimersByTimeAsync(timeoutMs + 50);
+
+      const result = await promise;
+
+      // taskkill should have been called with /F /T /PID flags
+      expect(execFileSync).toHaveBeenCalledWith(
+        'taskkill',
+        ['/F', '/T', '/PID', '12345'],
+        expect.objectContaining({ stdio: 'ignore', timeout: 5000 }),
+      );
+      expect(result.success).toBe(false);
+
+      // Restore linux platform for remaining tests
+      platform.mockReturnValue('linux');
+    });
+
+    it('falls back to child.kill() when taskkill fails on Windows', async () => {
+      platform.mockReturnValue('win32');
+      execFileSync.mockImplementation(() => { throw new Error('Access denied'); });
+      const timeoutMs = 100;
+      let capturedChild;
+
+      setupSpawnSequence((child) => {
+        capturedChild = child;
+        child.pid = 99999;
+      });
+
+      const promise = runPrompt('do something', '/tmp', {
+        timeout: timeoutMs,
+        retries: 0,
+        label: 'win-fallback-test',
+      });
+
+      await vi.advanceTimersByTimeAsync(timeoutMs + 50);
+      await promise;
+
+      // Should fall back to child.kill() after taskkill fails
+      expect(execFileSync).toHaveBeenCalled();
+      expect(capturedChild.kill).toHaveBeenCalled();
+
+      platform.mockReturnValue('linux');
+      execFileSync.mockReset();
     });
   });
 

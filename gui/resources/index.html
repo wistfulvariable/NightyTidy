@@ -111,6 +111,7 @@
     </div>
 
     <div class="actions">
+      <button class="btn btn-secondary" id="btn-skip-step">Skip Step</button>
       <button class="btn btn-danger" id="btn-stop-run">Stop Run</button>
     </div>
 
@@ -125,7 +126,10 @@
     </header>
     <div class="finishing-content" role="status" aria-live="polite">
       <div class="big-spinner" aria-hidden="true"></div>
-      <p>Generating report and merging changes...</p>
+      <p id="finishing-status">Generating report and merging changes...</p>
+    </div>
+    <div class="finishing-actions">
+      <button class="btn btn-secondary" id="btn-skip-finishing" style="display:none">Skip &amp; Show Results</button>
     </div>
     <div class="error-msg" id="finishing-error" role="alert"></div>
   </section>

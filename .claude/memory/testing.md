@@ -1,6 +1,6 @@
 # Testing — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. 589 tests, 30 files, Vitest v3.
+Assumes CLAUDE.md loaded. 766 tests, 34 files, Vitest v3.
 
 ## Test File -> Module Coverage
 
@@ -12,8 +12,8 @@ Assumes CLAUDE.md loaded. 589 tests, 30 files, Vitest v3.
 | `logger.test.js` | `logger.js` | 10 |
 | `checks.test.js` | `checks.js` | 4 |
 | `checks-extended.test.js` | `checks.js` | 23 |
-| `claude.test.js` | `claude.js` | 26 |
-| `executor.test.js` | `executor.js` | 22 |
+| `claude.test.js` | `claude.js` | 62 |
+| `executor.test.js` | `executor.js` | 32 |
 | `git.test.js` | `git.js` | 16 |
 | `git-extended.test.js` | `git.js` | 7 |
 | `notifications.test.js` | `notifications.js` | 2 |
@@ -27,10 +27,10 @@ Assumes CLAUDE.md loaded. 589 tests, 30 files, Vitest v3.
 | `dashboard-extended.test.js` | `dashboard.js` | 3 |
 | `dashboard-tui.test.js` | `dashboard-tui.js` | 29 |
 | `integration-extended.test.js` | Multi-module | 6 |
-| `orchestrator.test.js` | `orchestrator.js` | 36 |
+| `orchestrator.test.js` | `orchestrator.js` | 40 |
 | `contracts.test.js` | All modules | 38 |
-| `gui-logic.test.js` | `gui/resources/logic.js` | 67 |
-| `gui-server.test.js` | `gui/server.js` | 34 |
+| `gui-logic.test.js` | `gui/resources/logic.js` | 133 |
+| `gui-server.test.js` | `gui/server.js` | 44 |
 | `lock.test.js` | `lock.js` | 9 |
 | `orchestrator-extended.test.js` | `orchestrator.js` | 11 |
 | `dashboard-broadcastoutput.test.js` | `dashboard.js` | 5 |
@@ -63,11 +63,12 @@ All 20 test files (except `logger.test.js`) use `createLoggerMock()` from `test/
 - **Non-TTY stdin** — `process.stdin.isTTY` falsy in test envs; CLI tests need `--all` or `--steps`
 - **loader.js + mocked fs** — tests mocking `fs` must also mock `prompts/loader.js` or the loader breaks at import time
 - **vi.doMock() leaks** — registrations persist across `vi.resetModules()`. Must `vi.doUnmock()` in `afterEach`
+- **claude.js mock must include ERROR_TYPE + sleep** — all 8+ test files that mock `../src/claude.js` must export `ERROR_TYPE: { RATE_LIMIT: 'rate_limit', UNKNOWN: 'unknown' }` and `sleep: vi.fn(() => Promise.resolve())`. This includes `vi.doMock` sites in `contracts.test.js`. Missing → `No "ERROR_TYPE" export is defined on the mock`
 - **lock.js needs real filesystem** — uses `openSync('wx')` for atomic create; mock fs loses the semantics. Use real temp dirs with `robustCleanup()`
 - **orchestrator.js fs mock must include renameSync** — `writeState()` uses write-to-temp-then-rename; missing `renameSync: vi.fn()` in the fs mock causes silent failures caught by try/catch (audit #21)
 - **broadcastOutput throttle** — uses real `setTimeout(500ms)`. Tests must `await` a real delay (700ms+) to verify the throttled write fires
 - **gui/resources/logic.js coverage** — loaded via `eval` in tests, so v8 coverage tool reports 0% despite 46 tests. Coverage config should exclude or handle this
-- **Coverage threshold gap** — `vitest.config.js` has no `include`/`exclude` for coverage. `gui/`, `bin/`, `scripts/` drag overall coverage below 90% even when `src/` is at ~90%. Consider adding `coverage.include: ['src/**']`
+- **Coverage scoping** — `vitest.config.js` uses `coverage.include: ['src/**']` and excludes standalone scripts (`dashboard-standalone.js`, `dashboard-tui.js`). Without this, gui/bin/scripts/tmp files drag coverage below 90%. The vendored `marked.umd.js` references a missing `.map` file that crashes the v8 coverage provider if not excluded
 - **gui/server.js not importable** — top-level `createServer()` + `listen()` + `launchChrome()` causes side effects on import. Tests must re-implement routing logic. Consider guarding with `if (import.meta.url === ...)` for direct testability
 
 ## Flaky Test Audit (2026-03-09)

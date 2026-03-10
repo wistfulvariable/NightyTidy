@@ -26,6 +26,7 @@ vi.mock('../src/prompts/loader.js', () => ({
     { number: 2, name: 'Step 2', prompt: 'prompt 2' },
   ],
   CHANGELOG_PROMPT: 'changelog prompt',
+  reloadSteps: vi.fn(),
 }));
 
 // Mock chalk for terminal output

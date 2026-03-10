@@ -17,11 +17,10 @@ import { initLogger, info, warn, error as logError } from './logger.js';
 import { runPreChecks } from './checks.js';
 import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from './git.js';
 import { runPrompt } from './claude.js';
-import { STEPS, CHANGELOG_PROMPT } from './prompts/loader.js';
+import { STEPS, reloadSteps } from './prompts/loader.js';
 import { executeSingleStep, SAFETY_PREAMBLE } from './executor.js';
 import { notify } from './notifications.js';
 import { generateReport, formatDuration, getVersion } from './report.js';
-import { generateActionPlan } from './consolidation.js';
 import { acquireLock, releaseLock } from './lock.js';
 
 /**
@@ -425,6 +424,27 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
     excludeEphemeralFiles();
     await runPreChecks(projectDir, git);
 
+    // Auto-sync prompts from Google Doc (non-blocking)
+    try {
+      const { syncPrompts } = await import('./sync.js');
+      const syncResult = await syncPrompts();
+      if (syncResult.success) {
+        const changeCount = syncResult.summary.updated.length +
+          syncResult.summary.added.length +
+          syncResult.summary.removed.length;
+        if (changeCount > 0) {
+          reloadSteps();
+          info(`Prompts synced: ${changeCount} change(s)`);
+        } else {
+          info('Prompts up to date');
+        }
+      } else {
+        warn(`Prompt sync failed: ${syncResult.error}. Using cached versions.`);
+      }
+    } catch (err) {
+      warn(`Prompt sync error: ${err.message}. Using cached versions.`);
+    }
+
     // Validate and select steps
     let selectedNums;
     if (steps) {
@@ -623,8 +643,8 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
 /**
  * Finish an orchestrated run.
  *
- * Generates changelog, action plan, report, commits, merges back to original
- * branch, and cleans up state.
+ * Generates report, commits, merges back to original branch, and cleans up
+ * state. All operations are local — no AI calls — so this completes in seconds.
  *
  * @param {string} projectDir - Target project directory
  * @returns {Promise<FinishRunResult>} Result object (never throws)
@@ -645,33 +665,14 @@ export async function finishRun(projectDir) {
 
     const totalDuration = Date.now() - state.startTime;
 
-    // Generate changelog
-    let narration = null;
-    let overheadCostUSD = 0;
-    if (executionResults.completedCount > 0) {
-      info('Orchestrator: generating narrated changelog...');
-      const changelogResult = await runPrompt(SAFETY_PREAMBLE + CHANGELOG_PROMPT, projectDir, {
-        label: 'Narrated changelog',
-        timeout: state.timeout || undefined,
-      });
-      narration = changelogResult.success ? changelogResult.output : null;
-      if (!narration) warn('Orchestrator: narrated changelog generation failed — using fallback text');
-      overheadCostUSD += changelogResult.cost?.costUSD || 0;
-    }
-
-    // Consolidated action plan
-    const actionPlan = await generateActionPlan(executionResults, projectDir, {
-      timeout: state.timeout || undefined,
-    });
-
-    // Sum step costs + overhead (changelog, consolidation tracked via overhead)
+    // Sum step costs
     const stepsCostUSD = executionResults.results.reduce((sum, r) => sum + (r.cost?.costUSD || 0), 0);
-    const totalCostUSD = stepsCostUSD + overheadCostUSD;
+    const totalCostUSD = stepsCostUSD;
     const totalInputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.inputTokens || 0), 0) || null;
     const totalOutputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.outputTokens || 0), 0) || null;
 
-    // Generate report
-    generateReport(executionResults, narration, {
+    // Generate report (no narration — report uses fallback text)
+    generateReport(executionResults, null, {
       projectDir,
       branchName: state.runBranch,
       tagName: state.tagName,
@@ -679,13 +680,12 @@ export async function finishRun(projectDir) {
       startTime: state.startTime,
       endTime: Date.now(),
       totalCostUSD: totalCostUSD || null,
-    }, { actionPlan: !!actionPlan });
+    });
 
     // Commit report
     const gitInstance = getGitInstance();
     try {
       const filesToCommit = ['NIGHTYTIDY-REPORT.md', 'CLAUDE.md'];
-      if (actionPlan) filesToCommit.push('NIGHTYTIDY-ACTIONS.md');
       await gitInstance.add(filesToCommit);
       await gitInstance.commit('NightyTidy: Add run report and update CLAUDE.md');
     } catch (err) {
@@ -724,7 +724,7 @@ export async function finishRun(projectDir) {
       merged: mergeResult.success,
       mergeConflict: mergeResult.conflict || false,
       reportPath: 'NIGHTYTIDY-REPORT.md',
-      actionsPath: actionPlan ? 'NIGHTYTIDY-ACTIONS.md' : null,
+      actionsPath: null,
       tagName: state.tagName,
       runBranch: state.runBranch,
     });

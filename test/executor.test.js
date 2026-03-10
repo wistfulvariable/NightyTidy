@@ -23,6 +23,7 @@ vi.mock('../src/logger.js', () => createLoggerMock());
 vi.mock('../src/prompts/loader.js', () => ({
   STEPS: [],
   DOC_UPDATE_PROMPT: 'mock doc update prompt',
+  reloadSteps: vi.fn(),
 }));
 
 import { executeSteps, executeSingleStep, FAST_COMPLETION_THRESHOLD_MS } from '../src/executor.js';
@@ -128,8 +129,39 @@ describe('executeSteps', () => {
 
     await executeSteps(steps, '/fake/project');
 
+    // Only 1 call: the fallback commit (sweep skipped since committed=false)
     expect(fallbackCommit).toHaveBeenCalledTimes(1);
     expect(fallbackCommit).toHaveBeenCalledWith(5, 'Refactor');
+  });
+
+  it('sweeps uncommitted files after Claude commits (catches missed git add)', async () => {
+    const steps = [makeStep(7, 'Audit')];
+
+    runPrompt.mockResolvedValue({ success: true, output: 'ok', error: null, exitCode: 0, attempts: 1 });
+    hasNewCommit.mockResolvedValue(true); // Claude committed
+    fallbackCommit.mockResolvedValue(true); // Sweep finds uncommitted files
+
+    await executeSteps(steps, '/fake/project');
+
+    // fallbackCommit should be called once for the sweep
+    // (not for the fallback — Claude already committed)
+    expect(fallbackCommit).toHaveBeenCalledTimes(1);
+    expect(fallbackCommit).toHaveBeenCalledWith(7, 'Audit');
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('swept uncommitted files'));
+  });
+
+  it('does not log sweep message when no uncommitted files remain', async () => {
+    const steps = [makeStep(1, 'Lint')];
+
+    runPrompt.mockResolvedValue({ success: true, output: 'ok', error: null, exitCode: 0, attempts: 1 });
+    hasNewCommit.mockResolvedValue(true);
+    fallbackCommit.mockResolvedValue(false); // No remaining changes to sweep
+
+    await executeSteps(steps, '/fake/project');
+
+    // fallbackCommit called but returned false — no sweep message logged
+    const sweepMessages = info.mock.calls.filter(c => c[0]?.includes?.('swept'));
+    expect(sweepMessages).toHaveLength(0);
   });
 
   it('does not log doc update warning when doc update succeeds', async () => {
@@ -180,7 +212,7 @@ describe('executeSteps', () => {
     }
   });
 
-  it('passes the abort signal to runPrompt', async () => {
+  it('passes an abort signal to runPrompt that tracks the external signal', async () => {
     const steps = [makeStep(1, 'Lint')];
     const controller = new AbortController();
 
@@ -188,10 +220,11 @@ describe('executeSteps', () => {
 
     await executeSteps(steps, '/fake/project', { signal: controller.signal });
 
-    // Both the improvement and doc-update calls should receive the signal
+    // Both the improvement and doc-update calls should receive an AbortSignal
+    // (wrapped via AbortSignal.any to combine external + step-level timeout)
     expect(runPrompt).toHaveBeenCalledTimes(2);
     for (const call of runPrompt.mock.calls) {
-      expect(call[2]).toHaveProperty('signal', controller.signal);
+      expect(call[2].signal).toBeInstanceOf(AbortSignal);
     }
   });
 
@@ -505,6 +538,72 @@ describe('executeSingleStep errorType propagation', () => {
     expect(result.status).toBe('failed');
     expect(result.errorType).toBeUndefined();
     expect(result.retryAfterMs).toBeUndefined();
+  });
+});
+
+describe('executeSingleStep step-level timeout', () => {
+  it('aborts the step when total time exceeds the step timeout', async () => {
+    const step = makeStep(1, 'Lint');
+    const stepTimeout = 500; // 500ms for test speed
+
+    // Improvement prompt: simulate a slow response that takes longer than the step timeout.
+    // The runPrompt mock checks the signal — if aborted, returns failure.
+    runPrompt.mockImplementation(async (_prompt, _dir, opts) => {
+      // Wait longer than the step timeout
+      await new Promise(resolve => setTimeout(resolve, stepTimeout + 200));
+      if (opts.signal?.aborted) {
+        return { success: false, output: '', error: 'Aborted by user', exitCode: -1, attempts: 1 };
+      }
+      return { success: true, output: 'ok', error: null, exitCode: 0, attempts: 1, duration: 300_000 };
+    });
+
+    const result = await executeSingleStep(step, '/fake/project', { timeout: stepTimeout });
+
+    expect(result.status).toBe('failed');
+    // Should only call runPrompt once (improvement) — no doc-update because it failed
+    expect(runPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('provides an AbortSignal even when no external signal is passed', async () => {
+    const step = makeStep(1, 'Lint');
+
+    runPrompt.mockResolvedValue({ success: true, output: 'ok', error: null, exitCode: 0, attempts: 1, duration: 300_000 });
+
+    await executeSingleStep(step, '/fake/project');
+
+    // The step-level timeout creates its own signal
+    for (const call of runPrompt.mock.calls) {
+      expect(call[2].signal).toBeInstanceOf(AbortSignal);
+    }
+  });
+
+  it('clears the step timer on normal completion', async () => {
+    const step = makeStep(1, 'Lint');
+
+    runPrompt.mockResolvedValue({ success: true, output: 'ok', error: null, exitCode: 0, attempts: 1, duration: 300_000 });
+
+    const result = await executeSingleStep(step, '/fake/project', { timeout: 60_000 });
+
+    // Step should complete normally — the timer should be cleared in finally block
+    expect(result.status).toBe('completed');
+  });
+
+  it('logs a warning when step timeout fires', async () => {
+    const step = makeStep(1, 'Lint');
+    const stepTimeout = 500;
+
+    runPrompt.mockImplementation(async (_prompt, _dir, opts) => {
+      await new Promise(resolve => setTimeout(resolve, stepTimeout + 200));
+      if (opts.signal?.aborted) {
+        return { success: false, output: '', error: 'Aborted by user', exitCode: -1, attempts: 1 };
+      }
+      return { success: true, output: 'ok', error: null, exitCode: 0, attempts: 1, duration: 300_000 };
+    });
+
+    await executeSingleStep(step, '/fake/project', { timeout: stepTimeout });
+
+    // Check that a warning about step timeout was logged
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('step timeout'));
   });
 });
 

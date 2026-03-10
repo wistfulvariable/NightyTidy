@@ -364,6 +364,8 @@ body {
 .step-running .step-icon  { color: var(--blue); }
 .step-completed .step-icon { color: var(--green); }
 .step-failed .step-icon   { color: var(--red); }
+.step-skipped .step-icon  { color: var(--yellow); }
+.step-skipped .step-name  { opacity: 0.5; text-decoration: line-through; }
 .step-item .step-num {
   color: var(--text-dim);
   font-size: 0.8rem;
@@ -586,6 +588,10 @@ body {
 .finishing-content p {
   color: var(--text-dim);
   font-size: 1rem;
+}
+.finishing-actions {
+  text-align: center;
+  margin-top: 8px;
 }
 
 /* Init overlay (Steps screen — shown during --init-run) */

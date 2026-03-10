@@ -143,6 +143,28 @@ describe('getNextStep', () => {
   ])('returns %s for %s', (selected, completed, failed, expected, _desc) => {
     expect(NtLogic.getNextStep(selected, completed, failed)).toBe(expected);
   });
+
+  describe('with skipped parameter', () => {
+    it('skips steps in the skipped array', () => {
+      expect(NtLogic.getNextStep([1, 5, 12], [], [], [1])).toBe(5);
+    });
+
+    it('skips steps across completed, failed, and skipped', () => {
+      expect(NtLogic.getNextStep([1, 5, 12], [1], [5], [12])).toBe(null);
+    });
+
+    it('returns next non-skipped step', () => {
+      expect(NtLogic.getNextStep([1, 5, 12], [], [], [1, 5])).toBe(12);
+    });
+
+    it('handles undefined skipped (backward compat)', () => {
+      expect(NtLogic.getNextStep([1, 5, 12], [1], [], undefined)).toBe(5);
+    });
+
+    it('handles empty skipped array', () => {
+      expect(NtLogic.getNextStep([1, 5, 12], [], [], [])).toBe(1);
+    });
+  });
 });
 
 // ── formatCost ────────────────────────────────────────────────────

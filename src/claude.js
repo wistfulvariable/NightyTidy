@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawn, execFileSync } from 'child_process';
 import { platform } from 'os';
 import { info, debug, warn, error as logError } from './logger.js';
 import { cleanEnv } from './env.js';
@@ -106,17 +106,34 @@ export function classifyError(stderr, exitCode) {
 }
 
 /**
- * Force-kill a child process with SIGKILL fallback.
+ * Force-kill a child process, including its entire process tree.
+ *
+ * On Windows with shell: true, child.kill() only terminates the cmd.exe
+ * shell — the underlying process tree (claude, node, chrome, etc.)
+ * survives as orphans. We use `taskkill /F /T` to kill the full tree.
  *
  * @param {import('child_process').ChildProcess} child - The child process to kill
  * @returns {void}
  */
 function forceKillChild(child) {
-  child.kill();
-  const killTimer = setTimeout(() => {
-    try { child.kill('SIGKILL'); } catch { /* already dead */ }
-  }, SIGKILL_DELAY);
-  killTimer.unref(); // Don't prevent Node.js from exiting if child dies quickly
+  if (platform() === 'win32') {
+    try {
+      execFileSync('taskkill', ['/F', '/T', '/PID', String(child.pid)], {
+        stdio: 'ignore',
+        timeout: 5000,
+      });
+    } catch {
+      // taskkill failed (process already dead or permissions issue).
+      // Fall back to Node's child.kill() which at least kills cmd.exe.
+      try { child.kill(); } catch { /* already dead */ }
+    }
+  } else {
+    child.kill();
+    const killTimer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch { /* already dead */ }
+    }, SIGKILL_DELAY);
+    killTimer.unref();
+  }
 }
 
 /**
@@ -200,7 +217,7 @@ function spawnClaude(prompt, cwd, useShell = false, continueSession = false) {
  */
 function setupTimeout(child, timeoutMs, verbose, settle) {
   return setTimeout(() => {
-    if (verbose) forceKillChild(child); else child.kill();
+    forceKillChild(child);
     settle({ success: false, error: timeoutMessage(timeoutMs), exitCode: -1 });
   }, timeoutMs);
 }

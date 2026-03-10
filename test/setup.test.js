@@ -19,6 +19,7 @@ vi.mock('../src/prompts/loader.js', () => {
     STEPS: names.map((name, i) => ({ number: i + 1, name, prompt: `prompt ${i + 1}` })),
     DOC_UPDATE_PROMPT: 'mock doc update',
     CHANGELOG_PROMPT: 'mock changelog',
+    reloadSteps: vi.fn(),
   };
 });
 

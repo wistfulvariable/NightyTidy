@@ -39,6 +39,7 @@ vi.mock('../src/prompts/loader.js', () => ({
     { number: 1, name: 'Test Step', prompt: 'test prompt content' },
   ],
   DOC_UPDATE_PROMPT: 'mock doc update prompt',
+  reloadSteps: vi.fn(),
 }));
 
 import { executeSteps, executeSingleStep } from '../src/executor.js';

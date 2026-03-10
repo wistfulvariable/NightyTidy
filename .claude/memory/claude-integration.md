@@ -36,11 +36,21 @@ Exit 0 with empty stdout → failure → retry. Non-zero exit → failure → re
 
 All calls include `--output-format stream-json --verbose`. Claude CLI v2.1.29+ requires `--verbose` when combining `--print` with `--output-format stream-json` (without it, CLI exits 1 immediately). NDJSON events arrive at **turn boundaries** (not token-by-token). Event types: `system` (init/hooks), `assistant` (full turn content), `user` (tool results), `result` (final summary with cost). The `stream_event` handler in `formatStreamEvent` is forward-compat code — CLI v2.1.29 never emits it. `user` events produce brief "← result received" markers for GUI liveness. `parseJsonOutput()` extracts cost from the `result` event. Falls back gracefully if output isn't valid JSON (old CLI → `cost: null`).
 
+## Rate-Limit Detection
+
+- `ERROR_TYPE` constant: `{ RATE_LIMIT: 'rate_limit', UNKNOWN: 'unknown' }` (frozen, exported)
+- `classifyError(stderr, exitCode)` — checks 11 regex patterns against stderr. Returns `{ type, retryAfterMs }`. Extracts `retry-after` value if present.
+- `waitForChild()` now accumulates stderr and includes it in the result (`stderr` field)
+- `runOnce()` calls `classifyError()` and adds `errorType`/`retryAfterMs` to result
+- `runPrompt()` short-circuits retry loop when `errorType === ERROR_TYPE.RATE_LIMIT` — returns immediately
+
 ## Result Object
 
 ```js
-{ success, output, error, exitCode, duration, attempts, cost }
+{ success, output, error, exitCode, duration, attempts, cost, errorType?, retryAfterMs? }
 // cost: { costUSD, inputTokens, outputTokens, numTurns, durationApiMs, sessionId } | null
+// errorType: 'rate_limit' | 'unknown' (present on failure)
+// retryAfterMs: number | null (present when errorType is 'rate_limit')
 ```
 
 - `costUSD`: server-computed total cost (not calculated locally — no model pricing needed)
@@ -60,8 +70,8 @@ Two-phase: silent `claude -p "Say OK"` (30s timeout) → interactive `stdio: 'in
 
 ## API
 
-Export: `runPrompt(prompt, cwd, { timeout?, retries?, label?, signal? })`
+Export: `runPrompt(prompt, cwd, { timeout?, retries?, label?, signal? })`, `classifyError(stderr, exitCode)`, `ERROR_TYPE`, `sleep(ms, signal)`
 
-Internal: `sleep(ms, signal)`, `spawnClaude()`, `setupTimeout()`, `setupAbortHandler()`, `waitForChild()`, `runOnce()`
+Internal: `spawnClaude()`, `setupTimeout()`, `setupAbortHandler()`, `waitForChild()`, `runOnce()`
 
 Shared: `cleanEnv()` from `src/env.js` — imported by both `claude.js` and `checks.js`. Uses allowlist approach (see env.test.js for coverage).

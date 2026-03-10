@@ -35,6 +35,7 @@ vi.mock('ora', () => ({
     stop: vi.fn(),
     succeed: vi.fn(),
     fail: vi.fn(),
+    warn: vi.fn(),
     text: '',
   })),
 }));
@@ -83,6 +84,15 @@ vi.mock('../src/prompts/loader.js', () => ({
   ],
   CHANGELOG_PROMPT: 'generate changelog',
   CONSOLIDATION_PROMPT: 'consolidate actions',
+  reloadSteps: vi.fn(),
+}));
+
+vi.mock('../src/sync.js', () => ({
+  syncPrompts: vi.fn().mockResolvedValue({
+    success: true,
+    summary: { updated: [], added: [], removed: [], unchanged: [] },
+    error: null,
+  }),
 }));
 
 vi.mock('../src/consolidation.js', () => ({
@@ -132,6 +142,8 @@ import { notify } from '../src/notifications.js';
 import { generateReport } from '../src/report.js';
 import { setupProject } from '../src/setup.js';
 import { startDashboard, updateDashboard, stopDashboard, scheduleShutdown } from '../src/dashboard.js';
+import { syncPrompts } from '../src/sync.js';
+import { reloadSteps } from '../src/prompts/loader.js';
 import { Command } from 'commander';
 
 // ---------------------------------------------------------------------------
@@ -660,5 +672,75 @@ describe('cli.js run()', () => {
     expect(errorCall[0].error).toBe('unexpected crash');
 
     expect(stopDashboard).toHaveBeenCalled();
+  });
+
+  // -------------------------------------------------------------------------
+  // Auto-sync before run
+  // -------------------------------------------------------------------------
+
+  it('calls syncPrompts before step selection', async () => {
+    await run();
+
+    expect(syncPrompts).toHaveBeenCalledTimes(1);
+    // Sync should be called after pre-checks but before step selection
+    const syncOrder = syncPrompts.mock.invocationCallOrder[0];
+    const checkboxOrder = checkbox.mock.invocationCallOrder[0];
+    expect(syncOrder).toBeLessThan(checkboxOrder);
+  });
+
+  it('does not call reloadSteps when sync has no changes', async () => {
+    syncPrompts.mockResolvedValue({
+      success: true,
+      summary: { updated: [], added: [], removed: [], unchanged: [{ name: 'Lint' }] },
+      error: null,
+    });
+
+    await run();
+
+    expect(syncPrompts).toHaveBeenCalledTimes(1);
+    expect(reloadSteps).not.toHaveBeenCalled();
+  });
+
+  it('calls reloadSteps when sync has changes', async () => {
+    syncPrompts.mockResolvedValue({
+      success: true,
+      summary: { updated: [{ name: 'Lint' }], added: [], removed: [], unchanged: [] },
+      error: null,
+    });
+
+    await run();
+
+    expect(reloadSteps).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns and continues when sync fails', async () => {
+    syncPrompts.mockResolvedValue({
+      success: false,
+      summary: null,
+      error: 'Network timeout',
+    });
+
+    await run();
+
+    // Run should complete normally despite sync failure
+    expect(executeSteps).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns and continues when sync throws', async () => {
+    syncPrompts.mockRejectedValue(new Error('fetch failed'));
+
+    await run();
+
+    // Run should complete normally despite sync error
+    expect(executeSteps).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips sync when --skip-sync is passed', async () => {
+    const program = new Command();
+    program.opts.mockReturnValueOnce({ all: true, skipSync: true });
+
+    await run();
+
+    expect(syncPrompts).not.toHaveBeenCalled();
   });
 });
