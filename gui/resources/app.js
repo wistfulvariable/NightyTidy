@@ -1618,19 +1618,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   showScreen(SCREENS.SETUP);
 
   // Heartbeat — lets the server detect if the browser window is gone.
-  // Uses a Web Worker so Chrome tab throttling/freezing can't stop the heartbeat.
+  // Two layers: Web Worker (immune to tab throttling) + main-thread backup.
   // Chrome aggressively freezes setInterval in background tabs (even --app mode),
   // which was killing the server mid-run when the user alt-tabbed away.
+  //
+  // IMPORTANT: Blob Workers can't resolve relative URLs — must inject absolute origin.
+  // Both layers run simultaneously (belt and suspenders).
   try {
-    const workerCode = `setInterval(() => { fetch('/api/heartbeat', { method: 'POST' }).catch(() => {}); }, 5000);`;
+    const origin = location.origin;
+    const workerCode = `setInterval(() => { fetch('${origin}/api/heartbeat', { method: 'POST' }).catch(() => {}); }, 5000);`;
     const blob = new Blob([workerCode], { type: 'application/javascript' });
     new Worker(URL.createObjectURL(blob));
   } catch {
-    // Fallback: main-thread heartbeat (still works when tab is focused)
-    setInterval(() => {
-      fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
-    }, 5000);
+    // Worker creation failed — main-thread heartbeat below still covers us
   }
+  // Main-thread heartbeat always runs as backup (works when tab is focused).
+  // If the Worker is also running, the server just gets double heartbeats — harmless.
+  setInterval(() => {
+    fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
+  }, 5000);
 
   // Load server config (nightytidy binary path)
   try {

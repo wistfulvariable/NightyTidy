@@ -26,7 +26,7 @@ body {
 
 /* ── Screen visibility ── */
 .screen { display: none; }
-.screen.active { display: block; }
+.screen.active { display: block; max-width: 1200px; margin-left: auto; margin-right: auto; }
 
 /* ── Shared header ── */
 .header {
@@ -656,6 +656,9 @@ body {
   grid-template-columns: repeat(6, 1fr);
   gap: 10px;
   margin-bottom: 16px;
+}
+@media (max-width: 600px) {
+  .summary-stats { grid-template-columns: repeat(3, 1fr); }
 }
 .stat-card {
   background: var(--surface);
