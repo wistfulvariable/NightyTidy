@@ -114,8 +114,7 @@ let serverInstance = null;
 // The watchdog exists to catch orphaned servers, not to kill active runs.
 let lastHeartbeat = Date.now();
 const HEARTBEAT_CHECK_MS = 5000;
-const HEARTBEAT_STALE_IDLE_MS = 15_000;    // 15s when idle (no processes running)
-const HEARTBEAT_STALE_ACTIVE_MS = 300_000; // 5 min when processes are running
+const HEARTBEAT_STALE_IDLE_MS = 15_000;    // 15s — only checked when no processes running
 
 // ── GUI Logger ──────────────────────────────────────────────────────
 // Writes to nightytidy-gui.log in the project directory once selected.
@@ -632,17 +631,17 @@ server.listen(0, '127.0.0.1', () => {
 
   // Watchdog: self-terminate if no heartbeat from the browser.
   // Catches cases where Chrome crashes or is force-killed (unload never fires).
-  // Uses a longer threshold when processes are running because Chrome aggressively
-  // throttles/freezes background tabs, stopping heartbeat timers. We must not
-  // kill the server (and all running steps) just because the user alt-tabbed.
+  //
+  // CRITICAL: When processes are actively running, SKIP the heartbeat check entirely.
+  // Chrome aggressively throttles/freezes background tabs (even --app mode), which
+  // can stop heartbeat timers. The per-process safety timeout in handleRunCommand()
+  // (48 min) handles truly stuck processes. We must NEVER kill the server while
+  // steps are running — that's the #1 cause of "Run Failed" for users.
   const watchdog = setInterval(() => {
-    const staleThreshold = activeProcesses.size > 0 ? HEARTBEAT_STALE_ACTIVE_MS : HEARTBEAT_STALE_IDLE_MS;
+    if (activeProcesses.size > 0) return; // Never self-terminate during active work
     const gap = Date.now() - lastHeartbeat;
-    if (gap > staleThreshold) {
-      const ctx = activeProcesses.size > 0
-        ? ` (${activeProcesses.size} process(es) were still running)`
-        : ' (server was idle)';
-      guiLog('warn', `No heartbeat for ${Math.round(gap / 1000)}s — shutting down${ctx}`);
+    if (gap > HEARTBEAT_STALE_IDLE_MS) {
+      guiLog('warn', `No heartbeat for ${Math.round(gap / 1000)}s — shutting down (server was idle)`);
       console.log(`No heartbeat for ${Math.round(gap / 1000)}s — shutting down.`);
       clearInterval(watchdog);
       cleanup();
