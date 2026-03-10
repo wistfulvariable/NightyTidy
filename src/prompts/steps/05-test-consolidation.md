@@ -108,7 +108,7 @@ After all consolidations are complete:
 
 ## Output
 
-Create `audit-reports/` in project root if needed. Save as `audit-reports/TEST_CONSOLIDATION_REPORT_[run-number]_[date].md`, incrementing run number based on existing reports.
+Create `audit-reports/` in project root if needed. Save as `audit-reports/05_TEST_CONSOLIDATION_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
 
 ### Report Structure
 

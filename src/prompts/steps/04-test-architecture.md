@@ -104,7 +104,7 @@ Scan every test file for each category below. Be exhaustive — count every inst
 
 ## Output
 
-Save as `audit-reports/TEST_ARCHITECTURE_REPORT_[run-number]_[date].md`.
+Save as `audit-reports/04_TEST_ARCHITECTURE_REPORT_[run-number]_[date]_[time in user's local time].md`.
 
 ### Report Structure
 

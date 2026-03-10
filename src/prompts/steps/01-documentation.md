@@ -163,7 +163,7 @@ Order rows by risk descending (Critical → High → Medium → Low). Be honest 
 ### 5. Report Location
 State the full path to the detailed report file for deeper review.
 
-Create `audit-reports/` in project root if needed. Save as `audit-reports/DOCUMENTATION_COVERAGE_REPORT_[run-number]_[date].md`, incrementing run number based on existing reports.
+Create `audit-reports/` in project root if needed. Save as `audit-reports/01_DOCUMENTATION_COVERAGE_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
 
 ---
 

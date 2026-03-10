@@ -152,7 +152,7 @@ Report the ratio and the worst uncovered error paths — specifically the ones w
 
 ## Output
 
-Create `audit-reports/` in project root if needed. Save as `audit-reports/TEST_QUALITY_REPORT_[run-number]_[date].md`, incrementing run number based on existing reports.
+Create `audit-reports/` in project root if needed. Save as `audit-reports/06_TEST_QUALITY_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
 
 ### Report Structure
 

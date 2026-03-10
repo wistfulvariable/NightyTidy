@@ -23,21 +23,18 @@ Work on branch `ui-polish-[date]`.
 
 ## Phase 1: Visual Audit with Playwright
 
-### Step 0: Setup — get the app running before anything else
+### Step 0: Setup — a mandatory pre-flight checklist before any visual auditing:
 
-Before any visual auditing, you MUST get the app running in a browser. Follow these steps in order:
+Install the Playwright browser via browser_install MCP tool (this was the likely cause of your hang — without it, Playwright tries to use a missing browser and gets stuck)
+Find the dev server command from package.json scripts or README
+Start the dev server in the background (don't block waiting for it to exit)
+Verify the app is reachable — try the URL, try alternative ports, bail after 3 attempts
+Discover all routes from the codebase before screenshotting
 
-1. **Install the Playwright browser.** Call the `browser_install` MCP tool first. This ensures the browser binary is available. If it fails, note it and proceed with a code-only audit (Phase 2).
+Plus two fallback guardrails:
 
-2. **Find the dev server command.** Check `package.json` scripts for `dev`, `start`, `serve`, or similar. Also check `README.md` for startup instructions. Common commands: `npm run dev`, `npm start`, `npx next dev`, `npx vite`, `python manage.py runserver`, etc. If no obvious command exists (e.g., static HTML files), use Playwright to open `index.html` directly.
-
-3. **Start the dev server in the background.** Run the dev command via bash. Do NOT wait for it to exit — dev servers run indefinitely. Use a backgrounded command (e.g., append `&` or use a detached process). Wait 5-10 seconds for it to boot.
-
-4. **Verify the app is reachable.** Navigate to the app URL (usually `http://localhost:3000`, `http://localhost:5173`, `http://localhost:8080`, or whatever the dev server printed). If the page doesn't load within 15 seconds, try common alternative ports. If nothing works after 3 attempts, note it and fall back to code-only analysis (Phase 2).
-
-5. **Discover all routes.** Before screenshotting, scan the codebase for route definitions (React Router, Next.js pages/app directory, Vue Router, Express routes, etc.) to build a complete list of URLs to visit.
-
-If the project has no web UI (it's a CLI tool, library, or API-only service), skip Phases 1 and 3 entirely and focus on Phase 2 (Design System Audit of any CSS/UI code that exists).
+If there's no web UI at all (CLI tool, library), skip Phases 1 & 3 entirely
+Page load resilience — 15-second timeout per page, note failures and move on instead of hanging
 
 ### Step 1: Screenshot every screen
 Use Playwright MCP to navigate to every route and capture full-page screenshots.
@@ -47,8 +44,6 @@ Use Playwright MCP to navigate to every route and capture full-page screenshots.
 2. **Pause and print a clear message in the chat:** "⏸️ WAITING FOR LOGIN — The app requires authentication and no test credentials were found. Please log in manually in the Playwright browser window, then type 'continue' to proceed with the audit."
 3. Wait for the user to confirm before proceeding
 4. Once confirmed, resume screenshotting all authenticated routes
-
-**Page load resilience:** For each page, wait up to 15 seconds for it to load. If a page fails to load or returns an error, note it in the report and move on to the next route. Do NOT retry indefinitely or wait for pages that aren't responding.
 
 Capture at:
 - Desktop (1440px), laptop (1280px), tablet (768px), mobile (375px)
@@ -224,7 +219,7 @@ Execute fixes only for issues that meet ALL of these criteria:
 
 ## Output
 
-Create `audit-reports/` in project root if needed. Save as `audit-reports/UI_DESIGN_QUALITY_REPORT_[run-number]_[date].md`, incrementing run number based on existing reports.
+Create `audit-reports/` in project root if needed. Save as `audit-reports/24_UI_DESIGN_QUALITY_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
 
 ### Report Structure
 

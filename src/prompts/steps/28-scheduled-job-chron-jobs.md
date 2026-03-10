@@ -112,7 +112,7 @@ Run tests after every change. Commit: `fix: add [protection type] to [job name]`
 
 ## Output
 
-Save as `audit-reports/SCHEDULED_JOBS_REPORT_[run-number]_[date].md`.
+Save as `audit-reports/28_SCHEDULED_JOBS_REPORT_[run-number]_[date]_[time in user's local time].md`.
 
 ### Report Structure
 

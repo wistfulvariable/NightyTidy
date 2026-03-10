@@ -167,7 +167,7 @@ For files that are still over 500 lines after this pass, document:
 
 ## Output
 
-Create `audit-reports/` in project root if needed. Save as `audit-reports/FILE_DECOMPOSITION_REPORT_[run-number]_[date].md`, incrementing run number based on existing reports.
+Create `audit-reports/` in project root if needed. Save as `audit-reports/12_FILE_DECOMPOSITION_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
 
 ### Report Structure
 

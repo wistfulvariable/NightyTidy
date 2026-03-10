@@ -87,7 +87,7 @@ For each: what was it, how far did it get, what would finish it?
 
 ## Output
 
-Save as `audit-reports/FEATURE_DISCOVERY_REPORT_[run-number]_[date].md`.
+Save as `audit-reports/32_FEATURE_DISCOVERY_REPORT_[run-number]_[date]_[time in user's local time].md`.
 
 ### Report Structure
 

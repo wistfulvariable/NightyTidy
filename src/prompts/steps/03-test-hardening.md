@@ -100,7 +100,7 @@ Document all of this. It's valuable even if you don't write tests for all of it.
 
 ## Output Requirements
 
-Create the `audit-reports/` directory in the project root if it doesn't already exist. Save the report as `audit-reports/TEST_HARDENING_REPORT_[run-number]_[date].md` (e.g., `TEST_HARDENING_REPORT_01_2026-02-16.md`). Increment the run number based on any existing reports with the same name prefix in that folder.
+Create the `audit-reports/` directory in the project root if it doesn't already exist. Save the report as `audit-reports/03_TEST_HARDENING_REPORT_[run-number]_[date]_[time in user's local time].md` (e.g., `03_TEST_HARDENING_REPORT_01_2026-02-16_2129.md`). Increment the run number based on any existing reports with the same name prefix in that folder.
 
 ### Report Structure
 

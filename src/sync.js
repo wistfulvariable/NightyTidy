@@ -171,6 +171,7 @@ export function normalizeName(name) {
     .toLowerCase()
     .replace(/&/g, '')
     .replace(/[^a-z0-9\s]/g, '')
+    .replace(/^\d+\s+/, '')  // strip leading number prefix (e.g. "01 " from "01. Documentation")
     .replace(/\s+/g, ' ')
     .trim();
 }

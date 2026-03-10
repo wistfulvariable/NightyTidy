@@ -120,7 +120,7 @@ Improve error type differentiation, add reference IDs, ensure expected errors do
 
 ## Output
 
-Save as `audit-reports/LOGGING_ERROR_MESSAGE_QUALITY_REPORT_[run]_[date].md`. Increment run number based on existing reports.
+Save as `audit-reports/16_LOGGING_ERROR_MESSAGE_QUALITY_REPORT_[run-number]_[date]_[time in user's local time].md`. Increment run number based on existing reports.
 
 ### Report Structure
 

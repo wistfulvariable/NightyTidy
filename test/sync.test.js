@@ -256,6 +256,16 @@ describe('normalizeName', () => {
   it('handles already-normalized names', () => {
     expect(normalizeName('devops')).toBe('devops');
   });
+
+  it('strips leading number prefixes from numbered headings', () => {
+    expect(normalizeName('01. Documentation')).toBe('documentation');
+    expect(normalizeName('12. File Decomposition')).toBe('file decomposition');
+    expect(normalizeName('33. Strategic Opportunities')).toBe('strategic opportunities');
+  });
+
+  it('strips number prefix without dot separator', () => {
+    expect(normalizeName('07 API Design')).toBe('api design');
+  });
 });
 
 // ── headingToId ─────────────────────────────────────────────────────
@@ -361,6 +371,21 @@ describe('matchToManifest', () => {
     const result = matchToManifest(sections, baseManifest);
     // Should mark as changed since file doesn't exist
     expect(result.matched[0].changed).toBe(true);
+  });
+
+  it('matches numbered doc headings to unnumbered manifest entries', () => {
+    const sections = [
+      makeSection('01. Documentation'),
+      makeSection('02. Test Coverage'),
+      makeSection('03. Security Sweep'),
+    ];
+    const result = matchToManifest(sections, baseManifest);
+    expect(result.matched.length).toBe(3);
+    expect(result.added.length).toBe(0);
+    expect(result.removed.length).toBe(0);
+    expect(result.matched[0].entry.id).toBe('01-documentation');
+    expect(result.matched[1].entry.id).toBe('02-test-coverage');
+    expect(result.matched[2].entry.id).toBe('03-security-sweep');
   });
 });
 

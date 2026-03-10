@@ -109,7 +109,7 @@ For all tests (existing and new):
 
 ## Report
 
-Create `audit-reports/` in project root if needed. Save as `audit-reports/TEST_COVERAGE_REPORT_[run-number]_[date].md`, incrementing run number based on existing reports.
+Create `audit-reports/` in project root if needed. Save as `audit-reports/02_TEST_COVERAGE_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
 
 ### Sections:
 1. **Summary** — Starting/ending coverage %, test files created, test cases written, pass/fail/skip counts, mutation score on critical logic, smoke test results (pass/fail)

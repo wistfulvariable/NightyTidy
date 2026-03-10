@@ -86,7 +86,7 @@ Flag obvious issues only (defer full audit): keyboard-only core flow completion,
 
 ## Output
 
-Save as `audit-reports/PRODUCT_POLISH_REPORT_[run-number]_[date].md`.
+Save as `audit-reports/31_PRODUCT_POLISH_REPORT_[run-number]_[date]_[time in user's local time].md`.
 
 ### Report Sections
 
