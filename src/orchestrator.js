@@ -68,6 +68,23 @@ function validateStepNumbers(numbers) {
   return null;
 }
 
+/**
+ * Validate that a step can be run in the current orchestrator state.
+ * Returns an error string if invalid, or null if valid.
+ */
+function validateStepCanRun(stepNumber, state) {
+  if (!state.selectedSteps.includes(stepNumber)) {
+    return `Step ${stepNumber} is not in the selected steps for this run. Selected: ${state.selectedSteps.join(', ')}`;
+  }
+  if (state.completedSteps.some(s => s.number === stepNumber)) {
+    return `Step ${stepNumber} has already been completed in this run.`;
+  }
+  if (state.failedSteps.some(s => s.number === stepNumber)) {
+    return `Step ${stepNumber} has already been attempted and failed in this run.`;
+  }
+  return null;
+}
+
 function buildExecutionResults(state) {
   const allStepResults = [...state.completedSteps, ...state.failedSteps]
     .sort((a, b) => state.selectedSteps.indexOf(a.number) - state.selectedSteps.indexOf(b.number));
@@ -297,16 +314,8 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
       return fail('No active orchestrator run. Call --init-run first.');
     }
 
-    if (!state.selectedSteps.includes(stepNumber)) {
-      return fail(`Step ${stepNumber} is not in the selected steps for this run. Selected: ${state.selectedSteps.join(', ')}`);
-    }
-
-    if (state.completedSteps.some(s => s.number === stepNumber)) {
-      return fail(`Step ${stepNumber} has already been completed in this run.`);
-    }
-    if (state.failedSteps.some(s => s.number === stepNumber)) {
-      return fail(`Step ${stepNumber} has already been attempted and failed in this run.`);
-    }
+    const validationError = validateStepCanRun(stepNumber, state);
+    if (validationError) return fail(validationError);
 
     const step = STEPS.find(s => s.number === stepNumber);
     if (!step) {
