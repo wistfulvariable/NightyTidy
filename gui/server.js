@@ -30,7 +30,7 @@ const MAX_BODY_BYTES = 1024 * 1024; // 1 MB — prevents memory exhaustion from 
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
-  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'",
+  'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; worker-src blob:",
 };
 
 // PowerShell script for the modern Windows folder picker (IFileOpenDialog COM).
@@ -108,10 +108,14 @@ public static class FolderPicker {
 const activeProcesses = new Map();
 let serverInstance = null;
 
-// Heartbeat — frontend pings every 5s; server self-terminates if no ping for 15s
+// Heartbeat — frontend pings every 5s; server self-terminates if stale.
+// When active processes are running, use a much longer threshold (5 min) because
+// Chrome aggressively throttles/freezes background tabs, killing heartbeat timers.
+// The watchdog exists to catch orphaned servers, not to kill active runs.
 let lastHeartbeat = Date.now();
 const HEARTBEAT_CHECK_MS = 5000;
-const HEARTBEAT_STALE_MS = 15000;
+const HEARTBEAT_STALE_IDLE_MS = 15_000;    // 15s when idle (no processes running)
+const HEARTBEAT_STALE_ACTIVE_MS = 300_000; // 5 min when processes are running
 
 // ── GUI Logger ──────────────────────────────────────────────────────
 // Writes to nightytidy-gui.log in the project directory once selected.
@@ -224,7 +228,7 @@ async function handleSelectFolder(res) {
       const script = join(tmpdir(), `nt-folder-${Date.now()}.ps1`);
       try {
         writeFileSync(script, FOLDER_PICKER_PS1);
-        const result = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -File "${script}"`, { encoding: 'utf-8', timeout: 60000 });
+        const result = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -STA -File "${script}"`, { encoding: 'utf-8', timeout: 60000 });
         lastHeartbeat = Date.now(); // Blocking dialog starved the event loop — refresh before watchdog fires
         folder = result.trim() || null;
       } finally {
@@ -626,12 +630,20 @@ server.listen(0, '127.0.0.1', () => {
   console.log(`NightyTidy GUI server running on ${url}`);
   launchChrome(url);
 
-  // Watchdog: self-terminate if no heartbeat from the browser for 15s.
+  // Watchdog: self-terminate if no heartbeat from the browser.
   // Catches cases where Chrome crashes or is force-killed (unload never fires).
+  // Uses a longer threshold when processes are running because Chrome aggressively
+  // throttles/freezes background tabs, stopping heartbeat timers. We must not
+  // kill the server (and all running steps) just because the user alt-tabbed.
   const watchdog = setInterval(() => {
-    if (Date.now() - lastHeartbeat > HEARTBEAT_STALE_MS) {
-      guiLog('warn', 'No heartbeat from browser — shutting down');
-      console.log('No heartbeat from browser — shutting down.');
+    const staleThreshold = activeProcesses.size > 0 ? HEARTBEAT_STALE_ACTIVE_MS : HEARTBEAT_STALE_IDLE_MS;
+    const gap = Date.now() - lastHeartbeat;
+    if (gap > staleThreshold) {
+      const ctx = activeProcesses.size > 0
+        ? ` (${activeProcesses.size} process(es) were still running)`
+        : ' (server was idle)';
+      guiLog('warn', `No heartbeat for ${Math.round(gap / 1000)}s — shutting down${ctx}`);
+      console.log(`No heartbeat for ${Math.round(gap / 1000)}s — shutting down.`);
       clearInterval(watchdog);
       cleanup();
       process.exit(0);

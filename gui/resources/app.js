@@ -1617,15 +1617,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   bindEvents();
   showScreen(SCREENS.SETUP);
 
-  // Heartbeat — lets the server detect if the browser window is gone
-  // (e.g. Chrome crashed or was force-killed). Server self-terminates if stale.
-  setInterval(() => {
-    const hbController = new AbortController();
-    const hbTimer = setTimeout(() => hbController.abort(), 5000); // 5s timeout on heartbeat
-    fetch('/api/heartbeat', { method: 'POST', signal: hbController.signal })
-      .catch(() => {}) // Ignore failures — server will self-terminate if it doesn't receive heartbeats
-      .finally(() => clearTimeout(hbTimer));
-  }, 5000);
+  // Heartbeat — lets the server detect if the browser window is gone.
+  // Uses a Web Worker so Chrome tab throttling/freezing can't stop the heartbeat.
+  // Chrome aggressively freezes setInterval in background tabs (even --app mode),
+  // which was killing the server mid-run when the user alt-tabbed away.
+  try {
+    const workerCode = `setInterval(() => { fetch('/api/heartbeat', { method: 'POST' }).catch(() => {}); }, 5000);`;
+    const blob = new Blob([workerCode], { type: 'application/javascript' });
+    new Worker(URL.createObjectURL(blob));
+  } catch {
+    // Fallback: main-thread heartbeat (still works when tab is focused)
+    setInterval(() => {
+      fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
+    }, 5000);
+  }
 
   // Load server config (nightytidy binary path)
   try {
