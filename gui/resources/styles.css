@@ -84,10 +84,11 @@ body {
   font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
-  transition: opacity 0.2s;
+  transition: opacity 0.15s ease-out, transform 0.1s ease-out;
+  will-change: transform, opacity;
 }
 .btn:hover { opacity: 0.85; }
-.btn:active:not(:disabled) { transform: scale(0.97); }
+.btn:active:not(:disabled) { transform: scale(0.97); transition-duration: 0.05s; }
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .btn-primary { background: var(--cyan); color: #000; }
@@ -233,6 +234,7 @@ body {
   font-size: 0.9rem;
   cursor: pointer;
 }
+.step-check-item { transition: background 0.1s ease-out; }
 .step-check-item:hover { background: rgba(255,255,255,0.03); }
 
 .step-check-item input[type="checkbox"] {
@@ -342,7 +344,8 @@ body {
   height: 100%;
   background: var(--cyan);
   border-radius: 4px;
-  transition: width 0.5s ease;
+  transition: width 0.3s ease-out;
+  will-change: width;
 }
 .progress-stats {
   display: flex;
@@ -374,6 +377,7 @@ body {
   border-radius: 4px;
   font-size: 0.9rem;
 }
+.step-item { transition: background 0.1s ease-out; }
 .step-item:hover { background: rgba(255,255,255,0.03); }
 .step-item.step-clickable { cursor: pointer; }
 .step-item.step-clickable:hover { background: rgba(255,255,255,0.06); }
@@ -393,9 +397,14 @@ body {
 }
 .step-pending .step-icon  { color: var(--text-dim); }
 .step-running .step-icon  { color: var(--blue); }
-.step-completed .step-icon { color: var(--green); }
-.step-failed .step-icon   { color: var(--red); }
+.step-completed .step-icon { color: var(--green); animation: step-complete 0.3s ease-out; }
+.step-failed .step-icon   { color: var(--red); animation: step-complete 0.3s ease-out; }
 .step-skipped .step-icon  { color: var(--yellow); }
+@keyframes step-complete {
+  0% { transform: scale(1.4); }
+  50% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
 .step-skipped .step-name  { opacity: 0.5; text-decoration: line-through; }
 .step-item .step-num {
   color: var(--text-dim);
@@ -418,6 +427,7 @@ body {
   border-top-color: var(--blue);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+  will-change: transform;
 }
 
 /* Output panel */
@@ -615,6 +625,7 @@ body {
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   margin-bottom: 20px;
+  will-change: transform;
 }
 .finishing-content p {
   color: var(--text-dim);
@@ -633,7 +644,8 @@ body {
 .init-status {
   color: var(--text-dim);
   font-size: 1rem;
-  transition: opacity 0.3s ease;
+  transition: opacity 0.2s ease-out;
+  will-change: opacity;
 }
 
 /* ═══════════════════════════════════════
@@ -710,8 +722,10 @@ body {
   align-items: center;
   justify-content: center;
   z-index: 100;
+  opacity: 1;
+  transition: opacity 0.15s ease-out;
 }
-.modal-overlay.hidden { display: none; }
+.modal-overlay.hidden { display: none; opacity: 0; }
 .modal {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -719,6 +733,15 @@ body {
   padding: 28px 32px;
   max-width: 400px;
   width: 90%;
+  transform: scale(1);
+  transition: transform 0.15s ease-out;
+}
+.modal-overlay:not(.hidden) .modal {
+  animation: modal-enter 0.15s ease-out;
+}
+@keyframes modal-enter {
+  from { transform: scale(0.95); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }
 .modal h2 {
   font-size: 1.1rem;

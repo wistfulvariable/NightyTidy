@@ -142,7 +142,7 @@ const INIT_MESSAGES = [
 ];
 
 function showInitOverlay() {
-  // Hide step selection UI
+  // Hide step selection UI immediately
   for (const id of ['step-checklist', 'options-bar', 'start-bar', 'steps-header']) {
     const el = document.querySelector(`.${id}`) || document.getElementById(id);
     if (el) el.style.display = 'none';
@@ -150,9 +150,11 @@ function showInitOverlay() {
   const overlay = document.getElementById('init-overlay');
   const statusEl = document.getElementById('init-status');
   statusEl.textContent = INIT_MESSAGES[0];
+  statusEl.style.opacity = '1';
   overlay.style.display = 'block';
 
   let idx = 0;
+  // Use shorter interval (1.5s) for snappier feel during init
   state.initMsgTimer = setInterval(() => {
     if (idx >= INIT_MESSAGES.length - 1) {
       clearInterval(state.initMsgTimer);
@@ -164,8 +166,8 @@ function showInitOverlay() {
     setTimeout(() => {
       statusEl.textContent = INIT_MESSAGES[idx];
       statusEl.style.opacity = '1';
-    }, 200);
-  }, 2000);
+    }, 150); // Faster fade-in (150ms instead of 200ms)
+  }, 1500); // Shorter interval (1.5s instead of 2s)
 }
 
 function hideInitOverlay() {
@@ -368,13 +370,29 @@ async function createInitialCommit() {
 
 async function selectFolder() {
   clearError('setup');
+
+  // Immediate visual feedback: disable button during OS dialog
+  const selectBtn = document.getElementById('btn-select-folder');
+  const originalText = selectBtn.textContent;
+  selectBtn.disabled = true;
+  selectBtn.textContent = 'Opening...';
+
   try {
     const result = await api('select-folder');
+
+    // Restore button state
+    selectBtn.disabled = false;
+    selectBtn.textContent = originalText;
+
     if (!result.ok || !result.folder) return; // User cancelled
     state.projectDir = result.folder;
     showFolderPath(result.folder);
     await loadSteps();
   } catch (err) {
+    // Restore button state on error
+    selectBtn.disabled = false;
+    selectBtn.textContent = originalText;
+
     logToServer('error', `Folder selection failed: ${err.message}`);
     showError('setup', 'Folder selection did not complete. Please try again or type the path manually.');
   }
@@ -460,6 +478,11 @@ async function startRun() {
   const selected = getCheckedSteps();
   if (!selected.length) return;
 
+  // Immediate visual feedback: disable button and show loading state
+  const startBtn = document.getElementById('btn-start-run');
+  startBtn.disabled = true;
+  startBtn.textContent = 'Starting...';
+
   state.selectedSteps = selected;
   state.timeout = parseInt(document.getElementById('timeout-input').value, 10) || 45;
   state.completedSteps = [];
@@ -474,6 +497,10 @@ async function startRun() {
   showInitOverlay();
   const result = await runCli(args);
   hideInitOverlay();
+
+  // Restore button state (in case of error return to steps screen)
+  startBtn.disabled = false;
+  startBtn.textContent = 'Start Run';
 
   if (!result.ok) {
     logToServer('error', `Init run failed: ${result.error}`);
@@ -772,10 +799,14 @@ async function runNextStep() {
 
 // ── Progress Polling ───────────────────────────────────────────────
 
+const POLL_INTERVAL_FAST = 500;   // Normal polling interval (ms)
+const POLL_INTERVAL_SLOW = 1000;  // Slower polling when no changes detected
+
 function startProgressPolling() {
   stopProgressPolling();
   pollFailureCount = 0;
-  state.pollTimer = setInterval(pollProgress, 500);
+  state.pollInterval = POLL_INTERVAL_FAST;
+  state.pollTimer = setInterval(pollProgress, state.pollInterval);
 }
 
 function stopProgressPolling() {
@@ -919,10 +950,13 @@ function renderProgressFromFile(progress) {
     if (progress.currentStepOutput !== lastRenderedOutput) {
       lastRenderedOutput = progress.currentStepOutput;
       lastOutputChangeTime = Date.now();
-      const outputEl = document.getElementById('output-content');
-      outputEl.innerHTML = renderMarkdown(progress.currentStepOutput);
-      const panel = document.getElementById('output-panel');
-      panel.scrollTop = panel.scrollHeight;
+      // Use requestAnimationFrame for smoother DOM updates
+      requestAnimationFrame(() => {
+        const outputEl = document.getElementById('output-content');
+        outputEl.innerHTML = renderMarkdown(progress.currentStepOutput);
+        const panel = document.getElementById('output-panel');
+        panel.scrollTop = panel.scrollHeight;
+      });
       hideWorkingIndicator();
       updateLastUpdateDisplay();
     } else {
@@ -1656,10 +1690,19 @@ function bindEvents() {
 
 // ── Init ───────────────────────────────────────────────────────────
 
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
+  // Show the UI immediately for instant perceived startup
   bindEvents();
   showScreen(SCREENS.SETUP);
 
+  // Start heartbeat systems immediately (fire-and-forget)
+  initHeartbeat();
+
+  // Load config in background (non-blocking)
+  loadConfigAsync();
+});
+
+function initHeartbeat() {
   // Heartbeat — lets the server detect if the browser window is gone.
   // Two layers: Web Worker (immune to tab throttling) + main-thread backup.
   // Chrome aggressively freezes setInterval in background tabs (even --app mode),
@@ -1680,10 +1723,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(() => {
     fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
   }, 5000);
+}
 
-  // Load server config (nightytidy binary path)
+async function loadConfigAsync() {
+  // Load server config (nightytidy binary path) — non-blocking background load
   try {
     const config = await api('config');
     if (config.ok && config.bin) state.bin = config.bin;
   } catch { /* fallback to npx */ }
-});
+}
