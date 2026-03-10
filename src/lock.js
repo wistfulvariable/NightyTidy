@@ -37,16 +37,20 @@ function isLockStale(lockData) {
 
 function promptOverride(lockData) {
   if (!process.stdin.isTTY) {
+    const pid = lockData.pid || 'unknown';
+    const started = lockData.started || 'unknown time';
     throw new Error(
-      `Another NightyTidy run is already in progress (PID ${lockData.pid}, started ${lockData.started}).\n` +
+      `Another NightyTidy run is already in progress (PID ${pid}, started ${started}).\n` +
       `If this is wrong, delete ${LOCK_FILENAME} and try again.`
     );
   }
 
   const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const pid = lockData.pid || 'unknown';
+  const started = lockData.started || 'unknown time';
   return new Promise((resolve) => {
     rl.question(
-      `A lock file exists (PID ${lockData.pid}, started ${lockData.started}). Override it? [y/N] `,
+      `A lock file exists (PID ${pid}, started ${started}). Override it? [y/N] `,
       (answer) => {
         rl.close();
         resolve(answer.trim().toLowerCase() === 'y');

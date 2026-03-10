@@ -92,6 +92,8 @@ const state = {
   runStartTime: null,     // timestamp ms
   finishResult: null,     // from --finish-run response
   stopping: false,        // stop button was clicked
+  skippingStep: null,     // step number being skipped (null when not skipping)
+  skippedSteps: [],       // step numbers that were skipped
   viewingStepOutput: null, // step number whose stored output is shown (null = live mode)
   initMsgTimer: null,      // setInterval ID for init overlay rotating messages
   currentStepNum: null,    // step number currently running (for live elapsed timer)
@@ -129,7 +131,12 @@ function showInitOverlay() {
 
   let idx = 0;
   state.initMsgTimer = setInterval(() => {
-    idx = (idx + 1) % INIT_MESSAGES.length;
+    if (idx >= INIT_MESSAGES.length - 1) {
+      clearInterval(state.initMsgTimer);
+      state.initMsgTimer = null;
+      return;
+    }
+    idx++;
     statusEl.style.opacity = '0';
     setTimeout(() => {
       statusEl.textContent = INIT_MESSAGES[idx];
@@ -513,6 +520,12 @@ function updateStepItemStatus(stepNum, status, duration) {
       el.onclick = () => viewStepOutput(stepNum);
       break;
     }
+    case 'skipped':
+      iconEl.textContent = '\u27A0';
+      if (duration) durEl.textContent = NtLogic.formatMs(duration);
+      el.classList.add('step-clickable');
+      el.onclick = () => viewStepOutput(stepNum);
+      break;
     default:
       iconEl.innerHTML = '&#9675;';
   }
@@ -520,7 +533,7 @@ function updateStepItemStatus(stepNum, status, duration) {
 
 function updateProgressBar() {
   const total = state.selectedSteps.length;
-  const done = state.completedSteps.length + state.failedSteps.length;
+  const done = state.completedSteps.length + state.failedSteps.length + state.skippedSteps.length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
   document.getElementById('progress-bar-fill').style.width = `${pct}%`;
@@ -533,6 +546,10 @@ function updateProgressBar() {
   if (state.failedSteps.length > 0) {
     if (detail) detail += ', ';
     detail += `${state.failedSteps.length} failed`;
+  }
+  if (state.skippedSteps.length > 0) {
+    if (detail) detail += ', ';
+    detail += `${state.skippedSteps.length} skipped`;
   }
   document.getElementById('progress-detail').textContent = detail;
 }
@@ -561,7 +578,7 @@ function updateElapsed() {
 function showCurrentStep(stepNum) {
   const step = state.steps.find(s => s.number === stepNum);
   const name = step ? step.name : `Step ${stepNum}`;
-  const done = state.completedSteps.length + state.failedSteps.length;
+  const done = state.completedSteps.length + state.failedSteps.length + state.skippedSteps.length;
   const total = state.selectedSteps.length;
   const position = done + 1;
 
@@ -570,6 +587,9 @@ function showCurrentStep(stepNum) {
   subtitle.className = 'subtitle subtitle-running';
 
   document.title = `Step ${position}/${total} — NightyTidy`;
+
+  document.getElementById('btn-skip-step').disabled = false;
+  document.getElementById('btn-skip-step').textContent = 'Skip Step';
 }
 
 function hideCurrentStep() {
@@ -584,7 +604,7 @@ async function runNextStep() {
   if (state.stopping) return;
   if (state.paused) return;
 
-  const next = NtLogic.getNextStep(state.selectedSteps, state.completedSteps, state.failedSteps);
+  const next = NtLogic.getNextStep(state.selectedSteps, state.completedSteps, state.failedSteps, state.skippedSteps);
   if (next === null) {
     await finishRun();
     return;
@@ -599,6 +619,35 @@ async function runNextStep() {
 
   const timeoutArg = state.timeout !== 45 ? ` --timeout ${state.timeout}` : '';
   const result = await runCli(`--run-step ${next}${timeoutArg}`);
+
+  // Skip detection: user clicked "Skip Step" while this step was running
+  if (state.skippingStep) {
+    const skippedNum = state.skippingStep;
+    state.skippingStep = null;
+    state.skippedSteps.push(skippedNum);
+
+    const liveSnapshot = lastRenderedOutput || '';
+    const step = state.steps.find(s => s.number === skippedNum);
+    state.stepResults.push({
+      step: skippedNum,
+      name: step ? step.name : undefined,
+      status: 'skipped',
+      duration: state.stepStartTime ? Date.now() - state.stepStartTime : null,
+      output: liveSnapshot,
+      error: null,
+      costUSD: null,
+      inputTokens: null,
+      outputTokens: null,
+    });
+    updateStepItemStatus(skippedNum, 'skipped', state.stepStartTime ? Date.now() - state.stepStartTime : null);
+    resetSkipButton();
+
+    state.currentStepNum = null;
+    state.stepStartTime = null;
+    updateProgressBar();
+    runNextStep();
+    return;
+  }
 
   if (state.stopping) return;
 
@@ -662,6 +711,7 @@ async function runNextStep() {
 
   state.currentStepNum = null;
   state.stepStartTime = null;
+  document.getElementById('btn-skip-step').disabled = true;
   updateProgressBar();
   runNextStep();
 }
@@ -882,7 +932,7 @@ function enterPauseMode(stepNum, retryAfterMs) {
   startCountdownTimer();
 
   // Add paused visual to the step item
-  const stepItem = document.querySelector(`.step-item[data-step="${stepNum}"]`);
+  const stepItem = document.getElementById(`run-step-${stepNum}`);
   if (stepItem) stepItem.classList.add('step-paused');
 
   return new Promise(resolve => {
@@ -900,7 +950,7 @@ function enterPauseMode(stepNum, retryAfterMs) {
     state._pauseTimer = null;
 
     // Remove paused visual
-    const el = document.querySelector(`.step-item[data-step="${stepNum}"]`);
+    const el = document.getElementById(`run-step-${stepNum}`);
     if (el) el.classList.remove('step-paused');
   });
 }
@@ -937,7 +987,13 @@ function showPauseOverlay(stepNum, waitMs, hasRetryAfter) {
     : `Auto-retry in ${NtLogic.formatMs(waitMs)} (attempt ${state.backoffAttempt}).`;
   document.getElementById('pause-source').textContent = sourceText;
 
-  document.getElementById('pause-overlay').classList.remove('hidden');
+  const pauseOverlay = document.getElementById('pause-overlay');
+  pauseOverlay.classList.remove('hidden');
+  // Focus the Resume button (primary action)
+  const resumeBtn = document.getElementById('btn-resume-now');
+  if (resumeBtn) resumeBtn.focus();
+
+  document.getElementById('btn-skip-step').disabled = true;
 
   const subtitle = document.getElementById('running-subtitle');
   subtitle.textContent = 'Paused \u2014 Rate Limit';
@@ -947,6 +1003,7 @@ function showPauseOverlay(stepNum, waitMs, hasRetryAfter) {
 
 function hidePauseOverlay() {
   document.getElementById('pause-overlay').classList.add('hidden');
+  document.getElementById('btn-skip-step').disabled = false;
 
   const subtitle = document.getElementById('running-subtitle');
   subtitle.textContent = '';
@@ -971,15 +1028,50 @@ function stopCountdownTimer() {
   }
 }
 
+// ── Skip Step ─────────────────────────────────────────────────────
+
+async function skipStep() {
+  if (!state.currentStepNum || state.skippingStep || state.stopping) return;
+  state.skippingStep = state.currentStepNum;
+
+  const btn = document.getElementById('btn-skip-step');
+  btn.disabled = true;
+  btn.textContent = 'Skipping...';
+
+  if (state.currentProcessId) {
+    try { await api('kill-process', { id: state.currentProcessId }); }
+    catch { /* ignore — process may already be dead */ }
+  }
+  // runNextStep() will detect state.skippingStep when runCli returns
+}
+
+function resetSkipButton() {
+  const btn = document.getElementById('btn-skip-step');
+  btn.disabled = false;
+  btn.textContent = 'Skip Step';
+}
+
 // ── Stop Run ───────────────────────────────────────────────────────
+
+let lastFocusedElement = null;
 
 function confirmStopRun() {
   if (state.stopping) return;
-  document.getElementById('confirm-stop-overlay').classList.remove('hidden');
+  lastFocusedElement = document.activeElement;
+  const overlay = document.getElementById('confirm-stop-overlay');
+  overlay.classList.remove('hidden');
+  // Focus the cancel button (safer default action)
+  const cancelBtn = document.getElementById('btn-confirm-stop-cancel');
+  if (cancelBtn) cancelBtn.focus();
 }
 
 function cancelStopRun() {
   document.getElementById('confirm-stop-overlay').classList.add('hidden');
+  // Restore focus to the element that opened the modal
+  if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
+    lastFocusedElement.focus();
+    lastFocusedElement = null;
+  }
 }
 
 async function stopRun() {
@@ -989,6 +1081,7 @@ async function stopRun() {
 
   document.getElementById('btn-stop-run').disabled = true;
   document.getElementById('btn-stop-run').textContent = 'Stopping...';
+  document.getElementById('btn-skip-step').disabled = true;
 
   // Kill the currently running process
   if (state.currentProcessId) {
@@ -1007,6 +1100,9 @@ async function stopRun() {
 
 // ── Finish Run ─────────────────────────────────────────────────────
 
+const FINISH_SKIP_DELAY_MS = 10_000;  // Show skip button after 10s
+const FINISH_TIMEOUT_MS = 180_000;    // Auto-skip after 3 minutes
+
 async function finishRun() {
   stopProgressPolling();
   stopElapsedTimer();
@@ -1014,8 +1110,69 @@ async function finishRun() {
   document.title = 'Finishing... — NightyTidy';
   showScreen(SCREENS.FINISHING);
 
-  const result = await runCli('--finish-run');
+  // Reset finishing screen state
+  document.getElementById('finishing-status').textContent = 'Generating report and merging changes...';
+  const skipBtn = document.getElementById('btn-skip-finishing');
+  skipBtn.style.display = 'none';
+  clearError('finishing');
 
+  // Show skip button after a delay as an escape hatch
+  const skipTimer = setTimeout(() => {
+    skipBtn.style.display = '';
+  }, FINISH_SKIP_DELAY_MS);
+
+  // Race the CLI call against a user skip and a hard timeout
+  let skipResolve;
+  const skipPromise = new Promise(resolve => { skipResolve = resolve; });
+
+  const onSkip = () => {
+    logToServer('warn', 'User skipped finishing');
+    skipResolve({ skipped: true });
+  };
+  skipBtn.addEventListener('click', onSkip, { once: true });
+
+  const timeoutId = setTimeout(() => {
+    logToServer('warn', 'Finishing timed out after 3 minutes');
+    skipResolve({ skipped: true, timedOut: true });
+  }, FINISH_TIMEOUT_MS);
+
+  let outcome;
+  try {
+    const cliPromise = runCli('--finish-run').then(r => ({ skipped: false, result: r }));
+    outcome = await Promise.race([cliPromise, skipPromise]);
+  } catch (err) {
+    // fetch failure, server crash, or other unexpected error
+    clearTimeout(skipTimer);
+    clearTimeout(timeoutId);
+    skipBtn.removeEventListener('click', onSkip);
+    skipBtn.style.display = 'none';
+    logToServer('error', `finishRun exception: ${err.message || err}`);
+    renderSummary(null);
+    showScreen(SCREENS.SUMMARY);
+    return;
+  }
+
+  // Cleanup
+  clearTimeout(skipTimer);
+  clearTimeout(timeoutId);
+  skipBtn.removeEventListener('click', onSkip);
+  skipBtn.style.display = 'none';
+
+  if (outcome.skipped) {
+    // Kill the finish process if it's still running
+    if (state.currentProcessId) {
+      try { await api('kill-process', { id: state.currentProcessId }); } catch { /* ignore */ }
+    }
+    const msg = outcome.timedOut
+      ? 'Finishing timed out — your changes are still on the run branch.'
+      : 'Finishing was skipped — your changes are still on the run branch.';
+    showError('finishing', msg);
+    renderSummary(null);
+    showScreen(SCREENS.SUMMARY);
+    return;
+  }
+
+  const result = outcome.result;
   if (!result.ok) {
     logToServer('error', `Finish run failed: ${result.error}`);
     showError('finishing', result.error);
@@ -1035,6 +1192,7 @@ function renderSummary(finishData) {
   document.getElementById('summary-project-path').textContent = state.projectDir || '';
   const completed = state.completedSteps.length;
   const failed = state.failedSteps.length;
+  const skipped = state.skippedSteps.length;
   const total = state.selectedSteps.length;
   const totalDuration = state.runStartTime ? Date.now() - state.runStartTime : 0;
 
@@ -1045,7 +1203,7 @@ function renderSummary(finishData) {
     resultEl.className = 'summary-result partial';
     titleEl.textContent = 'Run Stopped';
     document.title = 'Stopped — NightyTidy';
-  } else if (failed === 0 && completed > 0) {
+  } else if (failed === 0 && skipped === 0 && completed > 0) {
     resultEl.className = 'summary-result success';
     titleEl.textContent = 'Run Complete';
     document.title = 'Complete — NightyTidy';
@@ -1055,7 +1213,8 @@ function renderSummary(finishData) {
     document.title = 'Failed — NightyTidy';
   } else {
     resultEl.className = 'summary-result partial';
-    titleEl.textContent = 'Run Complete (with failures)';
+    const issues = [failed > 0 ? 'failures' : '', skipped > 0 ? 'skips' : ''].filter(Boolean).join(' & ');
+    titleEl.textContent = `Run Complete (with ${issues})`;
     document.title = 'Complete — NightyTidy';
   }
 
@@ -1092,7 +1251,11 @@ function renderSummary(finishData) {
     <div class="stat-card">
       <div class="value red">${failed}</div>
       <div class="label">Failed</div>
-    </div>
+    </div>${skipped > 0 ? `
+    <div class="stat-card">
+      <div class="value yellow">${skipped}</div>
+      <div class="label">Skipped</div>
+    </div>` : ''}
     <div class="stat-card">
       <div class="value">${total}</div>
       <div class="label">Total Steps</div>
@@ -1151,7 +1314,7 @@ function renderSummary(finishData) {
   const listEl = document.getElementById('summary-step-list');
   listEl.innerHTML = state.stepResults.map(r => {
     const status = r.status || 'pending';
-    const icon = status === 'completed' ? '\u2713' : status === 'failed' ? '\u2717' : '&#9675;';
+    const icon = status === 'completed' ? '\u2713' : status === 'failed' ? '\u2717' : status === 'skipped' ? '\u27A0' : '&#9675;';
     const name = r.name || `Step ${r.step}`;
     const dur = r.duration ? NtLogic.formatMs(r.duration) : '';
     const cost = NtLogic.formatCost(r.costUSD) || '';
@@ -1198,6 +1361,8 @@ function resetApp() {
   state.runStartTime = null;
   state.finishResult = null;
   state.stopping = false;
+  state.skippingStep = null;
+  state.skippedSteps = [];
   state.viewingStepOutput = null;
   state.currentStepNum = null;
   state.stepStartTime = null;
@@ -1220,6 +1385,7 @@ function resetApp() {
   if (tsEl) tsEl.textContent = '';
   document.getElementById('btn-stop-run').disabled = false;
   document.getElementById('btn-stop-run').textContent = 'Stop Run';
+  resetSkipButton();
   document.getElementById('progress-bar-fill').style.width = '0%';
   document.getElementById('progress-bar-track').setAttribute('aria-valuenow', '0');
   document.title = 'NightyTidy';
@@ -1257,6 +1423,7 @@ function bindEvents() {
   document.getElementById('btn-select-none').addEventListener('click', () => selectAllSteps(false));
   document.getElementById('btn-back-setup').addEventListener('click', () => showScreen(SCREENS.SETUP));
   document.getElementById('btn-start-run').addEventListener('click', startRun);
+  document.getElementById('btn-skip-step').addEventListener('click', skipStep);
   document.getElementById('btn-stop-run').addEventListener('click', confirmStopRun);
   document.getElementById('btn-confirm-stop-yes').addEventListener('click', stopRun);
   document.getElementById('btn-confirm-stop-cancel').addEventListener('click', cancelStopRun);
@@ -1268,6 +1435,25 @@ function bindEvents() {
   document.getElementById('btn-close-app').addEventListener('click', () => {
     api('exit').catch(() => {});
     window.close();
+  });
+
+  // Keyboard accessibility for modals — Escape key to close
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const confirmOverlay = document.getElementById('confirm-stop-overlay');
+      if (!confirmOverlay.classList.contains('hidden')) {
+        cancelStopRun();
+        return;
+      }
+      // Don't allow Escape on pause overlay — require explicit action
+    }
+  });
+
+  // Click outside modal to close (confirm dialog only)
+  document.getElementById('confirm-stop-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'confirm-stop-overlay') {
+      cancelStopRun();
+    }
   });
 }
 

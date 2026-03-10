@@ -103,7 +103,7 @@ Every error message should follow this pattern:
 
 | Trigger | Message | Context |
 |---------|---------|---------|
-| State file already exists | `A run is already in progress. Call --finish-run first, or delete nightytidy-run-state.json to reset.` | Returned in JSON `{ success: false, error }` |
+| State file already exists | `A run is already in progress. Call --finish-run to complete it, or delete nightytidy-run-state.json to force-reset.` | Returned in JSON `{ success: false, error }` |
 | No active run (--run-step) | `No active orchestrator run. Call --init-run first.` | Returned in JSON |
 | Step not in selection | `Step [N] is not in the selected steps for this run. Selected: [list]` | Returned in JSON |
 | Step already completed | `Step [N] has already been completed in this run.` | Returned in JSON |
@@ -111,6 +111,7 @@ Every error message should follow this pattern:
 | Step not found | `Step [N] not found in available steps.` | Returned in JSON |
 | No active run (--finish-run) | `No active orchestrator run. Nothing to finish.` | Returned in JSON |
 | Invalid step numbers | `Invalid step number(s): [N, ...]. Valid range: 1-33.` | Returned in JSON |
+| No valid step numbers | `No valid step numbers provided. Use --list --json to see available steps.` | Returned in JSON |
 
 ## GUI (`gui/resources/app.js`)
 
@@ -136,3 +137,23 @@ Every error message should follow this pattern:
 |---------|---------|---------|
 | Changelog generation failed | Fallback narration paragraph mentioning Claude Code load and suggesting re-run | Included in NIGHTYTIDY-REPORT.md |
 | Step failure in report | `No error details available` | Fallback when error field is empty |
+
+## Action Plan (`src/consolidation.js`)
+
+| Trigger | Message | Context |
+|---------|---------|---------|
+| Generation failed | `Action plan generation failed — NIGHTYTIDY-ACTIONS.md will not be created. NIGHTYTIDY-REPORT.md is still available.` | Non-critical warning |
+| Generation error | `Action plan generation error ([error]) — NIGHTYTIDY-ACTIONS.md will not be created.` | Non-critical warning |
+
+## Executor (`src/executor.js`)
+
+| Trigger | Message | Context |
+|---------|---------|---------|
+| Automatic commit failed | `[Step]: automatic commit failed ([error]) — changes remain staged` | Warning level log |
+| Fast completion detected | `[Step]: completed in [N]s — suspiciously fast (threshold: 120s). Retrying with context.` | Warning level log |
+
+## Git Operations (`src/git.js`)
+
+| Trigger | Message | Context |
+|---------|---------|---------|
+| Ephemeral exclusion failed | `Could not add ephemeral file exclusions ([code]): [message]` | Warning level log |

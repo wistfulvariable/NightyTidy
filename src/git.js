@@ -1,13 +1,36 @@
+/**
+ * @fileoverview Git operations for NightyTidy.
+ *
+ * Provides branching, tagging, and commit operations for run management.
+ * Uses simple-git as the underlying implementation.
+ *
+ * Error contract:
+ * - Most functions throw on failure (caught by caller)
+ * - mergeRunBranch NEVER throws — returns { success: false, conflict: true }
+ */
+
 import { readFileSync, appendFileSync, existsSync } from 'fs';
 import path from 'path';
 import simpleGit from 'simple-git';
 import { info, debug, warn } from './logger.js';
 
+/**
+ * @typedef {import('simple-git').SimpleGit} SimpleGit
+ */
+
+/**
+ * @typedef {Object} MergeResult
+ * @property {boolean} success - Whether merge succeeded
+ * @property {boolean} [conflict] - True if merge failed due to conflict
+ */
+
 const EPHEMERAL_FILES = ['nightytidy-run.log', 'nightytidy-progress.json', 'nightytidy-dashboard.url', 'nightytidy-run-state.json', 'nightytidy-run-state.json.tmp'];
 
 const MAX_NAME_RETRIES = 10;
 
+/** @type {SimpleGit|null} */
 let git = null;
+/** @type {string|null} */
 let projectRoot = null;
 
 function getTimestamp() {
@@ -20,12 +43,25 @@ function getTimestamp() {
   return `${yyyy}-${mm}-${dd}-${hh}${min}`;
 }
 
+/**
+ * Initialize the git module with a project directory.
+ * Must be called before any other git operations.
+ *
+ * @param {string} projectDir - Absolute path to the project
+ * @returns {SimpleGit} The git instance
+ */
 export function initGit(projectDir) {
   projectRoot = projectDir;
   git = simpleGit(projectDir);
   return git;
 }
 
+/**
+ * Add NightyTidy ephemeral files to .git/info/exclude.
+ * Prevents log and progress files from being tracked by git.
+ *
+ * @returns {void}
+ */
 export function excludeEphemeralFiles() {
   try {
     const excludePath = path.join(projectRoot, '.git', 'info', 'exclude');
@@ -42,15 +78,28 @@ export function excludeEphemeralFiles() {
     appendFileSync(excludePath, separator + '# NightyTidy ephemeral files\n' + toAdd.join('\n') + '\n', 'utf8');
     debug('Added ephemeral file exclusions to .git/info/exclude');
   } catch (err) {
-    warn(`Could not add ephemeral file exclusions: ${err.message}`);
+    warn(`Could not add ephemeral file exclusions (${err.code || 'unknown'}): ${err.message}`);
   }
 }
 
+/**
+ * Get the current branch name.
+ *
+ * @returns {Promise<string>} Current branch name
+ */
 export async function getCurrentBranch() {
   const status = await git.status();
   return status.current;
 }
 
+/**
+ * Retry an operation with incrementing suffix on name collision.
+ *
+ * @param {string} baseName - Base name to try
+ * @param {(name: string) => Promise<void>} operationFn - Operation to attempt
+ * @param {string} errorMessage - Error message if all retries fail
+ * @returns {Promise<string>} The successful name (with or without suffix)
+ */
 async function retryWithSuffix(baseName, operationFn, errorMessage) {
   let name = baseName;
   for (let attempt = 0; attempt < MAX_NAME_RETRIES; attempt++) {
@@ -64,6 +113,12 @@ async function retryWithSuffix(baseName, operationFn, errorMessage) {
   throw new Error(errorMessage);
 }
 
+/**
+ * Create a pre-run safety tag at HEAD.
+ * Allows user to undo all run changes by resetting to this tag.
+ *
+ * @returns {Promise<string>} The created tag name
+ */
 export async function createPreRunTag() {
   const baseName = `nightytidy-before-${getTimestamp()}`;
   const tagName = await retryWithSuffix(
@@ -75,6 +130,12 @@ export async function createPreRunTag() {
   return tagName;
 }
 
+/**
+ * Create and checkout a new run branch.
+ *
+ * @param {string} sourceBranch - Branch to branch from (for logging)
+ * @returns {Promise<string>} The created branch name
+ */
 export async function createRunBranch(sourceBranch) {
   const baseName = `nightytidy/run-${getTimestamp()}`;
   const branchName = await retryWithSuffix(
@@ -86,6 +147,11 @@ export async function createRunBranch(sourceBranch) {
   return branchName;
 }
 
+/**
+ * Get the commit hash of HEAD.
+ *
+ * @returns {Promise<string|null>} 40-character hex hash, or null if no commits
+ */
 export async function getHeadHash() {
   try {
     const log = await git.log({ maxCount: 1 });
@@ -96,11 +162,24 @@ export async function getHeadHash() {
   }
 }
 
+/**
+ * Check if a new commit has been made since a given hash.
+ *
+ * @param {string|null} sinceHash - Previous HEAD hash to compare against
+ * @returns {Promise<boolean>} True if HEAD has changed
+ */
 export async function hasNewCommit(sinceHash) {
   const currentHash = await getHeadHash();
   return currentHash !== sinceHash;
 }
 
+/**
+ * Create a fallback commit for a step if Claude didn't commit.
+ *
+ * @param {number} stepNumber - Step number for commit message
+ * @param {string} stepName - Step name for commit message
+ * @returns {Promise<boolean>} True if commit was created, false if nothing to commit
+ */
 export async function fallbackCommit(stepNumber, stepName) {
   // Ephemeral files are already excluded via .git/info/exclude
   // (set up by excludeEphemeralFiles). Plain `git add -A` respects that.
@@ -120,6 +199,16 @@ export async function fallbackCommit(stepNumber, stepName) {
   return true;
 }
 
+/**
+ * Merge the run branch back into the original branch.
+ *
+ * Error contract: This function NEVER throws. On conflict, it returns
+ * { success: false, conflict: true } and aborts the merge.
+ *
+ * @param {string} originalBranch - Branch to merge into
+ * @param {string} runBranch - Branch to merge from
+ * @returns {Promise<MergeResult>} Merge result (never throws)
+ */
 export async function mergeRunBranch(originalBranch, runBranch) {
   try {
     await git.checkout(originalBranch);
@@ -139,6 +228,11 @@ export async function mergeRunBranch(originalBranch, runBranch) {
   }
 }
 
+/**
+ * Get the initialized git instance.
+ *
+ * @returns {SimpleGit|null} The git instance, or null if not initialized
+ */
 export function getGitInstance() {
   return git;
 }

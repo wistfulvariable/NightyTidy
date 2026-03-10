@@ -4,7 +4,7 @@ import { spawn } from 'child_process';
 import { writeFileSync, unlinkSync } from 'fs';
 import { fileURLToPath } from 'url';
 import path from 'path';
-import { info, warn } from './logger.js';
+import { info, warn, debug } from './logger.js';
 import { getHTML } from './dashboard-html.js';
 
 const SHUTDOWN_DELAY = 3000;
@@ -85,7 +85,7 @@ function handleStop(req, res, onStop) {
     body += chunk;
     if (body.length > MAX_BODY_BYTES) {
       req.destroy();
-      res.writeHead(413, { 'Content-Type': 'application/json' });
+      res.writeHead(413, { 'Content-Type': 'application/json', ...SECURITY_HEADERS });
       res.end(JSON.stringify({ error: 'Request body too large' }));
       return;
     }
@@ -95,17 +95,17 @@ function handleStop(req, res, onStop) {
     try {
       const parsed = JSON.parse(body || '{}');
       if (parsed.token !== ds.csrfToken) {
-        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.writeHead(403, { 'Content-Type': 'application/json', ...SECURITY_HEADERS });
         res.end(JSON.stringify({ error: 'Invalid token' }));
         return;
       }
     } catch {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.writeHead(403, { 'Content-Type': 'application/json', ...SECURITY_HEADERS });
       res.end(JSON.stringify({ error: 'Invalid token' }));
       return;
     }
     try { onStop(); } catch { /* abort may throw if already aborted */ }
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.writeHead(200, { 'Content-Type': 'application/json', ...SECURITY_HEADERS });
     res.end(JSON.stringify({ ok: true }));
   });
 }
@@ -195,7 +195,9 @@ export async function startDashboard(initialState, { onStop, projectDir }) {
 
         try {
           writeFileSync(ds.urlFilePath, url + '\n', 'utf8');
-        } catch { /* non-critical */ }
+        } catch (urlErr) {
+          debug(`Could not write dashboard URL file: ${urlErr.message}`);
+        }
 
         info(`Dashboard server at ${url}`);
         resolve({ url, port });

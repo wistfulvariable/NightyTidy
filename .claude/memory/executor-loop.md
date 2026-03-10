@@ -44,12 +44,14 @@ For each step in `selectedSteps`:
 
 ```js
 {
-  results: [{ step: { number, name }, status, output, duration, attempts, error, cost, suspiciousFast? }],
+  results: [{ step: { number, name }, status, output, duration, attempts, error, cost, suspiciousFast?, errorType?, retryAfterMs? }],
   totalDuration: number,
   completedCount: number,
   failedCount: number,
 }
 // cost: { costUSD, inputTokens, outputTokens, numTurns, durationApiMs, sessionId } | null
+// errorType: 'rate_limit' | 'unknown' (on failed steps only)
+// retryAfterMs: number | null (on rate-limit failures)
 ```
 
 Each step's cost = improvement cost + doc-update cost (summed via `sumCosts()`). `sumCosts()` adds all numeric fields; token fields are `null` when both inputs lack them. Failed steps have `cost: null`.
@@ -61,6 +63,7 @@ Each step's cost = improvement cost + doc-update cost (summed via `sumCosts()`).
 - **No parallel execution** — strictly sequential, one step at a time
 - **Notifications** — sent for failed steps only
 - **Fast completion → auto-retry once** — if improvement succeeds in < 2 min, retry with augmented prompt. No recursive retry (if retry is also fast, `suspiciousFast: true` flags it for the orchestrator/user). The retry is a separate `runPrompt` call, not consuming the normal retry budget.
+- **Rate-limit pause/resume** — when a step fails with `errorType === ERROR_TYPE.RATE_LIMIT`, `executeSteps()` calls `onRateLimitPause?.(retryAfterMs)`, enters `waitForRateLimit()`, and on success calls `onRateLimitResume?.()` then retries the same step (pops failed result, decrements index). If rate limit never clears or signal aborted, breaks the loop for partial results.
 
 ## Abort Signal Threading
 
@@ -78,10 +81,21 @@ Signal flows: `cli.js AbortController` → `executeSteps(signal)` → `runPrompt
 | `onStepStart(step, idx, total)` | Before improvement prompt | cli.js spinner + dashboard |
 | `onStepComplete(step, idx, total)` | After commit verification | cli.js green checkmark |
 | `onStepFail(step, idx, total)` | After improvement fails | cli.js red X |
+| `onRateLimitPause(retryAfterMs)` | Rate limit detected | cli.js yellow warning |
+| `onRateLimitResume()` | Rate limit cleared | cli.js green confirmation |
+
+## Rate-Limit Wait (`waitForRateLimit`)
+
+Unexported. Called by `executeSteps()` when a step fails with rate-limit error.
+
+- If `retryAfterMs` provided: sleep that + 10s buffer, return `!aborted`
+- Otherwise: exponential backoff `BACKOFF_SCHEDULE_MS = [2m, 5m, 15m, 30m, 1h, 2h]`
+- After each wait: probe with `runPrompt('Reply with the single word OK.', projectDir, { retries: 0, timeout: 60s })`
+- Probe success → return `true` (resume). Non-rate-limit error → return `true` (let main loop handle). Still rate-limited → next backoff tier. All exhausted → return `false` (stop run).
 
 ## Dependencies
 
-- `runPrompt` from `claude.js`
+- `runPrompt`, `ERROR_TYPE`, `sleep` from `claude.js`
 - `getHeadHash`, `hasNewCommit`, `fallbackCommit` from `git.js`
 - `DOC_UPDATE_PROMPT` from `prompts/loader.js`
 - `notify` from `notifications.js`

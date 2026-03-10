@@ -1,3 +1,13 @@
+/**
+ * @fileoverview Claude Code orchestrator mode for NightyTidy.
+ *
+ * Provides a JSON-based API for step-by-step runs where Claude Code
+ * (or another orchestrator) controls the workflow conversationally.
+ *
+ * Error contract: This module NEVER throws. All functions return
+ * { success: boolean, ...data } or { success: false, error: string }.
+ */
+
 import { readFileSync, writeFileSync, renameSync, unlinkSync, existsSync } from 'fs';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
@@ -7,12 +17,52 @@ import { initLogger, info, warn, error as logError } from './logger.js';
 import { runPreChecks } from './checks.js';
 import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from './git.js';
 import { runPrompt } from './claude.js';
-import { STEPS, CHANGELOG_PROMPT } from './prompts/loader.js';
+import { STEPS, reloadSteps } from './prompts/loader.js';
 import { executeSingleStep, SAFETY_PREAMBLE } from './executor.js';
 import { notify } from './notifications.js';
 import { generateReport, formatDuration, getVersion } from './report.js';
-import { generateActionPlan } from './consolidation.js';
 import { acquireLock, releaseLock } from './lock.js';
+
+/**
+ * @typedef {import('./executor.js').CostData} CostData
+ * @typedef {import('./executor.js').StepResult} StepResult
+ */
+
+/**
+ * @typedef {Object} OrchestratorState
+ * @property {number} version - State format version
+ * @property {string} originalBranch - Branch to return to after run
+ * @property {string} runBranch - Branch for run changes
+ * @property {string} tagName - Safety tag name
+ * @property {number[]} selectedSteps - Step numbers selected for this run
+ * @property {StepEntry[]} completedSteps - Successfully completed steps
+ * @property {StepEntry[]} failedSteps - Failed steps
+ * @property {number} startTime - Run start timestamp (ms)
+ * @property {number|null} timeout - Per-step timeout in ms
+ * @property {number|null} dashboardPid - Dashboard server process ID
+ * @property {string|null} dashboardUrl - Dashboard server URL
+ */
+
+/**
+ * @typedef {Object} StepEntry
+ * @property {number} number - Step number
+ * @property {string} name - Step name
+ * @property {'completed' | 'failed'} status - Step status
+ * @property {number} duration - Duration in milliseconds
+ * @property {number} attempts - Number of attempts
+ * @property {string} output - Truncated output (max 6000 chars)
+ * @property {string|null} error - Error message if failed
+ * @property {CostData|null} cost - Cost data
+ * @property {boolean} suspiciousFast - True if flagged as suspicious
+ * @property {string|null} errorType - Error type if failed
+ * @property {number|null} retryAfterMs - Retry delay for rate limits
+ */
+
+/**
+ * @typedef {Object} OrchestratorResult
+ * @property {boolean} success - Whether operation succeeded
+ * @property {string} [error] - Error message if failed
+ */
 
 const PROGRESS_FILENAME = 'nightytidy-progress.json';
 const URL_FILENAME = 'nightytidy-dashboard.url';
@@ -22,10 +72,22 @@ const STATE_VERSION = 1;
 const DASHBOARD_STARTUP_TIMEOUT = 5000; // ms — max wait for dashboard server to respond
 const SSE_FLUSH_DELAY = 500; // ms — brief delay to let last SSE event reach clients
 
+/**
+ * Get the path to the state file for a project.
+ *
+ * @param {string} projectDir - Project directory
+ * @returns {string} Absolute path to state file
+ */
 function statePath(projectDir) {
   return path.join(projectDir, STATE_FILENAME);
 }
 
+/**
+ * Read the orchestrator state file.
+ *
+ * @param {string} projectDir - Project directory
+ * @returns {OrchestratorState|null} State object, or null if not found/invalid
+ */
 function readState(projectDir) {
   const fp = statePath(projectDir);
   if (!existsSync(fp)) return null;
@@ -38,6 +100,14 @@ function readState(projectDir) {
   }
 }
 
+/**
+ * Write the orchestrator state file atomically.
+ * Uses write-to-temp + rename to prevent truncation on crash.
+ *
+ * @param {string} projectDir - Project directory
+ * @param {OrchestratorState} state - State to write
+ * @returns {void}
+ */
 function writeState(projectDir, state) {
   // Write to temp file then rename for atomic replacement.
   // Prevents truncated JSON on crash (FINDING-06, audit #21).
@@ -47,18 +117,49 @@ function writeState(projectDir, state) {
   renameSync(tmp, target);
 }
 
+/**
+ * Delete the orchestrator state file.
+ *
+ * @param {string} projectDir - Project directory
+ * @returns {void}
+ */
 function deleteState(projectDir) {
-  try { unlinkSync(statePath(projectDir)); } catch { /* already gone */ }
+  try {
+    unlinkSync(statePath(projectDir));
+  } catch (err) {
+    if (err.code !== 'ENOENT') {
+      warn(`Failed to delete state file: ${err.message}`);
+    }
+  }
 }
 
+/**
+ * Create a success result object.
+ *
+ * @template T
+ * @param {T} data - Data to include in result
+ * @returns {{success: true} & T}
+ */
 function ok(data) {
   return { success: true, ...data };
 }
 
+/**
+ * Create a failure result object.
+ *
+ * @param {string} error - Error message
+ * @returns {{success: false, error: string}}
+ */
 function fail(error) {
   return { success: false, error };
 }
 
+/**
+ * Validate that step numbers are within valid range.
+ *
+ * @param {number[]} numbers - Step numbers to validate
+ * @returns {{success: false, error: string}|null} Error result, or null if valid
+ */
 function validateStepNumbers(numbers) {
   const valid = STEPS.map(s => s.number);
   const invalid = numbers.filter(n => !valid.includes(n));
@@ -68,6 +169,32 @@ function validateStepNumbers(numbers) {
   return null;
 }
 
+/**
+ * Validate that a step can be run in the current orchestrator state.
+ *
+ * @param {number} stepNumber - Step number to validate
+ * @param {OrchestratorState} state - Current orchestrator state
+ * @returns {string|null} Error string if invalid, null if valid
+ */
+function validateStepCanRun(stepNumber, state) {
+  if (!state.selectedSteps.includes(stepNumber)) {
+    return `Step ${stepNumber} is not in the selected steps for this run. Selected: ${state.selectedSteps.join(', ')}`;
+  }
+  if (state.completedSteps.some(s => s.number === stepNumber)) {
+    return `Step ${stepNumber} has already been completed in this run.`;
+  }
+  if (state.failedSteps.some(s => s.number === stepNumber)) {
+    return `Step ${stepNumber} has already been attempted and failed in this run.`;
+  }
+  return null;
+}
+
+/**
+ * Build execution results from orchestrator state for report generation.
+ *
+ * @param {OrchestratorState} state - Orchestrator state
+ * @returns {import('./executor.js').ExecutionResults} Execution results
+ */
 function buildExecutionResults(state) {
   const allStepResults = [...state.completedSteps, ...state.failedSteps]
     .sort((a, b) => state.selectedSteps.indexOf(a.number) - state.selectedSteps.indexOf(b.number));
@@ -87,20 +214,40 @@ function buildExecutionResults(state) {
   };
 }
 
+/**
+ * @typedef {Object} ProgressState
+ * @property {'running' | 'paused' | 'completed' | 'error'} status
+ * @property {number} totalSteps
+ * @property {number} currentStepIndex
+ * @property {string} currentStepName
+ * @property {Array<{number: number, name: string, status: string, duration: number|null}>} steps
+ * @property {number} completedCount
+ * @property {number} failedCount
+ * @property {number} startTime
+ * @property {string|null} error
+ */
+
+/**
+ * Build progress state for dashboard display.
+ *
+ * @param {OrchestratorState} state - Orchestrator state
+ * @returns {ProgressState} Progress state for JSON serialization
+ */
 function buildProgressState(state) {
-  const doneNums = new Set([
-    ...state.completedSteps.map(s => s.number),
-    ...state.failedSteps.map(s => s.number),
-  ]);
+  // Pre-index for O(1) lookups instead of O(n) find() calls
+  const stepsMap = new Map(STEPS.map(s => [s.number, s]));
+  const completedMap = new Map(state.completedSteps.map(s => [s.number, s]));
+  const failedMap = new Map(state.failedSteps.map(s => [s.number, s]));
+
   return {
     status: 'running',
     totalSteps: state.selectedSteps.length,
     currentStepIndex: -1,
     currentStepName: '',
     steps: state.selectedSteps.map(num => {
-      const step = STEPS.find(s => s.number === num);
-      const completed = state.completedSteps.find(s => s.number === num);
-      const failed = state.failedSteps.find(s => s.number === num);
+      const step = stepsMap.get(num);
+      const completed = completedMap.get(num);
+      const failed = failedMap.get(num);
       return {
         number: num,
         name: step?.name || `Step ${num}`,
@@ -115,6 +262,13 @@ function buildProgressState(state) {
   };
 }
 
+/**
+ * Write progress state to JSON file for dashboard consumption.
+ *
+ * @param {string} projectDir - Project directory
+ * @param {ProgressState} progressState - Progress state to write
+ * @returns {void}
+ */
 function writeProgress(projectDir, progressState) {
   try {
     writeFileSync(path.join(projectDir, PROGRESS_FILENAME), JSON.stringify(progressState), 'utf8');
@@ -124,6 +278,13 @@ function writeProgress(projectDir, progressState) {
 const OUTPUT_BUFFER_SIZE = 100 * 1024;
 const OUTPUT_WRITE_INTERVAL = 500;
 
+/**
+ * Create a throttled output handler for streaming Claude output.
+ *
+ * @param {ProgressState} progress - Progress state object (mutated)
+ * @param {string} projectDir - Project directory for progress file
+ * @returns {(chunk: string) => void} Output handler callback
+ */
 function createOutputHandler(progress, projectDir) {
   let buffer = '';
   let writePending = false;
@@ -144,12 +305,24 @@ function createOutputHandler(progress, projectDir) {
   };
 }
 
+/**
+ * Clean up dashboard ephemeral files.
+ *
+ * @param {string} projectDir - Project directory
+ * @returns {void}
+ */
 function cleanupDashboard(projectDir) {
   for (const f of [PROGRESS_FILENAME, URL_FILENAME]) {
     try { unlinkSync(path.join(projectDir, f)); } catch { /* already gone */ }
   }
 }
 
+/**
+ * Spawn a detached dashboard server process.
+ *
+ * @param {string} projectDir - Project directory
+ * @returns {Promise<{url: string, pid: number}|null>} Dashboard info, or null on failure
+ */
 function spawnDashboardServer(projectDir) {
   try {
     const serverScript = fileURLToPath(new URL('./dashboard-standalone.js', import.meta.url));
@@ -167,7 +340,7 @@ function spawnDashboardServer(projectDir) {
       const timer = setTimeout(() => {
         child.stdout.removeAllListeners();
         child.unref();
-        info('Dashboard server did not respond in time — continuing without dashboard');
+        info('Dashboard server startup timed out — continuing without live progress display');
         resolve(null);
       }, DASHBOARD_STARTUP_TIMEOUT);
 
@@ -180,14 +353,16 @@ function spawnDashboardServer(projectDir) {
           try {
             const parsed = JSON.parse(output.trim());
             return resolve({ url: parsed.url, pid: parsed.pid });
-          } catch {
+          } catch (parseErr) {
+            info(`Dashboard startup response was not valid JSON: ${parseErr.message}`);
             resolve(null);
           }
         }
       });
 
-      child.on('error', () => {
+      child.on('error', (err) => {
         clearTimeout(timer);
+        info(`Dashboard server spawn failed: ${err.message}`);
         resolve(null);
       });
     });
@@ -197,6 +372,12 @@ function spawnDashboardServer(projectDir) {
   }
 }
 
+/**
+ * Stop the dashboard server process.
+ *
+ * @param {number|null} pid - Process ID to kill
+ * @returns {void}
+ */
 function stopDashboardServer(pid) {
   if (!pid) return;
   try {
@@ -204,6 +385,29 @@ function stopDashboardServer(pid) {
   } catch { /* already dead */ }
 }
 
+/**
+ * @typedef {Object} InitRunResult
+ * @property {boolean} success
+ * @property {string} [error]
+ * @property {string} [runBranch]
+ * @property {string} [tagName]
+ * @property {string} [originalBranch]
+ * @property {number[]} [selectedSteps]
+ * @property {string|null} [dashboardUrl]
+ */
+
+/**
+ * Initialize an orchestrated run.
+ *
+ * Performs pre-checks, git setup, and creates state file. The run can then
+ * be executed step-by-step via runStep().
+ *
+ * @param {string} projectDir - Target project directory
+ * @param {Object} [options] - Options
+ * @param {string} [options.steps] - Comma-separated step numbers
+ * @param {number} [options.timeout] - Per-step timeout in ms
+ * @returns {Promise<InitRunResult>} Result object (never throws)
+ */
 export async function initRun(projectDir, { steps, timeout } = {}) {
   try {
     initLogger(projectDir, { quiet: true });
@@ -211,7 +415,7 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
 
     // Check for existing run
     if (readState(projectDir)) {
-      return fail('A run is already in progress. Call --finish-run first, or delete nightytidy-run-state.json to reset.');
+      return fail('A run is already in progress. Call --finish-run to complete it, or delete nightytidy-run-state.json to force-reset.');
     }
 
     await acquireLock(projectDir, { persistent: true });
@@ -219,6 +423,27 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
     const git = initGit(projectDir);
     excludeEphemeralFiles();
     await runPreChecks(projectDir, git);
+
+    // Auto-sync prompts from Google Doc (non-blocking)
+    try {
+      const { syncPrompts } = await import('./sync.js');
+      const syncResult = await syncPrompts();
+      if (syncResult.success) {
+        const changeCount = syncResult.summary.updated.length +
+          syncResult.summary.added.length +
+          syncResult.summary.removed.length;
+        if (changeCount > 0) {
+          reloadSteps();
+          info(`Prompts synced: ${changeCount} change(s)`);
+        } else {
+          info('Prompts up to date');
+        }
+      } else {
+        warn(`Prompt sync failed: ${syncResult.error}. Using cached versions.`);
+      }
+    } catch (err) {
+      warn(`Prompt sync error: ${err.message}. Using cached versions.`);
+    }
 
     // Validate and select steps
     let selectedNums;
@@ -231,7 +456,7 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
       }
       const validNums = nums.filter(n => !Number.isNaN(n));
       if (validNums.length === 0) {
-        return fail('No valid step numbers provided. Use --list to see available steps.');
+        return fail('No valid step numbers provided. Use --list --json to see available steps.');
       }
       const err = validateStepNumbers(validNums);
       if (err) return err;
@@ -284,6 +509,35 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
   }
 }
 
+/**
+ * @typedef {Object} RunStepResult
+ * @property {boolean} success
+ * @property {string} [error]
+ * @property {number} [step]
+ * @property {string} [name]
+ * @property {'completed' | 'failed'} [status]
+ * @property {string} [output]
+ * @property {number} [duration]
+ * @property {string} [durationFormatted]
+ * @property {number} [attempts]
+ * @property {number|null} [costUSD]
+ * @property {number|null} [inputTokens]
+ * @property {number|null} [outputTokens]
+ * @property {boolean} [suspiciousFast]
+ * @property {string|null} [errorType]
+ * @property {number|null} [retryAfterMs]
+ * @property {number[]} [remainingSteps]
+ */
+
+/**
+ * Run a single step in an orchestrated run.
+ *
+ * @param {string} projectDir - Target project directory
+ * @param {number} stepNumber - Step number to run
+ * @param {Object} [options] - Options
+ * @param {number} [options.timeout] - Step timeout in ms (overrides state)
+ * @returns {Promise<RunStepResult>} Result object (never throws)
+ */
 export async function runStep(projectDir, stepNumber, { timeout } = {}) {
   try {
     if (!Number.isFinite(stepNumber) || stepNumber < 1) {
@@ -297,16 +551,8 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
       return fail('No active orchestrator run. Call --init-run first.');
     }
 
-    if (!state.selectedSteps.includes(stepNumber)) {
-      return fail(`Step ${stepNumber} is not in the selected steps for this run. Selected: ${state.selectedSteps.join(', ')}`);
-    }
-
-    if (state.completedSteps.some(s => s.number === stepNumber)) {
-      return fail(`Step ${stepNumber} has already been completed in this run.`);
-    }
-    if (state.failedSteps.some(s => s.number === stepNumber)) {
-      return fail(`Step ${stepNumber} has already been attempted and failed in this run.`);
-    }
+    const validationError = validateStepCanRun(stepNumber, state);
+    if (validationError) return fail(validationError);
 
     const step = STEPS.find(s => s.number === stepNumber);
     if (!step) {
@@ -376,6 +622,33 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
   }
 }
 
+/**
+ * @typedef {Object} FinishRunResult
+ * @property {boolean} success
+ * @property {string} [error]
+ * @property {number} [completed]
+ * @property {number} [failed]
+ * @property {string} [totalDurationFormatted]
+ * @property {number|null} [totalCostUSD]
+ * @property {number|null} [totalInputTokens]
+ * @property {number|null} [totalOutputTokens]
+ * @property {boolean} [merged]
+ * @property {boolean} [mergeConflict]
+ * @property {string} [reportPath]
+ * @property {string|null} [actionsPath]
+ * @property {string} [tagName]
+ * @property {string} [runBranch]
+ */
+
+/**
+ * Finish an orchestrated run.
+ *
+ * Generates report, commits, merges back to original branch, and cleans up
+ * state. All operations are local — no AI calls — so this completes in seconds.
+ *
+ * @param {string} projectDir - Target project directory
+ * @returns {Promise<FinishRunResult>} Result object (never throws)
+ */
 export async function finishRun(projectDir) {
   try {
     initLogger(projectDir, { quiet: true });
@@ -392,33 +665,14 @@ export async function finishRun(projectDir) {
 
     const totalDuration = Date.now() - state.startTime;
 
-    // Generate changelog
-    let narration = null;
-    let overheadCostUSD = 0;
-    if (executionResults.completedCount > 0) {
-      info('Orchestrator: generating narrated changelog...');
-      const changelogResult = await runPrompt(SAFETY_PREAMBLE + CHANGELOG_PROMPT, projectDir, {
-        label: 'Narrated changelog',
-        timeout: state.timeout || undefined,
-      });
-      narration = changelogResult.success ? changelogResult.output : null;
-      if (!narration) warn('Orchestrator: narrated changelog generation failed — using fallback text');
-      overheadCostUSD += changelogResult.cost?.costUSD || 0;
-    }
-
-    // Consolidated action plan
-    const actionPlan = await generateActionPlan(executionResults, projectDir, {
-      timeout: state.timeout || undefined,
-    });
-
-    // Sum step costs + overhead (changelog, consolidation tracked via overhead)
+    // Sum step costs
     const stepsCostUSD = executionResults.results.reduce((sum, r) => sum + (r.cost?.costUSD || 0), 0);
-    const totalCostUSD = stepsCostUSD + overheadCostUSD;
+    const totalCostUSD = stepsCostUSD;
     const totalInputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.inputTokens || 0), 0) || null;
     const totalOutputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.outputTokens || 0), 0) || null;
 
-    // Generate report
-    generateReport(executionResults, narration, {
+    // Generate report (no narration — report uses fallback text)
+    generateReport(executionResults, null, {
       projectDir,
       branchName: state.runBranch,
       tagName: state.tagName,
@@ -426,13 +680,12 @@ export async function finishRun(projectDir) {
       startTime: state.startTime,
       endTime: Date.now(),
       totalCostUSD: totalCostUSD || null,
-    }, { actionPlan: !!actionPlan });
+    });
 
     // Commit report
     const gitInstance = getGitInstance();
     try {
       const filesToCommit = ['NIGHTYTIDY-REPORT.md', 'CLAUDE.md'];
-      if (actionPlan) filesToCommit.push('NIGHTYTIDY-ACTIONS.md');
       await gitInstance.add(filesToCommit);
       await gitInstance.commit('NightyTidy: Add run report and update CLAUDE.md');
     } catch (err) {
@@ -471,7 +724,7 @@ export async function finishRun(projectDir) {
       merged: mergeResult.success,
       mergeConflict: mergeResult.conflict || false,
       reportPath: 'NIGHTYTIDY-REPORT.md',
-      actionsPath: actionPlan ? 'NIGHTYTIDY-ACTIONS.md' : null,
+      actionsPath: null,
       tagName: state.tagName,
       runBranch: state.runBranch,
     });

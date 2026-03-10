@@ -293,6 +293,7 @@ async function handleRunCommand(req, res) {
 
     let stdout = '';
     let stderr = '';
+    let responded = false;
 
     proc.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
     proc.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
@@ -302,12 +303,16 @@ async function handleRunCommand(req, res) {
 
     proc.on('close', (exitCode) => {
       if (id) activeProcesses.delete(id);
+      if (responded) return;
+      responded = true;
       guiLog('info', `Process ${id || 'unknown'} exited code=${exitCode ?? 1}`);
       sendJson(res, { ok: true, exitCode: exitCode ?? 1, stdout, stderr });
     });
 
     proc.on('error', (err) => {
       if (id) activeProcesses.delete(id);
+      if (responded) return;
+      responded = true;
       guiLog('error', `Process ${id || 'unknown'} error: ${err.message}`);
       sendJson(res, { ok: false, error: err.message });
     });

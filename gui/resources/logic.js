@@ -95,11 +95,12 @@ function escapeHtml(str) {
  * @param {number[]} selected - All selected step numbers
  * @param {number[]} completed - Step numbers already completed
  * @param {number[]} failed - Step numbers that failed
+ * @param {number[]} [skipped] - Step numbers that were skipped
  * @returns {number|null} Next step number, or null if all done
  */
-function getNextStep(selected, completed, failed) {
+function getNextStep(selected, completed, failed, skipped) {
   if (!selected || !selected.length) return null;
-  const done = new Set([...(completed || []), ...(failed || [])]);
+  const done = new Set([...(completed || []), ...(failed || []), ...(skipped || [])]);
   for (const step of selected) {
     if (!done.has(step)) return step;
   }

@@ -22,6 +22,7 @@ vi.mock('../src/executor.js', () => ({
 
 vi.mock('../src/prompts/loader.js', () => ({
   CONSOLIDATION_PROMPT: 'Mock consolidation prompt template with Critical High Medium Low tiers and consolidated, prioritized action plan instructions.',
+  reloadSteps: vi.fn(),
 }));
 
 vi.mock('../src/report.js', () => ({

@@ -4,7 +4,7 @@ Automated overnight codebase improvement through Claude Code. NightyTidy is an o
 
 ## Workflow Rules
 
-- **Google Doc is the source of truth for prompts** — run `npx nightytidy --sync` to pull latest prompts from the published Google Doc. Manual edits to `src/prompts/steps/*.md` will be overwritten on next sync. Update `manifest.json` for ordering/naming. `STEPS_HASH` in `executor.js` is auto-updated by sync.
+- **Google Doc is the source of truth for prompts** — prompts auto-sync from the published Google Doc before every run (CLI and orchestrator). Use `--skip-sync` to skip. Manual `npx nightytidy --sync` also available. Manual edits to `src/prompts/steps/*.md` will be overwritten on next sync. `STEPS_HASH` in `executor.js` is auto-updated by sync.
 - **Logger must be initialized first** — `initLogger(projectDir)` before any other module
 - **All steps run on a dedicated branch** — `nightytidy/run-*` branches with pre-run safety tag
 - **No bare `console.log`** in production code — use logger (exception: `cli.js` terminal UX output)
@@ -58,30 +58,30 @@ src/
     specials/              # Non-step prompts (doc-update.md, changelog.md)
 test/
   smoke.test.js            # 6 tests — structural integrity, module imports, deploy verification
-  cli.test.js              # 27 tests — full lifecycle orchestration, SIGINT handling, --setup, dashboard
+  cli.test.js              # 33 tests — full lifecycle orchestration, SIGINT handling, --setup, dashboard, auto-sync
   dashboard.test.js        # 20 tests — HTTP server start/stop, SSE events, CSRF, stop callback
   logger.test.js           # 10 tests — real file I/O, level filtering, stderr fallback
   checks.test.js           # 4 tests — mock subprocess, mock git
   checks-extended.test.js  # 23 tests — auth paths, disk space characterization, branch warnings, empty repo, dirty working tree
-  claude.test.js           # 62 tests — fake child process, fake timers, abort signal, Windows shell mode, stream-json NDJSON parsing, classifyError, rate-limit retry skip, stderr capture
-  executor.test.js         # 32 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection, rate-limit pause/resume
+  claude.test.js           # 64 tests — fake child process, fake timers, abort signal, Windows shell mode, stream-json NDJSON parsing, classifyError, rate-limit retry skip, stderr capture
+  executor.test.js         # 38 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection, rate-limit pause/resume
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 7 tests — getGitInstance, getHeadHash, tag/branch collision
   notifications.test.js    # 2 tests — mock node-notifier
   report.test.js           # 13 tests — mock fs, verify report format, actionPlan option, cost column
   report-extended.test.js  # 17 tests — updateClaudeMd, formatDuration edge cases, cost rendering
   consolidation.test.js    # 16 tests — buildConsolidationPrompt, generateActionPlan, error handling
-  steps.test.js            # 9 tests — structural integrity of prompt data + manifest validation
+  steps.test.js            # 11 tests — structural integrity of prompt data + manifest validation + reloadSteps
   integration.test.js      # 5 tests — multi-module integration with real git repos
   setup.test.js            # 7 tests — integration snippet generation, idempotent setup
   dashboard-tui.test.js    # 29 tests — formatMs, progressBar, render with chalk proxy mock
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
-  orchestrator.test.js     # 40 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation
-  contracts.test.js        # 38 tests — module API contract verification against CLAUDE.md
-  gui-logic.test.js        # 133 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, formatTime, detectGitError, detectStaleState, detectRateLimit, formatCountdown, preprocessClaudeOutput, etc.)
-  gui-server.test.js       # 44 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, log-error, log-path, security headers, traversal
+  orchestrator.test.js     # 44 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync
+  contracts.test.js        # 39 tests — module API contract verification against CLAUDE.md
+  gui-logic.test.js        # 138 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, formatTime, detectGitError, detectStaleState, detectRateLimit, formatCountdown, preprocessClaudeOutput, etc.)
+  gui-server.test.js       # 45 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, log-error, log-path, security headers, traversal
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks
   dashboard-broadcastoutput.test.js # 5 tests — buffer overflow, throttled writes, clearOutputBuffer with state
@@ -134,7 +134,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/consolidation.js` | Post-run action plan — consolidates step outputs into tiered recommendations | claude, logger, executor, prompts/loader, report |
 | `src/setup.js` | `--setup` command: CLAUDE.md integration for target projects | logger, prompts/loader |
 | `src/sync.js` | Google Doc prompt sync — fetches published doc, parses HTML, updates prompt files + manifest + STEPS_HASH | crypto, logger |
-| `src/prompts/loader.js` | Loads 33 prompts + special prompts (doc-update, changelog, consolidation) from markdown files via manifest.json | fs (data loader) |
+| `src/prompts/loader.js` | Loads 33 prompts + special prompts; `reloadSteps()` for live-reload after sync | fs (data loader) |
 | `gui/server.js` | Desktop GUI backend — HTTP server + native folder dialog + Chrome launcher + session logging | node:http, node:fs, node:child_process |
 | `gui/resources/logic.js` | GUI pure logic — command building, JSON parsing, formatting, rate-limit detection | none (browser + Node.js dual) |
 | `gui/resources/app.js` | GUI state machine — screen transitions, process spawning, progress polling, rate-limit pause/resume overlay | logic.js, marked, server.js (via fetch) |
@@ -149,6 +149,7 @@ npx nightytidy --steps 1,5,12  # Run specific steps by number
 npx nightytidy --list     # List all available steps with descriptions
 npx nightytidy --timeout 60  # Set per-step timeout to 60 minutes (default: 45)
 npx nightytidy --dry-run  # Run pre-checks + step selection, show plan, exit without running
+npx nightytidy --skip-sync  # Skip automatic prompt sync from Google Doc before running
 npx nightytidy --setup    # Add Claude Code integration to target project's CLAUDE.md
 npx nightytidy --list --json    # List steps as JSON (for Claude Code orchestrator)
 npx nightytidy --init-run --steps 1,5,12  # Initialize orchestrated run (pre-checks, git, state file)
@@ -198,10 +199,11 @@ No secrets or API keys — Claude Code handles its own authentication.
 3. initGit(projectDir)           ← Returns git instance + stores projectRoot
 4. excludeEphemeralFiles()       ← Adds log/progress/url files to .git/info/exclude
 5. runPreChecks(projectDir, git) ← Validates environment before any work
-6. Interactive step selection    ← After checks pass
-7. Git setup (tag + branch)     ← After user confirms steps
-8. executeSteps(...)            ← Main work
-9. generateReport(...)          ← After execution completes
+6. autoSyncPrompts(opts)        ← Sync prompts from Google Doc + reloadSteps() (non-blocking)
+7. Interactive step selection    ← After checks pass (uses fresh STEPS data)
+8. Git setup (tag + branch)     ← After user confirms steps
+9. executeSteps(...)            ← Main work
+10. generateReport(...)          ← After execution completes
 ```
 
 Calling any module before `initLogger()` throws. Calling git operations before `initGit()` gives null reference errors.
@@ -321,7 +323,7 @@ For non-TTY environments where Claude Code drives the workflow conversationally:
 1. `--list --json` → Claude Code presents steps, user picks
 2. `--init-run --steps 1,5,12` → pre-checks, git setup, state file created, dashboard server spawned
 3. `--run-step N` (repeated) → one step at a time, progress JSON updated, Claude Code reports between steps
-4. `--finish-run` → changelog, report, merge, dashboard shutdown, cleanup
+4. `--finish-run` → report, merge, dashboard shutdown, cleanup (no AI calls — fast finish)
 
 Each command is a separate process invocation. State persists via `nightytidy-run-state.json`. Lock file persists across invocations (persistent mode). Logger runs in quiet mode (no stdout, JSON output only).
 
@@ -336,7 +338,7 @@ Each command is a separate process invocation. State persists via `nightytidy-ru
 - **Universal mock**: All test files mock `../src/logger.js` to prevent file I/O during tests (exception: `logger.test.js` tests the real logger)
 - **Integration tests**: `git.test.js`, `git-extended.test.js`, `integration.test.js` use real temp git repos — run slower but catch real issues
 - **Smoke tests**: `smoke.test.js` — 6 fast structural checks for deploy verification (< 3s)
-- **Contract tests**: `contracts.test.js` — 38 tests verifying each module's error handling contract matches this document
+- **Contract tests**: `contracts.test.js` — 39 tests verifying each module's error handling contract matches this document
 - **Temp dir cleanup**: Always use `robustCleanup()` from `test/helpers/cleanup.js` instead of raw `rm()` — Windows EBUSY from git file handles causes flaky failures otherwise
 - **Shared test factories**: Use `test/helpers/mocks.js` for mock process/git factories and `test/helpers/testdata.js` for report test data — don't duplicate these in individual test files
 - See `.claude/memory/testing.md` for detailed mock patterns and pitfalls

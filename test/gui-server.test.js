@@ -423,6 +423,7 @@ describe('HTML structure', () => {
     expect(html).toContain('id="btn-select-folder"');
     expect(html).toContain('id="btn-start-run"');
     expect(html).toContain('id="btn-stop-run"');
+    expect(html).toContain('id="btn-skip-finishing"');
     expect(html).toContain('id="btn-new-run"');
     expect(html).toContain('id="btn-close-app"');
   });
@@ -435,6 +436,12 @@ describe('HTML structure', () => {
     expect(html).toContain('id="progress-bar-fill"');
     expect(html).toContain('id="progress-counter"');
     expect(html).toContain('id="output-content"');
+  });
+
+  it('has the finishing screen escape hatch elements', () => {
+    expect(html).toContain('id="finishing-status"');
+    expect(html).toContain('id="btn-skip-finishing"');
+    expect(html).toContain('id="finishing-error"');
   });
 
   it('includes script references', () => {

@@ -49,7 +49,7 @@ export async function generateActionPlan(executionResults, projectDir, { timeout
     });
 
     if (!result.success || !result.output?.trim()) {
-      warn('Action plan generation failed — skipping NIGHTYTIDY-ACTIONS.md');
+      warn('Action plan generation failed — NIGHTYTIDY-ACTIONS.md will not be created. NIGHTYTIDY-REPORT.md is still available.');
       return null;
     }
 
@@ -60,7 +60,7 @@ export async function generateActionPlan(executionResults, projectDir, { timeout
 
     return content;
   } catch (err) {
-    warn(`Action plan generation error: ${err.message}`);
+    warn(`Action plan generation error (${err.message}) — NIGHTYTIDY-ACTIONS.md will not be created.`);
     return null;
   }
 }

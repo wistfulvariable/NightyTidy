@@ -92,6 +92,15 @@ vi.mock('../src/prompts/loader.js', () => ({
   DOC_UPDATE_PROMPT: 'Update docs',
   CHANGELOG_PROMPT: 'Generate changelog',
   CONSOLIDATION_PROMPT: 'Consolidate actions',
+  reloadSteps: vi.fn(),
+}));
+
+vi.mock('../src/sync.js', () => ({
+  syncPrompts: vi.fn().mockResolvedValue({
+    success: true,
+    summary: { updated: [], added: [], removed: [], unchanged: [] },
+    error: null,
+  }),
 }));
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
@@ -139,7 +148,6 @@ describe('finishRun edge cases', () => {
     existsSync.mockReturnValue(true);
     readFileSync.mockReturnValue(JSON.stringify(validState));
     mergeRunBranch.mockResolvedValue({ success: true });
-    runPrompt.mockResolvedValue({ success: true, output: 'changelog', attempts: 1 });
 
     const mockGit = {
       add: vi.fn().mockResolvedValue(),
@@ -158,7 +166,6 @@ describe('finishRun edge cases', () => {
     readFileSync.mockReturnValue(JSON.stringify(validState));
     // Force an error by making mergeRunBranch throw (not reject)
     mergeRunBranch.mockImplementation(() => { throw new Error('catastrophic git failure'); });
-    runPrompt.mockResolvedValue({ success: true, output: 'changelog', attempts: 1 });
     getGitInstance.mockReturnValue({ add: vi.fn(), commit: vi.fn() });
 
     const result = await finishRun('/fake/project');
@@ -170,7 +177,6 @@ describe('finishRun edge cases', () => {
   it('returns fail result when generateReport throws', async () => {
     existsSync.mockReturnValue(true);
     readFileSync.mockReturnValue(JSON.stringify(validState));
-    runPrompt.mockResolvedValue({ success: true, output: 'changelog', attempts: 1 });
     getGitInstance.mockReturnValue({ add: vi.fn(), commit: vi.fn() });
 
     const { generateReport } = await import('../src/report.js');
@@ -207,7 +213,6 @@ describe('finishRun edge cases', () => {
     existsSync.mockReturnValue(true);
     readFileSync.mockReturnValue(JSON.stringify(mixedState));
     mergeRunBranch.mockResolvedValue({ success: true });
-    runPrompt.mockResolvedValue({ success: true, output: 'log', attempts: 1 });
     getGitInstance.mockReturnValue({ add: vi.fn(), commit: vi.fn() });
 
     const { generateReport } = await import('../src/report.js');

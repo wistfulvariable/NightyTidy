@@ -6,7 +6,7 @@ import { initLogger, info, error as logError, debug, warn } from './logger.js';
 import { runPreChecks } from './checks.js';
 import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from './git.js';
 import { runPrompt } from './claude.js';
-import { STEPS, CHANGELOG_PROMPT } from './prompts/loader.js';
+import { STEPS, CHANGELOG_PROMPT, reloadSteps } from './prompts/loader.js';
 import { executeSteps, SAFETY_PREAMBLE } from './executor.js';
 import { generateActionPlan } from './consolidation.js';
 import { notify } from './notifications.js';
@@ -330,6 +330,49 @@ async function setupGitAndPreChecks(projectDir) {
   }
 }
 
+/**
+ * Auto-sync prompts from Google Doc before a run.
+ * Non-blocking: warns on failure and continues with cached prompts.
+ */
+async function autoSyncPrompts(opts) {
+  if (opts.skipSync) {
+    debug('Prompt sync skipped (--skip-sync)');
+    return;
+  }
+
+  const syncSpinner = ora({ text: 'Syncing prompts from Google Doc...', color: 'cyan' }).start();
+  try {
+    const { syncPrompts } = await import('./sync.js');
+    const result = await syncPrompts();
+
+    if (!result.success) {
+      syncSpinner.warn(`Could not sync prompts: ${result.error}. Using cached versions.`);
+      return;
+    }
+
+    const { summary } = result;
+    const changeCount = summary.updated.length + summary.added.length + summary.removed.length;
+
+    if (changeCount === 0) {
+      syncSpinner.succeed('Prompts up to date');
+    } else {
+      reloadSteps();
+      syncSpinner.succeed(`Prompts synced (${changeCount} change${changeCount === 1 ? '' : 's'})`);
+      if (summary.updated.length > 0) {
+        console.log(chalk.dim(`  Updated: ${summary.updated.map(p => p.name).join(', ')}`));
+      }
+      if (summary.added.length > 0) {
+        console.log(chalk.green(`  Added: ${summary.added.map(p => p.name).join(', ')}`));
+      }
+      if (summary.removed.length > 0) {
+        console.log(chalk.yellow(`  Removed: ${summary.removed.map(p => p.name).join(', ')}`));
+      }
+    }
+  } catch (err) {
+    syncSpinner.warn(`Prompt sync error: ${err.message}. Using cached versions.`);
+  }
+}
+
 async function executeRunFlow(selected, projectDir, ctx) {
   // Start live dashboard
   ctx.dashState = {
@@ -487,7 +530,8 @@ export async function run() {
     .option('--finish-run', 'Finish an orchestrated run (report, merge, cleanup)')
     .option('--sync', 'Sync prompts from the published Google Doc')
     .option('--sync-dry-run', 'Preview what --sync would change without writing files')
-    .option('--sync-url <url>', 'Override the Google Doc URL for sync');
+    .option('--sync-url <url>', 'Override the Google Doc URL for sync')
+    .option('--skip-sync', 'Skip automatic prompt sync from Google Doc before running');
 
   program.parse();
   const opts = program.opts();
@@ -599,6 +643,7 @@ export async function run() {
 
     showWelcome();
     await setupGitAndPreChecks(projectDir);
+    await autoSyncPrompts(opts);
 
     const selected = await selectSteps(opts);
 

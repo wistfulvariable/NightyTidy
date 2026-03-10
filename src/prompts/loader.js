@@ -5,6 +5,9 @@
  * then loads each prompt's content from steps/*.md files.
  * Exports the same interface as the old steps.js: STEPS array
  * of { number, name, prompt } plus DOC_UPDATE_PROMPT, CHANGELOG_PROMPT, and CONSOLIDATION_PROMPT.
+ *
+ * Uses `export let` for ESM live bindings — reloadSteps() can
+ * reassign these after a sync, and all importers see updated values.
  */
 
 import { readFileSync } from 'fs';
@@ -17,16 +20,33 @@ function loadFile(...segments) {
   return readFileSync(path.join(__dirname, ...segments), 'utf8');
 }
 
-const manifest = JSON.parse(loadFile('manifest.json'));
+function loadAllSteps() {
+  const m = JSON.parse(loadFile('manifest.json'));
+  return m.steps.map((entry, index) => ({
+    number: index + 1,
+    name: entry.name,
+    prompt: loadFile('steps', `${entry.id}.md`),
+  }));
+}
 
-export const STEPS = manifest.steps.map((entry, index) => ({
-  number: index + 1,
-  name: entry.name,
-  prompt: loadFile('steps', `${entry.id}.md`),
-}));
+export let STEPS = loadAllSteps();
 
-export const DOC_UPDATE_PROMPT = loadFile('specials', 'doc-update.md');
+export let DOC_UPDATE_PROMPT = loadFile('specials', 'doc-update.md');
 
-export const CHANGELOG_PROMPT = loadFile('specials', 'changelog.md');
+export let CHANGELOG_PROMPT = loadFile('specials', 'changelog.md');
 
-export const CONSOLIDATION_PROMPT = loadFile('specials', 'consolidation.md');
+export let CONSOLIDATION_PROMPT = loadFile('specials', 'consolidation.md');
+
+/**
+ * Re-read manifest and all prompt files from disk.
+ * Uses ESM live bindings — all importers see the updated values
+ * through their existing binding references.
+ *
+ * Call this after syncPrompts() writes new files to disk.
+ */
+export function reloadSteps() {
+  STEPS = loadAllSteps();
+  DOC_UPDATE_PROMPT = loadFile('specials', 'doc-update.md');
+  CHANGELOG_PROMPT = loadFile('specials', 'changelog.md');
+  CONSOLIDATION_PROMPT = loadFile('specials', 'consolidation.md');
+}

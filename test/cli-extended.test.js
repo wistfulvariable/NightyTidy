@@ -84,6 +84,15 @@ vi.mock('../src/prompts/loader.js', () => ({
   ],
   CHANGELOG_PROMPT: 'generate changelog',
   CONSOLIDATION_PROMPT: 'consolidate actions',
+  reloadSteps: vi.fn(),
+}));
+
+vi.mock('../src/sync.js', () => ({
+  syncPrompts: vi.fn().mockResolvedValue({
+    success: true,
+    summary: { updated: [], added: [], removed: [], unchanged: [] },
+    error: null,
+  }),
 }));
 
 vi.mock('../src/consolidation.js', () => ({

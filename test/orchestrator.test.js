@@ -81,6 +81,15 @@ vi.mock('../src/prompts/loader.js', () => ({
   DOC_UPDATE_PROMPT: 'Update docs',
   CHANGELOG_PROMPT: 'Generate changelog',
   CONSOLIDATION_PROMPT: 'Consolidate actions',
+  reloadSteps: vi.fn(),
+}));
+
+vi.mock('../src/sync.js', () => ({
+  syncPrompts: vi.fn().mockResolvedValue({
+    success: true,
+    summary: { updated: [], added: [], removed: [], unchanged: [] },
+    error: null,
+  }),
 }));
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
@@ -92,6 +101,9 @@ import { executeSingleStep } from '../src/executor.js';
 import { runPrompt } from '../src/claude.js';
 import { acquireLock, releaseLock } from '../src/lock.js';
 import { generateReport } from '../src/report.js';
+import { generateActionPlan } from '../src/consolidation.js';
+import { syncPrompts } from '../src/sync.js';
+import { reloadSteps } from '../src/prompts/loader.js';
 
 function createMockChildProcess(jsonOutput) {
   const stdout = new EventEmitter();
@@ -114,9 +126,16 @@ beforeEach(() => {
 
 describe('initRun', () => {
   beforeEach(() => {
+    runPreChecks.mockResolvedValue(undefined);
     getCurrentBranch.mockResolvedValue('main');
     createPreRunTag.mockResolvedValue('nightytidy-before-2026-03-06-1430');
     createRunBranch.mockResolvedValue('nightytidy/run-2026-03-06-1430');
+    // Restore sync mock default after vi.clearAllMocks()
+    syncPrompts.mockResolvedValue({
+      success: true,
+      summary: { updated: [], added: [], removed: [], unchanged: [] },
+      error: null,
+    });
   });
 
   it('succeeds with valid steps and returns run metadata', async () => {
@@ -186,6 +205,60 @@ describe('initRun', () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain('Git is not installed');
+  });
+
+  // -------------------------------------------------------------------------
+  // Auto-sync during initRun
+  // -------------------------------------------------------------------------
+
+  it('calls syncPrompts during initialization', async () => {
+    await initRun('/fake/project', { steps: '1' });
+
+    expect(syncPrompts).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls reloadSteps when sync has changes', async () => {
+    syncPrompts.mockResolvedValue({
+      success: true,
+      summary: { updated: [{ name: 'Docs' }], added: [], removed: [], unchanged: [] },
+      error: null,
+    });
+
+    await initRun('/fake/project', { steps: '1' });
+
+    expect(reloadSteps).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call reloadSteps when sync has no changes', async () => {
+    syncPrompts.mockResolvedValue({
+      success: true,
+      summary: { updated: [], added: [], removed: [], unchanged: [{ name: 'Docs' }] },
+      error: null,
+    });
+
+    await initRun('/fake/project', { steps: '1' });
+
+    expect(reloadSteps).not.toHaveBeenCalled();
+  });
+
+  it('continues successfully when sync fails', async () => {
+    syncPrompts.mockResolvedValue({
+      success: false,
+      summary: null,
+      error: 'Network error',
+    });
+
+    const result = await initRun('/fake/project', { steps: '1' });
+
+    expect(result.success).toBe(true);
+  });
+
+  it('continues successfully when sync throws', async () => {
+    syncPrompts.mockRejectedValue(new Error('fetch failed'));
+
+    const result = await initRun('/fake/project', { steps: '1' });
+
+    expect(result.success).toBe(true);
   });
 });
 
@@ -441,7 +514,6 @@ describe('finishRun', () => {
     existsSync.mockReturnValue(true);
     readFileSync.mockReturnValue(JSON.stringify(validState));
     mergeRunBranch.mockResolvedValue({ success: true });
-    runPrompt.mockResolvedValue({ success: true, output: 'Changes made...', attempts: 1 });
     getGitInstance.mockReturnValue({ add: vi.fn(), commit: vi.fn() });
   });
 
@@ -507,24 +579,11 @@ describe('finishRun', () => {
     expect(result.error).toContain('No active orchestrator run');
   });
 
-  it('skips changelog generation when no steps completed', async () => {
-    const emptyState = {
-      ...validState,
-      completedSteps: [],
-      failedSteps: [],
-    };
-    readFileSync.mockReturnValue(JSON.stringify(emptyState));
-
+  it('never calls Claude (no AI operations in finish path)', async () => {
     await finishRun('/fake/project');
 
     expect(runPrompt).not.toHaveBeenCalled();
-  });
-
-  it('uses fallback narration when changelog fails', async () => {
-    runPrompt.mockResolvedValue({ success: false, output: '', attempts: 4 });
-
-    await finishRun('/fake/project');
-
+    expect(generateActionPlan).not.toHaveBeenCalled();
     const [, narration] = generateReport.mock.calls[0];
     expect(narration).toBeNull();
   });
@@ -551,6 +610,7 @@ describe('finishRun', () => {
 
     expect(result.success).toBe(true);
   });
+
 });
 
 describe('dashboard integration', () => {

@@ -20,6 +20,7 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
 | `--init-run` | boolean | false | Initialize orchestrated run |
 | `--run-step <N>` | number | -- | Run single step (validated: positive finite integer) |
 | `--finish-run` | boolean | false | Finish orchestrated run |
+| `--skip-sync` | boolean | false | Skip automatic prompt sync from Google Doc before running |
 | `--version` | boolean | false | Print version, exit(0) |
 
 **Input validation**: `--timeout` and `--run-step` both use `parseInt` + `Number.isFinite` + positivity check. Invalid values produce actionable error messages with examples.
@@ -47,9 +48,10 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
 4. **Handle --list / --setup** — early exit paths
 5. **Welcome screen**: `showWelcome()` — ASCII banner
 6. **`setupGitAndPreChecks()`**: `initGit()` → `excludeEphemeralFiles()` → spinner + `runPreChecks()`
-7. **Step selection**: `@inquirer/checkbox` or `--all`/`--steps` parsing
-8. **`executeRunFlow()`**: dashboard → git branching → notify → spinner + `executeSteps()` → abort handling
-9. **`finalizeRun()`**: changelog → action plan → report → commit → merge → summary → dashboard shutdown
+7. **Auto-sync prompts**: `autoSyncPrompts(opts)` — syncs from Google Doc, calls `reloadSteps()` if changes. Non-blocking on failure. Skipped with `--skip-sync`.
+8. **Step selection**: `@inquirer/checkbox` or `--all`/`--steps` parsing
+9. **`executeRunFlow()`**: dashboard → git branching → notify → spinner + `executeSteps()` → abort handling
+10. **`finalizeRun()`**: changelog → action plan → report → commit → merge → summary → dashboard shutdown
 
 ## Abort Handling (SIGINT)
 
@@ -72,6 +74,8 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
   onStepStart(step, idx, total),    // Update spinner + dashboard
   onStepComplete(step, idx, total), // Green checkmark
   onStepFail(step, idx, total),     // Red X + desktop notification
+  onRateLimitPause(retryAfterMs),   // Stop spinner, yellow warning + wait estimate
+  onRateLimitResume(),              // Green confirmation, restart spinner
 }
 ```
 

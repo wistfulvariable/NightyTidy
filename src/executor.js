@@ -5,10 +5,72 @@ import { STEPS, DOC_UPDATE_PROMPT } from './prompts/loader.js';
 import { notify } from './notifications.js';
 import { info, warn, error as logError } from './logger.js';
 
+/**
+ * @fileoverview Core step execution loop for NightyTidy.
+ *
+ * Executes improvement prompts sequentially, handles retries, rate-limit
+ * pause/resume, fast-completion detection, and doc updates.
+ *
+ * Error contract: This module NEVER throws. Failed steps are recorded in
+ * results. Rate-limit failures trigger pause/auto-resume with exponential backoff.
+ */
+
+/**
+ * @typedef {import('./claude.js').CostData} CostData
+ * @typedef {import('./claude.js').ErrorType} ErrorType
+ */
+
+/**
+ * @typedef {Object} Step
+ * @property {number} number - Step number (1-based)
+ * @property {string} name - Human-readable step name
+ * @property {string} prompt - The improvement prompt text
+ */
+
+/**
+ * @typedef {Object} StepResult
+ * @property {{number: number, name: string}} step - Step identifier
+ * @property {'completed' | 'failed'} status - Step completion status
+ * @property {string} output - Claude's output text
+ * @property {number} duration - Step duration in milliseconds
+ * @property {number} attempts - Number of attempts made
+ * @property {string|null} error - Error message if failed
+ * @property {CostData|null} cost - Cost and token usage data
+ * @property {boolean} [suspiciousFast] - True if step was retried for fast completion
+ * @property {ErrorType} [errorType] - Error type if failed
+ * @property {number|null} [retryAfterMs] - Suggested retry delay for rate limits
+ */
+
+/**
+ * @typedef {Object} ExecutionResults
+ * @property {StepResult[]} results - Array of step results
+ * @property {number} totalDuration - Total execution time in milliseconds
+ * @property {number} completedCount - Number of successfully completed steps
+ * @property {number} failedCount - Number of failed steps
+ */
+
+/**
+ * @typedef {Object} ExecuteStepsOptions
+ * @property {AbortSignal} [signal] - Abort signal for cancellation
+ * @property {number} [timeout] - Timeout per step in milliseconds
+ * @property {(step: Step, index: number, total: number) => void} [onStepStart]
+ * @property {(step: Step, index: number, total: number) => void} [onStepComplete]
+ * @property {(step: Step, index: number, total: number) => void} [onStepFail]
+ * @property {(chunk: string) => void} [onOutput] - Streaming output callback
+ * @property {(retryAfterMs: number|null) => void} [onRateLimitPause]
+ * @property {() => void} [onRateLimitResume]
+ */
+
 // SHA-256 of all STEPS[].prompt content — update when prompts change.
 // Detects unexpected modification of prompt data before passing to
 // Claude Code with --dangerously-skip-permissions.
-const STEPS_HASH = '1578cc610e97618b4eacdbfb79be29b7aa2715b0c4fa32b960eaa21f8ef2ab6a';
+const STEPS_HASH = 'c8a71a1208dec865ed81de2e732ab630a5b25aaca09617d095aa8534fcbd40f3';
+
+// Hard cap on total step duration (all retries + doc-update combined).
+// Without this, retries × phases can exceed the user's expected timeout.
+// Must match claude.js DEFAULT_TIMEOUT — kept as a separate constant
+// to avoid adding claude.js mock requirements to all test files.
+const DEFAULT_STEP_TIMEOUT_MS = 45 * 60 * 1000; // 45 minutes
 
 // A step completing under 2 minutes is suspicious — Claude likely bailed
 // without doing real work. Triggers one automatic retry with context.
@@ -24,6 +86,13 @@ const FAST_RETRY_PREFIX =
   '- Commit your changes when done\n\n' +
   'Here is the original task:\n\n';
 
+/**
+ * Verify the integrity of step prompts against the stored hash.
+ * Warns but does not block if hash mismatches (user may have legitimate changes).
+ *
+ * @param {Step[]} steps - Array of step objects to verify
+ * @returns {boolean} True if hash matches, false if mismatch
+ */
 function verifyStepsIntegrity(steps) {
   const content = steps.map(s => s.prompt).join('');
   const hash = createHash('sha256').update(content).digest('hex');
@@ -49,6 +118,13 @@ export const SAFETY_PREAMBLE =
   '- Commit your changes with a descriptive message when done.\n' +
   '---\n\n';
 
+/**
+ * Sum two cost objects, handling null values gracefully.
+ *
+ * @param {CostData|null} a - First cost object
+ * @param {CostData|null} b - Second cost object
+ * @returns {CostData|null} Combined cost, or null if both inputs are null
+ */
 function sumCosts(a, b) {
   if (!a && !b) return null;
   if (!a) return b;
@@ -63,6 +139,16 @@ function sumCosts(a, b) {
   };
 }
 
+/**
+ * Create a standardized step result object.
+ *
+ * @param {Step} step - The step that was executed
+ * @param {'completed' | 'failed'} status - Completion status
+ * @param {import('./claude.js').RunPromptResult} result - Claude result
+ * @param {number} duration - Step duration in milliseconds
+ * @param {Object} [extra={}] - Additional fields to include
+ * @returns {StepResult} Normalized step result
+ */
 function makeStepResult(step, status, result, duration, extra = {}) {
   return {
     step: { number: step.number, name: step.name },
@@ -76,96 +162,144 @@ function makeStepResult(step, status, result, duration, extra = {}) {
   };
 }
 
+/**
+ * Execute a single improvement step with doc update.
+ *
+ * Runs the improvement prompt, optionally retries if suspiciously fast,
+ * runs the doc update in the same session, and handles fallback commits.
+ *
+ * @param {Step} step - The step to execute
+ * @param {string} projectDir - Target project directory
+ * @param {Object} [options] - Execution options
+ * @param {AbortSignal} [options.signal] - Abort signal
+ * @param {number} [options.timeout] - Timeout in milliseconds
+ * @param {(chunk: string) => void} [options.onOutput] - Streaming callback
+ * @returns {Promise<StepResult>} Step result (never throws)
+ */
 export async function executeSingleStep(step, projectDir, { signal, timeout, onOutput } = {}) {
   const stepLabel = `Step ${step.number}: ${step.name}`;
   info(`${stepLabel} — starting`);
 
-  const stepStart = Date.now();
-  const preStepHash = await getHeadHash();
+  // Step-level timeout: hard cap on total step duration (improvement + retries
+  // + fast-retry + doc-update combined). Without this, a step with 4 retry
+  // attempts across 3 phases can silently run for 9× the user's expected
+  // timeout. The abort signal cancels all in-flight work when the cap is hit.
+  const stepTimeoutMs = timeout || DEFAULT_STEP_TIMEOUT_MS;
+  const stepAbort = new AbortController();
+  const stepTimer = setTimeout(() => {
+    warn(`${stepLabel} — step timeout (${Math.round(stepTimeoutMs / 60000)} min) reached. Aborting step.`);
+    stepAbort.abort();
+  }, stepTimeoutMs);
+  stepTimer.unref();
 
-  // Run improvement prompt
-  const result = await runPrompt(SAFETY_PREAMBLE + step.prompt, projectDir, {
-    label: `Step ${step.number} — ${step.name}`,
-    signal,
-    timeout,
-    onOutput,
-  });
+  // Merge external signal (e.g., SIGINT) with step-level timeout.
+  const effectiveSignal = signal
+    ? AbortSignal.any([signal, stepAbort.signal])
+    : stepAbort.signal;
 
-  if (!result.success) {
-    const duration = Date.now() - stepStart;
-    logError(`${stepLabel} — failed after ${result.attempts} attempts`);
-    notify(
-      `NightyTidy: Step ${step.number} Failed`,
-      `Step ${step.number} (${step.name}) failed after ${result.attempts} attempts. Skipped — run continuing.`
-    );
-    const failExtra = {};
-    if (result.errorType) failExtra.errorType = result.errorType;
-    if (result.retryAfterMs) failExtra.retryAfterMs = result.retryAfterMs;
-    return makeStepResult(step, 'failed', result, duration, failExtra);
-  }
+  try {
+    const stepStart = Date.now();
+    const preStepHash = await getHeadHash();
 
-  // Fast completion detection: retry once if suspiciously fast
-  let improvementResult = result;
-  let fastRetried = false;
+    // Run improvement prompt
+    const result = await runPrompt(SAFETY_PREAMBLE + step.prompt, projectDir, {
+      label: `Step ${step.number} — ${step.name}`,
+      signal: effectiveSignal,
+      timeout,
+      onOutput,
+    });
 
-  if (result.duration < FAST_COMPLETION_THRESHOLD_MS) {
-    warn(
-      `${stepLabel}: completed in ${Math.round(result.duration / 1000)}s — ` +
-      `suspiciously fast (threshold: ${FAST_COMPLETION_THRESHOLD_MS / 1000}s). Retrying with context.`
-    );
-    fastRetried = true;
+    if (!result.success) {
+      const duration = Date.now() - stepStart;
+      logError(`${stepLabel} — failed after ${result.attempts} attempts`);
+      notify(
+        `NightyTidy: Step ${step.number} Failed`,
+        `Step ${step.number} (${step.name}) failed after ${result.attempts} attempts. Skipped — run continuing.`
+      );
+      const failExtra = {};
+      if (result.errorType) failExtra.errorType = result.errorType;
+      if (result.retryAfterMs) failExtra.retryAfterMs = result.retryAfterMs;
+      return makeStepResult(step, 'failed', result, duration, failExtra);
+    }
 
-    const retryResult = await runPrompt(
-      SAFETY_PREAMBLE + FAST_RETRY_PREFIX + step.prompt,
-      projectDir,
-      { label: `Step ${step.number} — ${step.name} (fast-retry)`, signal, timeout, onOutput },
-    );
+    // Fast completion detection: retry once if suspiciously fast
+    let improvementResult = result;
+    let fastRetried = false;
 
-    if (retryResult.success) {
-      info(`${stepLabel}: fast-retry succeeded — using retry result`);
-      improvementResult = {
-        ...retryResult,
-        cost: sumCosts(result.cost, retryResult.cost),
-        attempts: result.attempts + retryResult.attempts,
-      };
+    if (result.duration < FAST_COMPLETION_THRESHOLD_MS) {
+      warn(
+        `${stepLabel}: completed in ${Math.round(result.duration / 1000)}s — ` +
+        `suspiciously fast (threshold: ${FAST_COMPLETION_THRESHOLD_MS / 1000}s). Retrying with context.`
+      );
+      fastRetried = true;
+
+      const retryResult = await runPrompt(
+        SAFETY_PREAMBLE + FAST_RETRY_PREFIX + step.prompt,
+        projectDir,
+        { label: `Step ${step.number} — ${step.name} (fast-retry)`, signal: effectiveSignal, timeout, onOutput },
+      );
+
+      if (retryResult.success) {
+        info(`${stepLabel}: fast-retry succeeded — using retry result`);
+        improvementResult = {
+          ...retryResult,
+          cost: sumCosts(result.cost, retryResult.cost),
+          attempts: result.attempts + retryResult.attempts,
+        };
+      } else {
+        warn(`${stepLabel}: fast-retry failed — falling back to original fast result`);
+      }
+    }
+
+    // Run doc update in the same Claude session that made the changes
+    const docResult = await runPrompt(SAFETY_PREAMBLE + DOC_UPDATE_PROMPT, projectDir, {
+      label: `Step ${step.number} — doc update`,
+      signal: effectiveSignal,
+      timeout,
+      continueSession: true,
+      onOutput,
+    });
+
+    if (!docResult.success) {
+      warn(`${stepLabel}: Doc update failed after retries — improvement changes preserved but docs may be stale`);
+    }
+
+    // Combine costs from improvement + doc-update calls
+    const combinedCost = sumCosts(improvementResult.cost, docResult.cost);
+
+    // Commit verification
+    const committed = await hasNewCommit(preStepHash);
+    if (committed) {
+      info(`${stepLabel}: committed by Claude Code \u2713`);
     } else {
-      warn(`${stepLabel}: fast-retry failed — falling back to original fast result`);
+      try {
+        await fallbackCommit(step.number, step.name);
+      } catch (err) {
+        warn(`${stepLabel}: automatic commit failed (${err.message}) — changes remain staged`);
+      }
     }
-  }
 
-  // Run doc update in the same Claude session that made the changes
-  const docResult = await runPrompt(SAFETY_PREAMBLE + DOC_UPDATE_PROMPT, projectDir, {
-    label: `Step ${step.number} — doc update`,
-    signal,
-    timeout,
-    continueSession: true,
-    onOutput,
-  });
-
-  if (!docResult.success) {
-    warn(`${stepLabel}: Doc update failed after retries — improvement changes preserved but docs may be stale`);
-  }
-
-  // Combine costs from improvement + doc-update calls
-  const combinedCost = sumCosts(improvementResult.cost, docResult.cost);
-
-  // Commit verification
-  const committed = await hasNewCommit(preStepHash);
-  if (committed) {
-    info(`${stepLabel}: committed by Claude Code \u2713`);
-  } else {
-    try {
-      await fallbackCommit(step.number, step.name);
-    } catch (err) {
-      warn(`${stepLabel}: fallback commit failed — ${err.message}`);
+    // Sweep: always stage+commit any remaining untracked/unstaged files.
+    // Claude often commits its code changes but forgets to git-add report
+    // or audit files it created. Without this sweep, those files stay
+    // untracked and are lost if the user stops the run.
+    if (committed) {
+      try {
+        const swept = await fallbackCommit(step.number, step.name);
+        if (swept) info(`${stepLabel}: swept uncommitted files \u2713`);
+      } catch (err) {
+        warn(`${stepLabel}: sweep commit failed (${err.message}) — some files may remain unstaged`);
+      }
     }
+
+    const duration = Date.now() - stepStart;
+    info(`${stepLabel} — completed (${Math.round(duration / 1000)}s)`);
+
+    const extra = fastRetried ? { suspiciousFast: true } : {};
+    return makeStepResult(step, 'completed', { ...improvementResult, cost: combinedCost }, duration, extra);
+  } finally {
+    clearTimeout(stepTimer);
   }
-
-  const duration = Date.now() - stepStart;
-  info(`${stepLabel} — completed (${Math.round(duration / 1000)}s)`);
-
-  const extra = fastRetried ? { suspiciousFast: true } : {};
-  return makeStepResult(step, 'completed', { ...improvementResult, cost: combinedCost }, duration, extra);
 }
 
 // Exponential backoff schedule for rate-limit waits (ms)
@@ -180,7 +314,14 @@ const BACKOFF_SCHEDULE_MS = [
 
 /**
  * Wait for a rate-limit to clear using exponential backoff and API probes.
- * Returns true if the API is available again, false if we gave up or were aborted.
+ *
+ * Uses exponential backoff (2min → 2hr cap) and periodic API probes to
+ * detect when the rate limit has cleared.
+ *
+ * @param {number|null} retryAfterMs - Suggested retry delay from API, or null
+ * @param {AbortSignal|undefined} signal - Abort signal for cancellation
+ * @param {string} projectDir - Project directory for probe prompts
+ * @returns {Promise<boolean>} True if API available, false if gave up or aborted
  */
 async function waitForRateLimit(retryAfterMs, signal, projectDir) {
   if (signal?.aborted) return false;
@@ -227,6 +368,22 @@ async function waitForRateLimit(retryAfterMs, signal, projectDir) {
   return false;
 }
 
+/**
+ * Execute multiple improvement steps sequentially.
+ *
+ * Handles:
+ * - Sequential step execution with callbacks
+ * - Rate-limit pause/resume with exponential backoff
+ * - Abort signal support for graceful cancellation
+ * - Progress callbacks for UI updates
+ *
+ * Error contract: NEVER throws. Failed steps are recorded in results.
+ *
+ * @param {Step[]} selectedSteps - Steps to execute
+ * @param {string} projectDir - Target project directory
+ * @param {ExecuteStepsOptions} [options] - Execution options
+ * @returns {Promise<ExecutionResults>} Results object (never throws)
+ */
 export async function executeSteps(selectedSteps, projectDir, { signal, timeout, onStepStart, onStepComplete, onStepFail, onOutput, onRateLimitPause, onRateLimitResume } = {}) {
   verifyStepsIntegrity(STEPS);
 
@@ -248,32 +405,35 @@ export async function executeSteps(selectedSteps, projectDir, { signal, timeout,
     const stepResult = await executeSingleStep(step, projectDir, { signal, timeout, onOutput });
     results.push(stepResult);
 
-    if (stepResult.status === 'failed') {
-      // Rate-limit: pause and wait instead of continuing
-      if (stepResult.errorType === ERROR_TYPE.RATE_LIMIT) {
-        info('Rate limit detected — pausing run');
-        onRateLimitPause?.(stepResult.retryAfterMs);
-
-        const resumed = await waitForRateLimit(stepResult.retryAfterMs, signal, projectDir);
-        if (!resumed) {
-          info('Rate limit wait ended — stopping run');
-          break;
-        }
-        onRateLimitResume?.();
-        info('Rate limit cleared — resuming run');
-
-        // Remove the failed result and retry the same step
-        results.pop();
-        i--;
-        continue;
-      }
-
-      failedCount++;
-      onStepFail?.(step, i, totalSteps);
-    } else {
+    // Success path — increment and notify
+    if (stepResult.status === 'completed') {
       completedCount++;
       onStepComplete?.(step, i, totalSteps);
+      continue;
     }
+
+    // Rate-limit: pause and wait, then retry the same step
+    if (stepResult.errorType === ERROR_TYPE.RATE_LIMIT) {
+      info('Rate limit detected — pausing run');
+      onRateLimitPause?.(stepResult.retryAfterMs);
+
+      const resumed = await waitForRateLimit(stepResult.retryAfterMs, signal, projectDir);
+      if (!resumed) {
+        info('Rate limit wait ended — stopping run');
+        break;
+      }
+      onRateLimitResume?.();
+      info('Rate limit cleared — resuming run');
+
+      // Remove the failed result and retry the same step
+      results.pop();
+      i--;
+      continue;
+    }
+
+    // Other failure — record and notify
+    failedCount++;
+    onStepFail?.(step, i, totalSteps);
   }
 
   const totalDuration = Date.now() - runStart;
