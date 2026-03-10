@@ -81,7 +81,7 @@ test/
   orchestrator.test.js     # 36 tests — initRun, runStep, finishRun, dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough
   contracts.test.js        # 38 tests — module API contract verification against CLAUDE.md
   gui-logic.test.js        # 112 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, formatTime, detectGitError, detectStaleState, preprocessClaudeOutput, etc.)
-  gui-server.test.js       # 36 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, security headers, traversal
+  gui-server.test.js       # 44 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, log-error, log-path, security headers, traversal
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks
   dashboard-broadcastoutput.test.js # 5 tests — buffer overflow, throttled writes, clearOutputBuffer with state
@@ -135,7 +135,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/setup.js` | `--setup` command: CLAUDE.md integration for target projects | logger, prompts/loader |
 | `src/sync.js` | Google Doc prompt sync — fetches published doc, parses HTML, updates prompt files + manifest + STEPS_HASH | crypto, logger |
 | `src/prompts/loader.js` | Loads 33 prompts + special prompts (doc-update, changelog, consolidation) from markdown files via manifest.json | fs (data loader) |
-| `gui/server.js` | Desktop GUI backend — HTTP server + native folder dialog + Chrome launcher | node:http, node:fs, node:child_process |
+| `gui/server.js` | Desktop GUI backend — HTTP server + native folder dialog + Chrome launcher + session logging | node:http, node:fs, node:child_process |
 | `gui/resources/logic.js` | GUI pure logic — command building, JSON parsing, formatting | none (browser + Node.js dual) |
 | `gui/resources/app.js` | GUI state machine — screen transitions, process spawning, progress polling | logic.js, marked, server.js (via fetch) |
 
@@ -219,6 +219,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | `NIGHTYTIDY-ACTIONS.md` | Consolidated prioritized action plan from all step recommendations | Yes (on run branch) |
 | `CLAUDE.md` (appended section) | "NightyTidy — Last Run" with undo tag | Yes (on run branch) |
 | `nightytidy.lock` | Prevents concurrent runs (PID + timestamp) | No (auto-removed on exit; persistent in orchestrator mode) |
+| `nightytidy-gui.log` | GUI session log (startup, API requests, errors, shutdown) | No |
 | `nightytidy-run-state.json` | Orchestrator run state (steps, results, branch info) | No (deleted by --finish-run) |
 | `nightytidy-before-*` git tag | Safety snapshot before run | Yes (tag) |
 | `nightytidy/run-*` git branch | All changes from this run | Yes (branch) |

@@ -167,6 +167,25 @@ beforeAll(async () => {
       return;
     }
 
+    // API: log-error — mirrors server.js handleLogError
+    if (url.pathname === '/api/log-error' && req.method === 'POST') {
+      const body = await readBody(req);
+      if (!body.message) {
+        sendJson(res, { ok: false, error: 'No message provided' }, 400);
+        return;
+      }
+      const safeLevel = ['error', 'warn', 'info'].includes(body.level) ? body.level : 'error';
+      // In tests we just validate the contract — no file write
+      sendJson(res, { ok: true, level: safeLevel });
+      return;
+    }
+
+    // API: log-path — mirrors server.js handleLogPath
+    if (url.pathname === '/api/log-path' && req.method === 'POST') {
+      sendJson(res, { ok: true, path: null });
+      return;
+    }
+
     // API: delete-file — mirrors server.js handleDeleteFile
     if (url.pathname === '/api/delete-file' && req.method === 'POST') {
       const body = await readBody(req);
@@ -422,6 +441,10 @@ describe('HTML structure', () => {
     expect(html).toContain('src="/logic.js"');
     expect(html).toContain('src="/app.js"');
   });
+
+  it('has the log path display element in the summary screen', () => {
+    expect(html).toContain('id="summary-log-path"');
+  });
 });
 
 // ── API: Run Command ────────────────────────────────────────────────
@@ -568,6 +591,91 @@ describe('security headers on static files', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('x-frame-options')).toBe('DENY');
     expect(res.headers.get('content-security-policy')).toContain("default-src 'self'");
+  });
+});
+
+// ── API: Log Error ──────────────────────────────────────────────────
+
+describe('log-error API', () => {
+  it('returns ok:true when message is provided', async () => {
+    const res = await fetch(`${baseUrl}/api/log-error`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: 'error', message: 'Test error' }),
+    });
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+  });
+
+  it('returns 400 when no message provided', async () => {
+    const res = await fetch(`${baseUrl}/api/log-error`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: 'error' }),
+    });
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.ok).toBe(false);
+    expect(data.error).toContain('No message');
+  });
+
+  it('defaults to error level when invalid level is provided', async () => {
+    const res = await fetch(`${baseUrl}/api/log-error`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ level: 'critical', message: 'Bad level test' }),
+    });
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data.level).toBe('error');
+  });
+
+  it('accepts valid levels: error, warn, info', async () => {
+    for (const level of ['error', 'warn', 'info']) {
+      const res = await fetch(`${baseUrl}/api/log-error`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level, message: `Test ${level}` }),
+      });
+      const data = await res.json();
+      expect(data.ok).toBe(true);
+      expect(data.level).toBe(level);
+    }
+  });
+
+  it('handles malformed JSON body gracefully', async () => {
+    const res = await fetch(`${baseUrl}/api/log-error`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: 'not-json',
+    });
+    // readBody falls back to {} — missing message → 400
+    expect(res.status).toBe(400);
+  });
+});
+
+// ── API: Log Path ──────────────────────────────────────────────────
+
+describe('log-path API', () => {
+  it('returns ok:true with path property', async () => {
+    const res = await fetch(`${baseUrl}/api/log-path`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+    expect(data).toHaveProperty('path');
+  });
+
+  it('returns null path before project selection', async () => {
+    const res = await fetch(`${baseUrl}/api/log-path`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json();
+    expect(data.path).toBeNull();
   });
 });
 

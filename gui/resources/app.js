@@ -5,6 +5,27 @@
 
 /* global NtLogic, marked */
 
+// ── Frontend Error Logging ──────────────────────────────────────────
+
+function logToServer(level, message) {
+  fetch('/api/log-error', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ level, message }),
+  }).catch(() => {});
+}
+
+window.onerror = (message, source, lineno, colno, error) => {
+  const stack = error?.stack || '';
+  logToServer('error', `${message} at ${source}:${lineno}:${colno}${stack ? '\n' + stack : ''}`);
+};
+
+window.onunhandledrejection = (event) => {
+  const reason = event.reason;
+  const msg = reason instanceof Error ? reason.stack || reason.message : String(reason);
+  logToServer('error', `Unhandled promise rejection: ${msg}`);
+};
+
 // ── API helpers ────────────────────────────────────────────────────
 
 async function api(endpoint, body = {}) {
@@ -163,12 +184,13 @@ async function runCli(args) {
   state.currentProcessId = null;
 
   if (!result.ok) {
+    logToServer('warn', `CLI command failed: ${args}`);
     return { ok: false, data: null, error: 'NightyTidy command did not complete. Check that the project folder is valid and try again.' };
   }
 
   const parsed = NtLogic.parseCliOutput(result.stdout);
   if (!parsed.ok) {
-    const detail = result.stderr ? `\n${result.stderr.trim()}` : '';
+    logToServer('warn', `CLI output parse failed for: ${args}`);
     return { ok: false, data: null, error: 'Could not read NightyTidy output. The command may have failed — check nightytidy-run.log for details.' };
   }
 
@@ -301,6 +323,7 @@ async function selectFolder() {
     showFolderPath(result.folder);
     await loadSteps();
   } catch (err) {
+    logToServer('error', `Folder selection failed: ${err.message}`);
     showError('setup', 'Folder selection did not complete. Please try again or type the path manually.');
   }
 }
@@ -401,6 +424,7 @@ async function startRun() {
   hideInitOverlay();
 
   if (!result.ok) {
+    logToServer('error', `Init run failed: ${result.error}`);
     showError('steps', result.error);
     return;
   }
@@ -574,6 +598,7 @@ async function runNextStep() {
   const liveSnapshot = lastRenderedOutput || '';
 
   if (!result.ok) {
+    logToServer('warn', `Step ${next} failed: ${result.error}`);
     state.failedSteps.push(next);
     state.stepResults.push({ step: next, status: 'failed', error: result.error, output: liveSnapshot, costUSD: null, inputTokens: null, outputTokens: null });
     updateStepItemStatus(next, 'failed');
@@ -850,6 +875,7 @@ async function finishRun() {
   const result = await runCli('--finish-run');
 
   if (!result.ok) {
+    logToServer('error', `Finish run failed: ${result.error}`);
     showError('finishing', result.error);
     renderSummary(null);
     showScreen(SCREENS.SUMMARY);
@@ -971,6 +997,14 @@ function renderSummary(finishData) {
     }
   }
   detailsEl.innerHTML = details;
+
+  // Show log file path so users can find it for bug reports
+  api('log-path').then(result => {
+    if (result.ok && result.path) {
+      const logEl = document.getElementById('summary-log-path');
+      if (logEl) logEl.textContent = `GUI log: ${result.path}`;
+    }
+  }).catch(() => {});
 
   const listEl = document.getElementById('summary-step-list');
   listEl.innerHTML = state.stepResults.map(r => {

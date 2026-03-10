@@ -6,7 +6,7 @@
 
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { statSync, writeFileSync, unlinkSync } from 'node:fs';
+import { appendFileSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
 import { spawn, execSync } from 'node:child_process';
 import { join, extname, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -113,6 +113,51 @@ let lastHeartbeat = Date.now();
 const HEARTBEAT_CHECK_MS = 5000;
 const HEARTBEAT_STALE_MS = 15000;
 
+// ── GUI Logger ──────────────────────────────────────────────────────
+// Writes to nightytidy-gui.log in the project directory once selected.
+// Before selection, entries buffer in memory and flush on setGuiLogDir().
+const GUI_LOG_FILE = 'nightytidy-gui.log';
+let guiLogFilePath = null;
+const guiLogBuffer = [];
+const MAX_BUFFER = 500;
+
+function guiLog(level, message) {
+  const timestamp = new Date().toISOString();
+  const tag = level.toUpperCase().padEnd(5);
+  const line = `[${timestamp}] [${tag}] ${message}\n`;
+
+  if (guiLogFilePath) {
+    try {
+      appendFileSync(guiLogFilePath, line, 'utf8');
+    } catch {
+      if (guiLogBuffer.length < MAX_BUFFER) guiLogBuffer.push(line);
+    }
+  } else {
+    if (guiLogBuffer.length < MAX_BUFFER) guiLogBuffer.push(line);
+  }
+}
+
+function setGuiLogDir(projectDir) {
+  guiLogFilePath = join(projectDir, GUI_LOG_FILE);
+  try {
+    writeFileSync(guiLogFilePath, '', 'utf8');
+  } catch (err) {
+    console.error(`Failed to create GUI log file: ${err.message}`);
+    return;
+  }
+  flushGuiLogBuffer();
+}
+
+function flushGuiLogBuffer() {
+  if (!guiLogFilePath || guiLogBuffer.length === 0) return;
+  try {
+    appendFileSync(guiLogFilePath, guiLogBuffer.join(''), 'utf8');
+    guiLogBuffer.length = 0;
+  } catch {
+    // Silently fail — don't crash the server over logging
+  }
+}
+
 function killProcess(proc) {
   if (process.platform === 'win32') {
     execSync(`taskkill /pid ${proc.pid} /T /F`, { windowsHide: true });
@@ -138,6 +183,7 @@ async function serveStatic(res, urlPath) {
   // confusion (e.g. "resources-extra" matching "resources")
   const boundary = RESOURCES_DIR.endsWith(sep) ? RESOURCES_DIR : RESOURCES_DIR + sep;
   if (!filePath.startsWith(boundary) && filePath !== RESOURCES_DIR) {
+    guiLog('warn', `Blocked path traversal attempt: ${urlPath}`);
     res.writeHead(403, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
     res.end('Forbidden');
     return;
@@ -211,10 +257,17 @@ async function handleSelectFolder(res) {
       }
     }
 
+    if (folder) {
+      guiLog('info', `Folder selected: ${folder}`);
+      setGuiLogDir(folder);
+    } else {
+      guiLog('info', 'Folder dialog closed without selection');
+    }
     sendJson(res, { ok: true, folder });
   } catch (err) {
     // User cancelled or dialog failed — still refresh heartbeat after blocking execSync
     lastHeartbeat = Date.now();
+    guiLog('info', 'Folder dialog cancelled or failed');
     sendJson(res, { ok: true, folder: null });
   }
 }
@@ -231,6 +284,7 @@ async function handleRunCommand(req, res) {
   }
 
   try {
+    guiLog('info', `Spawning process id=${id || 'none'}`);
     const proc = spawn(command, [], {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
@@ -248,14 +302,17 @@ async function handleRunCommand(req, res) {
 
     proc.on('close', (exitCode) => {
       if (id) activeProcesses.delete(id);
+      guiLog('info', `Process ${id || 'unknown'} exited code=${exitCode ?? 1}`);
       sendJson(res, { ok: true, exitCode: exitCode ?? 1, stdout, stderr });
     });
 
     proc.on('error', (err) => {
       if (id) activeProcesses.delete(id);
+      guiLog('error', `Process ${id || 'unknown'} error: ${err.message}`);
       sendJson(res, { ok: false, error: err.message });
     });
   } catch (err) {
+    guiLog('error', `Spawn failed: ${err.message}`);
     sendJson(res, { ok: false, error: err.message });
   }
 }
@@ -276,8 +333,10 @@ async function handleKillProcess(req, res) {
     try {
       killProcess(proc);
       activeProcesses.delete(id);
+      guiLog('info', `Killed process ${id}`);
       sendJson(res, { ok: true });
     } catch (err) {
+      guiLog('error', `Failed to kill process ${id}: ${err.message}`);
       sendJson(res, { ok: false, error: err.message });
     }
   } else {
@@ -338,9 +397,32 @@ function handleHeartbeat(res) {
   sendJson(res, { ok: true });
 }
 
+// ── API: Log Error (from frontend) ─────────────────────────────────
+
+async function handleLogError(req, res) {
+  const body = await readBody(req);
+  const { level, message } = body;
+
+  if (!message) {
+    sendJson(res, { ok: false, error: 'No message provided' }, 400);
+    return;
+  }
+
+  const safeLevel = ['error', 'warn', 'info'].includes(level) ? level : 'error';
+  guiLog(safeLevel, `[frontend] ${message}`);
+  sendJson(res, { ok: true });
+}
+
+// ── API: Log Path ──────────────────────────────────────────────────
+
+function handleLogPath(res) {
+  sendJson(res, { ok: true, path: guiLogFilePath });
+}
+
 // ── API: Shutdown ──────────────────────────────────────────────────
 
 function handleExit(res) {
+  guiLog('info', 'Exit requested by frontend');
   sendJson(res, { ok: true });
   killAllProcesses();
   setTimeout(() => process.exit(0), 200);
@@ -384,6 +466,11 @@ function sendJson(res, data, status = 200) {
 function handleRequest(req, res) {
   const url = new URL(req.url, `http://localhost`);
 
+  // Log API requests (skip heartbeat — too noisy)
+  if (url.pathname.startsWith('/api/') && url.pathname !== '/api/heartbeat') {
+    guiLog('debug', `${req.method} ${url.pathname}`);
+  }
+
   // API routes
   if (url.pathname === '/api/config' && req.method === 'POST') {
     return handleConfig(res);
@@ -405,6 +492,12 @@ function handleRequest(req, res) {
   }
   if (url.pathname === '/api/heartbeat' && req.method === 'POST') {
     return handleHeartbeat(res);
+  }
+  if (url.pathname === '/api/log-error' && req.method === 'POST') {
+    return handleLogError(req, res);
+  }
+  if (url.pathname === '/api/log-path' && req.method === 'POST') {
+    return handleLogPath(res);
   }
   if (url.pathname === '/api/exit' && req.method === 'POST') {
     return handleExit(res);
@@ -494,6 +587,7 @@ server.headersTimeout = 15_000;  // 15s — max time to receive headers
 server.listen(0, '127.0.0.1', () => {
   const { port } = server.address();
   const url = `http://127.0.0.1:${port}`;
+  guiLog('info', `GUI server started on ${url}`);
   console.log(`NightyTidy GUI server running on ${url}`);
   launchChrome(url);
 
@@ -501,6 +595,7 @@ server.listen(0, '127.0.0.1', () => {
   // Catches cases where Chrome crashes or is force-killed (unload never fires).
   const watchdog = setInterval(() => {
     if (Date.now() - lastHeartbeat > HEARTBEAT_STALE_MS) {
+      guiLog('warn', 'No heartbeat from browser — shutting down');
       console.log('No heartbeat from browser — shutting down.');
       clearInterval(watchdog);
       cleanup();
@@ -517,11 +612,22 @@ server.listen(0, '127.0.0.1', () => {
 const SHUTDOWN_FORCE_EXIT_MS = 5000;
 
 function shutdownHandler() {
+  guiLog('info', 'Shutdown signal received');
   cleanup();
   const forceTimer = setTimeout(() => process.exit(1), SHUTDOWN_FORCE_EXIT_MS);
   forceTimer.unref();
   process.exit(0);
 }
+
+process.on('uncaughtException', (err) => {
+  guiLog('error', `Uncaught exception: ${err.stack || err.message}`);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.stack : String(reason);
+  guiLog('error', `Unhandled rejection: ${msg}`);
+});
 
 process.on('SIGINT', shutdownHandler);
 process.on('SIGTERM', shutdownHandler);
