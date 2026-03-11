@@ -16,11 +16,12 @@
  *   - Directory traversal prevention (403)
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { createServer } from 'node:http';
 import { readFile, writeFile } from 'node:fs/promises';
-import { unlinkSync, existsSync } from 'node:fs';
+import { unlinkSync, existsSync, writeFileSync } from 'node:fs';
 import { join, dirname, extname, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 
@@ -736,5 +737,83 @@ describe('API response shape contracts', () => {
   it('static files include X-Content-Type-Options: nosniff', async () => {
     const res = await fetch(`${baseUrl}/logic.js`);
     expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+  });
+});
+
+// ── Singleton Guard (lock file) ───────────────────────────────────
+
+describe('singleton guard', () => {
+  const LOCK_FILE = join(tmpdir(), 'nightytidy-gui.lock');
+  const serverScript = join(__dirname, '..', 'gui', 'server.js');
+
+  function removeLock() {
+    try { unlinkSync(LOCK_FILE); } catch { /* ignore */ }
+  }
+
+  /** Spawn gui/server.js, collect stdout until timeout or close. */
+  function spawnServer(timeoutMs = 8000) {
+    const child = spawn(process.execPath, [serverScript], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, NIGHTYTIDY_NO_CHROME: '1' },
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => { stdout += c.toString(); });
+    child.stderr.on('data', (c) => { stderr += c.toString(); });
+
+    const done = new Promise((resolve) => {
+      const timer = setTimeout(() => resolve({ stdout, stderr, exited: false }), timeoutMs);
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        resolve({ stdout, stderr, exited: true, code });
+      });
+    });
+
+    return { child, done };
+  }
+
+  afterEach(() => {
+    removeLock();
+  });
+
+  it('cleans up stale lock file with dead PID', { timeout: 15000 }, async () => {
+    // Write lock with a PID that doesn't exist
+    writeFileSync(LOCK_FILE, JSON.stringify({ pid: 999999, url: 'http://127.0.0.1:1', port: 1 }));
+
+    const { child, done } = spawnServer(6000);
+    const result = await done;
+
+    // Server should start normally (stale lock removed)
+    expect(result.stdout).toContain('NightyTidy GUI server running on');
+    child.kill();
+  });
+
+  it('detects existing instance and exits without starting a new server', { timeout: 20000 }, async () => {
+    // Start a first instance
+    const first = spawnServer(10000);
+    // Wait for it to print the URL
+    await new Promise((resolve) => {
+      first.child.stdout.on('data', function check(chunk) {
+        if (chunk.toString().includes('running on')) {
+          first.child.stdout.removeListener('data', check);
+          resolve();
+        }
+      });
+    });
+
+    // Give lock file a moment to be written
+    await new Promise((r) => setTimeout(r, 200));
+    expect(existsSync(LOCK_FILE)).toBe(true);
+
+    // Start a second instance — it should detect the first and exit
+    const second = spawnServer(6000);
+    const result = await second.done;
+
+    expect(result.exited).toBe(true);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('already running');
+
+    // Clean up first server
+    first.child.kill();
   });
 });

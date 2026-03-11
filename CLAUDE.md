@@ -66,7 +66,7 @@ test/
   claude.test.js           # 73 tests — fake child process, fake timers, abort signal, Windows shell mode, stream-json NDJSON parsing, classifyError, rate-limit retry skip, stderr capture, inactivity timeout
   executor.test.js         # 42 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection, continueSession/promptOverride, rate-limit pause/resume
   git.test.js              # 16 tests — real git against temp dirs (integration)
-  git-extended.test.js     # 7 tests — getGitInstance, getHeadHash, tag/branch collision
+  git-extended.test.js     # 11 tests — getGitInstance, getHeadHash, tag/branch collision, ensureOnBranch recovery
   notifications.test.js    # 2 tests — mock node-notifier
   report.test.js           # 13 tests — mock fs, verify report format, actionPlan option, cost column
   report-extended.test.js  # 17 tests — updateClaudeMd, formatDuration edge cases, cost rendering
@@ -78,15 +78,15 @@ test/
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
-  orchestrator.test.js     # 57 tests — initRun, runStep, finishRun (changelog + action plan), dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync, 3-tier step recovery
+  orchestrator.test.js     # 61 tests — initRun, runStep, finishRun (changelog + action plan), dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync, 3-tier step recovery, inter-tier branch guard
   contracts.test.js        # 39 tests — module API contract verification against CLAUDE.md
   gui-logic.test.js        # 138 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, formatTime, detectGitError, detectStaleState, detectRateLimit, formatCountdown, preprocessClaudeOutput, etc.)
-  gui-server.test.js       # 45 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, log-error, log-path, security headers, traversal
+  gui-server.test.js       # 47 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, log-error, log-path, security headers, traversal, singleton guard
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks
   dashboard-broadcastoutput.test.js # 5 tests — buffer overflow, throttled writes, clearOutputBuffer with state
   env.test.js              # 15 tests — allowlist filtering, prefix matching, CLAUDECODE blocking, debug logging
-  sync.test.js             # 64 tests — Google Doc fetch, HTML parsing, section filtering, manifest matching, hash computation, sync orchestration
+  sync.test.js             # 67 tests — Google Doc fetch, HTML parsing, section filtering, manifest matching, hash computation, sync orchestration
   fixtures/
     google-doc-sample.html # Representative Google Doc HTML for deterministic sync testing
   helpers/
@@ -120,7 +120,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/executor.js` | Core step loop + single-step execution, prompt integrity check, fast-completion detection, rate-limit pause/resume with exponential backoff | crypto, claude, git, notifications, prompts |
 | `src/orchestrator.js` | Claude Code orchestrator mode (JSON API for step-by-step runs) + dashboard | logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone |
 | `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue, error classification via `classifyError`/`ERROR_TYPE`, exported `sleep`) | logger, env |
-| `src/git.js` | Git operations via simple-git | logger |
+| `src/git.js` | Git operations via simple-git + `ensureOnBranch()` branch guard | logger |
 | `src/checks.js` | Pre-run validation (8 checks) | logger, env |
 | `src/env.js` | Shared environment helpers (cleanEnv with allowlist filtering) | logger |
 | `src/notifications.js` | Desktop notifications | logger |
@@ -217,8 +217,8 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | `nightytidy-run.log` | Full run log (timestamped) | No |
 | `nightytidy-progress.json` | Live progress state (read by TUI window) | No (deleted on stop) |
 | `nightytidy-dashboard.url` | Dashboard URL — Claude reads this and shares with user | No (deleted on stop) |
-| `NIGHTYTIDY-REPORT.md` | Run summary with step results | Yes (on run branch) |
-| `NIGHTYTIDY-ACTIONS.md` | Consolidated prioritized action plan from all step recommendations | Yes (on run branch) |
+| `NIGHTYTIDY-REPORT_NN_YYYY-MM-DD-HHMM.md` | Run summary with step results (numbered + timestamped) | Yes (on run branch) |
+| `NIGHTYTIDY-ACTIONS_NN_YYYY-MM-DD-HHMM.md` | Consolidated prioritized action plan (numbered + timestamped) | Yes (on run branch) |
 | `CLAUDE.md` (appended section) | "NightyTidy — Last Run" with undo tag | Yes (on run branch) |
 | `nightytidy.lock` | Prevents concurrent runs (PID + timestamp) | No (auto-removed on exit; persistent in orchestrator mode) |
 | `nightytidy-gui.log` | GUI session log (startup, API requests, errors, shutdown) | No |
@@ -243,7 +243,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **Dashboard CSRF**: POST `/stop` requires a CSRF token (generated per session via `crypto.randomBytes`). Token is embedded in served HTML and verified server-side. Tests in `dashboard.test.js`.
 - **Dashboard security headers**: All responses (200 and 4xx) include CSP, X-Frame-Options, X-Content-Type-Options. CSP allows `'unsafe-inline'` for inline scripts/styles.
 - **Dashboard body limits**: POST `/stop` enforces 1 KB body size limit to prevent memory exhaustion.
-- **GUI server security**: Binds to `127.0.0.1` only. No CORS headers. Body limit 1 MB. Path traversal protection with trailing separator boundary check. Security headers on all responses (HTML, JSON, and error responses). CSP uses `'self'` + `worker-src blob:` (no inline scripts). Frontend heartbeat uses two layers: Web Worker with absolute URL (immune to Chrome tab throttling) + main-thread `setInterval` backup (both run simultaneously). Server watchdog skips heartbeat checks entirely when `activeProcesses.size > 0` — the server will NEVER self-terminate while steps are running. The 48-min process safety timeout handles truly stuck processes. When idle, watchdog uses 15s threshold to detect browser gone.
+- **GUI server security**: Binds to `127.0.0.1` only. No CORS headers. Body limit 1 MB. Path traversal protection with trailing separator boundary check. Security headers on all responses (HTML, JSON, and error responses). CSP uses `'self'` + `worker-src blob:` (no inline scripts). Frontend heartbeat uses two layers: Web Worker with absolute URL (immune to Chrome tab throttling) + main-thread `setInterval` backup (both run simultaneously). Server watchdog skips heartbeat checks entirely when `activeProcesses.size > 0` — the server will NEVER self-terminate while steps are running. The 48-min process safety timeout handles truly stuck processes. When idle, watchdog uses 15s threshold to detect browser gone. **Singleton guard**: lock file in `os.tmpdir()/nightytidy-gui.lock` (PID + URL + port). On startup, checks if existing PID is alive + HTTP-probes the server; if responsive, prints "already running", calls `launchChrome()` to focus the existing window, and exits. Stale locks (dead PID or unresponsive server) are removed automatically. Lock is removed in `cleanup()`. `NIGHTYTIDY_NO_CHROME=1` env var suppresses Chrome launch (used in tests).
 - **GUI timeout layering**: Three timeout layers prevent hung GUI runs: (1) `api()` in `app.js` uses `AbortController` — 30s for short calls, 50 min for `run-command`; (2) `handleRunCommand()` in `server.js` has a 48-min process safety timeout that force-kills stuck subprocesses; (3) `server.requestTimeout = 0` (disabled — the per-process timeout handles this instead; a 30s requestTimeout previously caused silent HTTP response drops mid-step). All layers log diagnostics to `nightytidy-gui.log`.
 - **Security headers on error responses**: All HTTP servers must include `SECURITY_HEADERS` on error responses (403, 404), not just 200 responses. This prevents header-based fingerprinting of error vs success paths.
 - **Lock file is atomic**: `acquireLock()` uses `fs.openSync(path, 'wx')` (O_EXCL) to prevent TOCTOU races between concurrent processes.
@@ -253,6 +253,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **`--dangerously-skip-permissions`**: Required for non-interactive Claude Code subprocess calls. NightyTidy is the permission layer — it controls what prompts are sent and operates on a safety branch.
 - **Prompt delivery threshold**: Prompts longer than 8000 chars (`STDIN_THRESHOLD` in `claude.js`) are piped via stdin instead of passed as a `-p` argument. This avoids OS command-line length limits. If prompts fail with argument-too-long errors, check this threshold.
 - **Env var allowlist**: `cleanEnv()` in `env.js` uses an explicit allowlist (system paths, locale, Anthropic/Claude/Git prefixes) instead of a blocklist. Unknown env vars are filtered out and logged via `debug()`. `CLAUDECODE` is explicitly blocked. Tests in `env.test.js`.
+- **Branch guard**: `ensureOnBranch()` in `git.js` is called before and after every step execution in `runStep()`. If Claude Code switched to a different branch during a step, it commits any uncommitted work, checks out the run branch, and merges the stray branch back. On merge conflict, the merge is aborted (step work preserved on the stray branch). This prevents the "branch drift" problem where Claude Code creates its own branches, scattering commits across multiple branches.
 - **Gitleaks CI scan**: `.github/workflows/ci.yml` runs `gitleaks/gitleaks-action@v2` on every push/PR to detect committed secrets.
 - **`npm run check:security`**: Runs `npm audit --audit-level=high`. Use before releases.
 

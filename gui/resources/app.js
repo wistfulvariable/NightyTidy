@@ -112,6 +112,7 @@ const state = {
   elapsedTimer: null,     // setInterval ID for elapsed time
   runStartTime: null,     // timestamp ms
   finishResult: null,     // from --finish-run response
+  finishFailed: false,     // finish-run was skipped, timed out, or errored
   stopping: false,        // stop button was clicked
   skippingStep: null,     // step number being skipped (null when not skipping)
   skippedSteps: [],       // step numbers that were skipped
@@ -1098,6 +1099,32 @@ function closeSummaryOutput() {
   document.querySelectorAll('#summary-step-list .step-item').forEach(el => el.classList.remove('step-active'));
 }
 
+async function viewReport(reportPath, title) {
+  const panel = document.getElementById('summary-output-panel');
+  const titleEl = document.getElementById('summary-output-title');
+  const contentEl = document.getElementById('summary-output-content');
+
+  // Resolve the full path relative to the project directory
+  const fullPath = state.projectPath
+    ? state.projectPath.replace(/[\\/]$/, '') + '/' + reportPath
+    : reportPath;
+
+  titleEl.textContent = title || reportPath;
+  contentEl.innerHTML = '<p style="color:var(--muted)">Loading report\u2026</p>';
+  panel.style.display = 'block';
+
+  // Clear any active step highlight since we're viewing a report
+  state.viewingStepOutput = null;
+  document.querySelectorAll('#summary-step-list .step-item').forEach(el => el.classList.remove('step-active'));
+
+  const result = await api('read-file', { path: fullPath });
+  if (result.ok && result.content) {
+    contentEl.innerHTML = renderMarkdown(result.content);
+  } else {
+    contentEl.innerHTML = `<p style="color:var(--red)">Could not load report: ${NtLogic.escapeHtml(result.error || 'Unknown error')}</p>`;
+  }
+}
+
 // ── Rate Limit Pause / Resume ──────────────────────────────────────
 
 const BACKOFF_SCHEDULE_MS = [
@@ -1325,7 +1352,7 @@ async function stopRun() {
 // ── Finish Run ─────────────────────────────────────────────────────
 
 const FINISH_SKIP_DELAY_MS = 10_000;  // Show skip button after 10s
-const FINISH_TIMEOUT_MS = 180_000;    // Auto-skip after 3 minutes
+const FINISH_TIMEOUT_MS = 900_000;    // Auto-skip after 15 minutes (finish-run makes 2 AI calls)
 
 async function finishRun() {
   logToServer('info', 'finishRun: starting');
@@ -1357,7 +1384,7 @@ async function finishRun() {
   skipBtn.addEventListener('click', onSkip, { once: true });
 
   const timeoutId = setTimeout(() => {
-    logToServer('warn', 'Finishing timed out after 3 minutes');
+    logToServer('warn', 'Finishing timed out after 15 minutes');
     skipResolve({ skipped: true, timedOut: true });
   }, FINISH_TIMEOUT_MS);
 
@@ -1372,6 +1399,7 @@ async function finishRun() {
     skipBtn.removeEventListener('click', onSkip);
     skipBtn.style.display = 'none';
     logToServer('error', `finishRun exception: ${err.message || err}`);
+    state.finishFailed = true;
     renderSummary(null);
     showScreen(SCREENS.SUMMARY);
     return;
@@ -1388,10 +1416,7 @@ async function finishRun() {
     if (state.currentProcessId) {
       try { await api('kill-process', { id: state.currentProcessId }); } catch { /* ignore */ }
     }
-    const msg = outcome.timedOut
-      ? 'Finishing timed out — your changes are still on the run branch.'
-      : 'Finishing was skipped — your changes are still on the run branch.';
-    showError('finishing', msg);
+    state.finishFailed = true;
     renderSummary(null);
     showScreen(SCREENS.SUMMARY);
     return;
@@ -1400,7 +1425,7 @@ async function finishRun() {
   const result = outcome.result;
   if (!result.ok) {
     logToServer('error', `Finish run failed: ${result.error}`);
-    showError('finishing', result.error);
+    state.finishFailed = true;
     renderSummary(null);
     showScreen(SCREENS.SUMMARY);
     return;
@@ -1428,6 +1453,10 @@ function renderSummary(finishData) {
     resultEl.className = 'summary-result partial';
     titleEl.textContent = 'Run Stopped';
     document.title = 'Stopped — NightyTidy';
+  } else if (state.finishFailed && failed === 0 && completed > 0) {
+    resultEl.className = 'summary-result warning';
+    titleEl.textContent = 'Run Complete (report pending)';
+    document.title = 'Complete (report pending) — NightyTidy';
   } else if (failed === 0 && skipped === 0 && completed > 0) {
     resultEl.className = 'summary-result success';
     titleEl.textContent = 'Run Complete';
@@ -1517,7 +1546,10 @@ function renderSummary(finishData) {
       details += `<p style="color:var(--yellow)"><strong>Merge conflict</strong> &mdash; changes remain on the run branch</p>`;
     }
     if (finishData.reportPath) {
-      details += `<p>Report: <strong>${NtLogic.escapeHtml(finishData.reportPath)}</strong></p>`;
+      details += `<p>Report: <a href="#" class="link-btn report-link" data-report-path="${NtLogic.escapeHtml(finishData.reportPath)}" data-report-title="Run Report">${NtLogic.escapeHtml(finishData.reportPath)}</a></p>`;
+    }
+    if (finishData.actionsPath) {
+      details += `<p>Action Plan: <a href="#" class="link-btn report-link" data-report-path="${NtLogic.escapeHtml(finishData.actionsPath)}" data-report-title="Action Plan">${NtLogic.escapeHtml(finishData.actionsPath)}</a></p>`;
     }
     if (finishData.tagName) {
       details += `<p>Safety tag: <strong>${NtLogic.escapeHtml(finishData.tagName)}</strong></p>`;
@@ -1525,8 +1557,29 @@ function renderSummary(finishData) {
     if (finishData.runBranch) {
       details += `<p>Run branch: <strong>${NtLogic.escapeHtml(finishData.runBranch)}</strong></p>`;
     }
+  } else if (state.finishFailed) {
+    details += `<p style="color:var(--yellow)"><strong>Report generation did not complete.</strong> Your code changes are safe on the run branch.</p>`;
+    const branch = state.runInfo?.runBranch;
+    const tag = state.runInfo?.tagName;
+    if (branch) {
+      details += `<p>Run branch: <strong>${NtLogic.escapeHtml(branch)}</strong></p>`;
+    }
+    if (tag) {
+      details += `<p>Safety tag: <strong>${NtLogic.escapeHtml(tag)}</strong></p>`;
+    }
+    details += `<p style="color:var(--text-dim)">To generate the report manually, run: <code>npx nightytidy --finish-run</code> in the project directory.</p>`;
   }
   detailsEl.innerHTML = details;
+
+  // Attach click handlers for report links
+  detailsEl.querySelectorAll('.report-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const reportPath = link.getAttribute('data-report-path');
+      const title = link.getAttribute('data-report-title');
+      viewReport(reportPath, title);
+    });
+  });
 
   // Show log file path so users can find it for bug reports
   api('log-path').then(result => {
@@ -1589,6 +1642,7 @@ function resetApp() {
   state.elapsedTimer = null;
   state.runStartTime = null;
   state.finishResult = null;
+  state.finishFailed = false;
   state.stopping = false;
   state.skippingStep = null;
   state.skippedSteps = [];

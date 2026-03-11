@@ -10,7 +10,7 @@ import { STEPS, CHANGELOG_PROMPT, reloadSteps } from './prompts/loader.js';
 import { executeSteps, SAFETY_PREAMBLE } from './executor.js';
 import { generateActionPlan } from './consolidation.js';
 import { notify } from './notifications.js';
-import { generateReport, formatDuration, getVersion } from './report.js';
+import { generateReport, formatDuration, getVersion, buildReportNames } from './report.js';
 import { setupProject } from './setup.js';
 import { startDashboard, updateDashboard, stopDashboard, scheduleShutdown, broadcastOutput, clearOutputBuffer } from './dashboard.js';
 import { acquireLock } from './lock.js';
@@ -128,18 +128,19 @@ function buildStepCallbacks(spinner, selected, dashState) {
 
 async function handleAbortedRun(executionResults, { projectDir, runBranch, tagName, originalBranch }) {
   info('Run interrupted by user');
-  await generateReport(executionResults, null, {
+  const { reportFile } = buildReportNames(projectDir, Date.now() - executionResults.totalDuration);
+  generateReport(executionResults, null, {
     projectDir,
     branchName: runBranch,
     tagName,
     originalBranch,
     startTime: Date.now() - executionResults.totalDuration,
     endTime: Date.now(),
-  });
+  }, { reportFile });
 
   const gitInstance = getGitInstance();
   try {
-    await gitInstance.add(['NIGHTYTIDY-REPORT.md']);
+    await gitInstance.add([reportFile]);
     await gitInstance.commit('NightyTidy: Add partial run report');
   } catch (err) { debug(`Could not commit partial report: ${err.message}`); }
 
@@ -153,19 +154,20 @@ async function handleAbortedRun(executionResults, { projectDir, runBranch, tagNa
   process.exit(0);
 }
 
-function printCompletionSummary(executionResults, mergeResult, { runBranch, tagName }) {
+function printCompletionSummary(executionResults, mergeResult, { runBranch, tagName, reportFile }) {
   const totalSteps = executionResults.completedCount + executionResults.failedCount;
   const durationStr = formatDuration(executionResults.totalDuration);
+  const rpt = reportFile || 'NIGHTYTIDY-REPORT.md';
 
   if (mergeResult.success) {
     if (executionResults.failedCount === 0) {
-      notify('NightyTidy Complete \u2713', `All ${executionResults.completedCount} steps succeeded. See NIGHTYTIDY-REPORT.md`);
+      notify('NightyTidy Complete \u2713', `All ${executionResults.completedCount} steps succeeded. See ${rpt}`);
     } else {
-      notify('NightyTidy Complete', `${executionResults.completedCount}/${totalSteps} succeeded, ${executionResults.failedCount} failed. See NIGHTYTIDY-REPORT.md`);
+      notify('NightyTidy Complete', `${executionResults.completedCount}/${totalSteps} succeeded, ${executionResults.failedCount} failed. See ${rpt}`);
     }
   } else {
     notify('NightyTidy Complete', `${executionResults.completedCount}/${totalSteps} steps done. Merge needs attention \u2014 see terminal.`);
-    notify('NightyTidy: Merge Conflict', `Changes are on branch ${runBranch}. See NIGHTYTIDY-REPORT.md for resolution steps.`);
+    notify('NightyTidy: Merge Conflict', `Changes are on branch ${runBranch}. See ${rpt} for resolution steps.`);
   }
 
   if (mergeResult.success) {
@@ -174,7 +176,7 @@ function printCompletionSummary(executionResults, mergeResult, { runBranch, tagN
     } else {
       console.log(chalk.yellow(`\n\u26a0\ufe0f  NightyTidy complete \u2014 ${executionResults.completedCount}/${totalSteps} steps succeeded, ${executionResults.failedCount} failed (${durationStr})`));
     }
-    console.log(chalk.dim(`\ud83d\udcc4 Report: NIGHTYTIDY-REPORT.md`));
+    console.log(chalk.dim(`\ud83d\udcc4 Report: ${rpt}`));
     console.log(chalk.dim(`\ud83c\udff7\ufe0f  Safety tag: ${tagName}`));
 
     if (executionResults.failedCount > 0) {
@@ -182,7 +184,7 @@ function printCompletionSummary(executionResults, mergeResult, { runBranch, tagN
         .filter(r => r.status === 'failed')
         .map(r => r.step.name);
       console.log(chalk.yellow(`\n   Failed steps: ${failedNames.join(', ')}`));
-      console.log(chalk.dim('   See NIGHTYTIDY-REPORT.md for details and retry suggestions.'));
+      console.log(chalk.dim(`   See ${rpt} for details and retry suggestions.`));
     }
   } else {
     console.log(chalk.yellow(`\n\u26a0\ufe0f  NightyTidy complete \u2014 ${executionResults.completedCount}/${totalSteps} steps succeeded, but merge needs attention.`));
@@ -464,34 +466,38 @@ async function finalizeRun(executionResults, projectDir, ctx) {
 
   ctx.spinner.stop();
 
+  // Build unique report filenames (numbered + timestamped)
+  const startTime = Date.now() - executionResults.totalDuration;
+  const { reportFile, actionsFile } = buildReportNames(projectDir, startTime);
+
   // Consolidated action plan
   ctx.spinner = ora({ text: 'Generating action plan...', color: 'cyan' }).start();
   const actionPlan = await generateActionPlan(executionResults, projectDir, {
     timeout: ctx.timeoutMs,
+    actionsFile,
   });
   ctx.spinner.stop();
   if (actionPlan) {
-    console.log(chalk.green('Action plan generated: NIGHTYTIDY-ACTIONS.md'));
+    console.log(chalk.green(`Action plan generated: ${actionsFile}`));
   } else {
     console.log(chalk.dim('Action plan skipped (no data or generation failed).'));
   }
 
   // Generate report
-  const startTime = Date.now() - executionResults.totalDuration;
-  await generateReport(executionResults, narration, {
+  generateReport(executionResults, narration, {
     projectDir,
     branchName: ctx.runBranch,
     tagName: ctx.tagName,
     originalBranch: ctx.originalBranch,
     startTime,
     endTime: Date.now(),
-  }, { actionPlan: !!actionPlan });
+  }, { actionPlan: !!actionPlan, reportFile, actionsFile });
 
   // Commit report on run branch
   const gitInstance = getGitInstance();
   try {
-    const filesToCommit = ['NIGHTYTIDY-REPORT.md', 'CLAUDE.md'];
-    if (actionPlan) filesToCommit.push('NIGHTYTIDY-ACTIONS.md');
+    const filesToCommit = [reportFile, 'CLAUDE.md'];
+    if (actionPlan) filesToCommit.push(actionsFile);
     await gitInstance.add(filesToCommit);
     await gitInstance.commit('NightyTidy: Add run report and update CLAUDE.md');
   } catch (err) {
@@ -502,7 +508,7 @@ async function finalizeRun(executionResults, projectDir, ctx) {
   const mergeResult = await mergeRunBranch(ctx.originalBranch, ctx.runBranch);
 
   // Completion notification + terminal summary
-  printCompletionSummary(executionResults, mergeResult, { runBranch: ctx.runBranch, tagName: ctx.tagName });
+  printCompletionSummary(executionResults, mergeResult, { runBranch: ctx.runBranch, tagName: ctx.tagName, reportFile });
 
   // Update dashboard to completed and schedule shutdown
   if (ctx.dashState) {

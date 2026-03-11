@@ -15,6 +15,8 @@ import {
   getHeadHash,
   createPreRunTag,
   createRunBranch,
+  getCurrentBranch,
+  ensureOnBranch,
 } from '../src/git.js';
 
 let tempDir;
@@ -125,5 +127,85 @@ describe('createRunBranch', () => {
 
     const branch = await createRunBranch('master');
     expect(branch).toBe(`${manualBranch}-2`);
+  });
+});
+
+describe('ensureOnBranch', () => {
+  it('returns recovered:false when already on the expected branch', async () => {
+    const branch = await getCurrentBranch();
+    const result = await ensureOnBranch(branch);
+    expect(result.recovered).toBe(false);
+  });
+
+  it('recovers when on a different branch by merging and checking out expected', async () => {
+    const git = getGitInstance();
+    // Create run branch and add a commit
+    await git.checkoutLocalBranch('nightytidy/run-test');
+    await writeFile(path.join(tempDir, 'run-file.txt'), 'run work');
+    await git.add('.');
+    await git.commit('work on run branch');
+
+    // Simulate Claude Code creating a stray branch with different work
+    await git.checkoutLocalBranch('stray-branch');
+    await writeFile(path.join(tempDir, 'stray-file.txt'), 'stray work');
+    await git.add('.');
+    await git.commit('work on stray branch');
+
+    // Now ensureOnBranch should recover
+    const result = await ensureOnBranch('nightytidy/run-test');
+    expect(result.recovered).toBe(true);
+    expect(result.strayBranch).toBe('stray-branch');
+    expect(result.mergeOk).toBe(true);
+
+    // Should be back on the run branch
+    const current = await getCurrentBranch();
+    expect(current).toBe('nightytidy/run-test');
+
+    // Stray file should be merged in
+    const status = await git.status();
+    expect(status.isClean()).toBe(true);
+  });
+
+  it('commits uncommitted work on stray branch before recovery', async () => {
+    const git = getGitInstance();
+    await git.checkoutLocalBranch('nightytidy/run-test');
+
+    // Simulate stray branch with uncommitted changes
+    await git.checkoutLocalBranch('stray-branch');
+    await writeFile(path.join(tempDir, 'uncommitted.txt'), 'uncommitted work');
+    // Don't commit — leave it dirty
+
+    const result = await ensureOnBranch('nightytidy/run-test');
+    expect(result.recovered).toBe(true);
+    expect(result.mergeOk).toBe(true);
+
+    const current = await getCurrentBranch();
+    expect(current).toBe('nightytidy/run-test');
+  });
+
+  it('handles merge conflict gracefully without throwing', async () => {
+    const git = getGitInstance();
+    await git.checkoutLocalBranch('nightytidy/run-test');
+
+    // Create conflicting content on the run branch
+    await writeFile(path.join(tempDir, 'conflict.txt'), 'run version');
+    await git.add('.');
+    await git.commit('run: add conflict.txt');
+
+    // Create conflicting content on a stray branch (from the same base)
+    await git.checkout('master');
+    await git.checkoutLocalBranch('stray-conflict');
+    await writeFile(path.join(tempDir, 'conflict.txt'), 'stray version');
+    await git.add('.');
+    await git.commit('stray: add conflict.txt');
+
+    const result = await ensureOnBranch('nightytidy/run-test');
+    expect(result.recovered).toBe(true);
+    expect(result.strayBranch).toBe('stray-conflict');
+    expect(result.mergeOk).toBe(false);
+
+    // Should still be on the expected branch despite merge failure
+    const current = await getCurrentBranch();
+    expect(current).toBe('nightytidy/run-test');
   });
 });

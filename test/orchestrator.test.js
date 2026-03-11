@@ -40,6 +40,7 @@ vi.mock('../src/git.js', () => ({
   getHeadHash: vi.fn(),
   hasNewCommit: vi.fn(),
   fallbackCommit: vi.fn(),
+  ensureOnBranch: vi.fn(() => ({ recovered: false })),
 }));
 
 vi.mock('../src/claude.js', () => ({
@@ -67,6 +68,7 @@ vi.mock('../src/report.js', () => ({
   generateReport: vi.fn(),
   formatDuration: vi.fn((ms) => `${Math.floor(ms / 60000)}m`),
   getVersion: vi.fn(() => '0.1.0'),
+  buildReportNames: vi.fn(() => ({ reportFile: 'NIGHTYTIDY-REPORT_01_2026-01-01-0000.md', actionsFile: 'NIGHTYTIDY-ACTIONS_01_2026-01-01-0000.md' })),
 }));
 
 vi.mock('../src/lock.js', () => ({
@@ -102,7 +104,7 @@ import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
 import { initRun, runStep, finishRun } from '../src/orchestrator.js';
 import { initLogger } from '../src/logger.js';
 import { runPreChecks } from '../src/checks.js';
-import { getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from '../src/git.js';
+import { getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance, ensureOnBranch } from '../src/git.js';
 import { executeSingleStep, sumCosts } from '../src/executor.js';
 import { runPrompt } from '../src/claude.js';
 import { acquireLock, releaseLock } from '../src/lock.js';
@@ -532,7 +534,7 @@ describe('finishRun', () => {
     expect(result.completed).toBe(1);
     expect(result.failed).toBe(1);
     expect(result.merged).toBe(true);
-    expect(result.reportPath).toBe('NIGHTYTIDY-REPORT.md');
+    expect(result.reportPath).toBe('NIGHTYTIDY-REPORT_01_2026-01-01-0000.md');
   });
 
   it('calls generateReport with accumulated results and narration', async () => {
@@ -545,7 +547,7 @@ describe('finishRun', () => {
     expect(results.results).toHaveLength(2);
     expect(metadata.branchName).toBe('nightytidy/run-2026-03-06-1430');
     expect(narration).toBe('Mock changelog narration');
-    expect(options).toEqual({ actionPlan: true });
+    expect(options.actionPlan).toBe(true);
   });
 
   it('releases lock and deletes state file', async () => {
@@ -610,10 +612,10 @@ describe('finishRun', () => {
     const [execResults, projDir] = generateActionPlan.mock.calls[0];
     expect(execResults.completedCount).toBe(1);
     expect(projDir).toBe('/fake/project');
-    expect(result.actionsPath).toBe('NIGHTYTIDY-ACTIONS.md');
+    expect(result.actionsPath).toBe('NIGHTYTIDY-ACTIONS_01_2026-01-01-0000.md');
   });
 
-  it('commits NIGHTYTIDY-ACTIONS.md when action plan succeeds', async () => {
+  it('commits actions file when action plan succeeds', async () => {
     generateActionPlan.mockResolvedValue('Action plan content');
     const mockGit = { add: vi.fn(), commit: vi.fn() };
     getGitInstance.mockReturnValue(mockGit);
@@ -621,7 +623,7 @@ describe('finishRun', () => {
     await finishRun('/fake/project');
 
     const addedFiles = mockGit.add.mock.calls[0][0];
-    expect(addedFiles).toContain('NIGHTYTIDY-ACTIONS.md');
+    expect(addedFiles).toContain('NIGHTYTIDY-ACTIONS_01_2026-01-01-0000.md');
   });
 
   it('handles changelog failure gracefully (uses fallback narration)', async () => {
@@ -642,10 +644,10 @@ describe('finishRun', () => {
     expect(result.success).toBe(true);
     expect(result.actionsPath).toBeNull();
     const [, , , options] = generateReport.mock.calls[0];
-    expect(options).toEqual({ actionPlan: false });
+    expect(options.actionPlan).toBe(false);
   });
 
-  it('does not commit NIGHTYTIDY-ACTIONS.md when action plan fails', async () => {
+  it('does not commit actions file when action plan fails', async () => {
     generateActionPlan.mockResolvedValue(null);
     const mockGit = { add: vi.fn(), commit: vi.fn() };
     getGitInstance.mockReturnValue(mockGit);
@@ -653,7 +655,7 @@ describe('finishRun', () => {
     await finishRun('/fake/project');
 
     const addedFiles = mockGit.add.mock.calls[0][0];
-    expect(addedFiles).not.toContain('NIGHTYTIDY-ACTIONS.md');
+    expect(addedFiles).not.toContain('NIGHTYTIDY-ACTIONS_01_2026-01-01-0000.md');
   });
 
   it('stops dashboard server and cleans up ephemeral files', async () => {
@@ -1075,5 +1077,86 @@ describe('runStep 3-tier recovery', () => {
     const updatedState = JSON.parse(stateCall[1]);
     expect(updatedState.failedSteps).toHaveLength(1);
     expect(updatedState.failedSteps[0].attempts).toBe(12); // 4 + 4 + 4
+  });
+});
+
+describe('runStep branch guard', () => {
+  const guardState = {
+    version: 1,
+    originalBranch: 'main',
+    runBranch: 'nightytidy/run-2026-03-06-1430',
+    tagName: 'nightytidy-before-2026-03-06-1430',
+    selectedSteps: [1, 2, 3],
+    completedSteps: [],
+    failedSteps: [],
+    startTime: Date.now(),
+    timeout: null,
+  };
+
+  beforeEach(() => {
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify(guardState));
+    vi.mocked(executeSingleStep).mockResolvedValue({
+      step: { number: 1, name: 'Documentation' },
+      status: 'completed', output: 'done', duration: 1000, attempts: 1, error: null,
+    });
+  });
+
+  it('calls ensureOnBranch before and after step execution', async () => {
+    await runStep('/fake/project', 1);
+
+    // Should be called at least twice: once before step, once after
+    expect(ensureOnBranch).toHaveBeenCalledWith('nightytidy/run-2026-03-06-1430');
+    expect(ensureOnBranch.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('continues successfully when ensureOnBranch reports recovery', async () => {
+    vi.mocked(ensureOnBranch).mockResolvedValue({
+      recovered: true, strayBranch: 'stray-branch', mergeOk: true,
+    });
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('completed');
+  });
+
+  it('continues when ensureOnBranch merge fails (work preserved on stray branch)', async () => {
+    vi.mocked(ensureOnBranch).mockResolvedValue({
+      recovered: true, strayBranch: 'stray-branch', mergeOk: false,
+    });
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('completed');
+  });
+
+  it('calls ensureOnBranch between recovery tiers (Tier 1 fail → guard → Tier 2 → guard → Tier 3)', async () => {
+    // Tier 1 fails, Tier 2 fails, Tier 3 succeeds
+    vi.mocked(executeSingleStep)
+      .mockResolvedValueOnce({
+        step: { number: 1, name: 'Documentation' },
+        status: 'failed', output: '', duration: 1000, attempts: 4, error: 'timeout',
+        errorType: 'unknown',
+      })
+      .mockResolvedValueOnce({
+        step: { number: 1, name: 'Documentation' },
+        status: 'failed', output: '', duration: 1000, attempts: 4, error: 'timeout',
+        errorType: 'unknown',
+      })
+      .mockResolvedValueOnce({
+        step: { number: 1, name: 'Documentation' },
+        status: 'completed', output: 'done', duration: 1000, attempts: 1, error: null,
+      });
+
+    await runStep('/fake/project', 1);
+
+    // Pre-step (1) + post-Tier2 (1) + post-Tier3 (1) + final (1) = at least 4 calls
+    expect(ensureOnBranch.mock.calls.length).toBeGreaterThanOrEqual(4);
+    // All calls should be for the run branch
+    for (const call of ensureOnBranch.mock.calls) {
+      expect(call[0]).toBe('nightytidy/run-2026-03-06-1430');
+    }
   });
 });

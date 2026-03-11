@@ -229,6 +229,69 @@ export async function mergeRunBranch(originalBranch, runBranch) {
 }
 
 /**
+ * @typedef {Object} BranchGuardResult
+ * @property {boolean} recovered - True if branch recovery was needed
+ * @property {string} [strayBranch] - The branch we recovered from
+ * @property {boolean} [mergeOk] - True if stray branch was successfully merged
+ */
+
+/**
+ * Ensure the working directory is on the expected branch.
+ *
+ * If Claude Code created/switched to a different branch during a step,
+ * this function recovers by checking out the expected branch and merging
+ * the stray branch's work into it. This prevents commit fragmentation
+ * across multiple branches during a NightyTidy run.
+ *
+ * @param {string} expectedBranch - The branch we should be on
+ * @returns {Promise<BranchGuardResult>} Result (never throws)
+ */
+export async function ensureOnBranch(expectedBranch) {
+  try {
+    const current = await getCurrentBranch();
+
+    // Detached HEAD (current is null) — force checkout expected branch
+    if (!current) {
+      warn(`Branch drift: detached HEAD — checking out "${expectedBranch}"`);
+      await git.checkout(expectedBranch);
+      return { recovered: true, strayBranch: '(detached HEAD)', mergeOk: false };
+    }
+
+    if (current === expectedBranch) {
+      return { recovered: false };
+    }
+
+    warn(`Branch drift: expected "${expectedBranch}" but on "${current}" — recovering`);
+
+    // Stage any uncommitted work on the stray branch before switching
+    const status = await git.status();
+    if (status.files.length > 0) {
+      debug(`Stray branch has ${status.files.length} uncommitted files — committing before merge`);
+      await git.raw(['add', '-A']);
+      await git.commit('NightyTidy: save uncommitted work before branch recovery');
+    }
+
+    // Switch back to the expected branch
+    await git.checkout(expectedBranch);
+
+    // Merge the stray branch to capture its commits
+    try {
+      await git.merge([current, '--no-ff', '-m', `NightyTidy: merge step work from ${current}`]);
+      info(`Branch guard: merged "${current}" into "${expectedBranch}"`);
+      return { recovered: true, strayBranch: current, mergeOk: true };
+    } catch {
+      // Merge conflict — abort and warn. Step work is preserved on the stray branch.
+      try { await git.merge(['--abort']); } catch { /* may not be in merge state */ }
+      warn(`Branch guard: could not auto-merge "${current}" — step work preserved on that branch`);
+      return { recovered: true, strayBranch: current, mergeOk: false };
+    }
+  } catch (err) {
+    warn(`Branch guard error: ${err.message}`);
+    return { recovered: false };
+  }
+}
+
+/**
  * Get the initialized git instance.
  *
  * @returns {SimpleGit|null} The git instance, or null if not initialized

@@ -15,7 +15,7 @@ Assumes CLAUDE.md loaded. 766 tests, 34 files, Vitest v3.
 | `claude.test.js` | `claude.js` | 62 |
 | `executor.test.js` | `executor.js` | 32 |
 | `git.test.js` | `git.js` | 16 |
-| `git-extended.test.js` | `git.js` | 7 |
+| `git-extended.test.js` | `git.js` | 11 |
 | `notifications.test.js` | `notifications.js` | 2 |
 | `report.test.js` | `report.js` | 9 |
 | `report-extended.test.js` | `report.js` | 15 |
@@ -27,7 +27,7 @@ Assumes CLAUDE.md loaded. 766 tests, 34 files, Vitest v3.
 | `dashboard-extended.test.js` | `dashboard.js` | 3 |
 | `dashboard-tui.test.js` | `dashboard-tui.js` | 29 |
 | `integration-extended.test.js` | Multi-module | 6 |
-| `orchestrator.test.js` | `orchestrator.js` | 40 |
+| `orchestrator.test.js` | `orchestrator.js` | 61 |
 | `contracts.test.js` | All modules | 38 |
 | `gui-logic.test.js` | `gui/resources/logic.js` | 133 |
 | `gui-server.test.js` | `gui/server.js` | 44 |
@@ -66,6 +66,7 @@ All 20 test files (except `logger.test.js`) use `createLoggerMock()` from `test/
 - **claude.js mock must include ERROR_TYPE + sleep** — all 8+ test files that mock `../src/claude.js` must export `ERROR_TYPE: { RATE_LIMIT: 'rate_limit', UNKNOWN: 'unknown' }` and `sleep: vi.fn(() => Promise.resolve())`. This includes `vi.doMock` sites in `contracts.test.js`. Missing → `No "ERROR_TYPE" export is defined on the mock`
 - **lock.js needs real filesystem** — uses `openSync('wx')` for atomic create; mock fs loses the semantics. Use real temp dirs with `robustCleanup()`
 - **orchestrator.js fs mock must include renameSync** — `writeState()` uses write-to-temp-then-rename; missing `renameSync: vi.fn()` in the fs mock causes silent failures caught by try/catch (audit #21)
+- **git.js mock must include ensureOnBranch** — `orchestrator.test.js` and `orchestrator-extended.test.js` mock `git.js` and must include `ensureOnBranch: vi.fn(async () => ({ recovered: false }))`. Default `recovered: false` skips recovery; set `recovered: true` in tests verifying branch guard behavior
 - **broadcastOutput throttle** — uses real `setTimeout(500ms)`. Tests must `await` a real delay (700ms+) to verify the throttled write fires
 - **gui/resources/logic.js coverage** — loaded via `eval` in tests, so v8 coverage tool reports 0% despite 46 tests. Coverage config should exclude or handle this
 - **Coverage scoping** — `vitest.config.js` uses `coverage.include: ['src/**']` and excludes standalone scripts (`dashboard-standalone.js`, `dashboard-tui.js`). Without this, gui/bin/scripts/tmp files drag coverage below 90%. The vendored `marked.umd.js` references a missing `.map` file that crashes the v8 coverage provider if not excluded
