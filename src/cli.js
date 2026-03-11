@@ -129,6 +129,8 @@ function buildStepCallbacks(spinner, selected, dashState) {
 async function handleAbortedRun(executionResults, { projectDir, runBranch, tagName, originalBranch }) {
   info('Run interrupted by user');
   const { reportFile } = buildReportNames(projectDir, Date.now() - executionResults.totalDuration);
+  const totalInputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.inputTokens || 0), 0) || null;
+  const totalOutputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.outputTokens || 0), 0) || null;
   generateReport(executionResults, null, {
     projectDir,
     branchName: runBranch,
@@ -136,6 +138,8 @@ async function handleAbortedRun(executionResults, { projectDir, runBranch, tagNa
     originalBranch,
     startTime: Date.now() - executionResults.totalDuration,
     endTime: Date.now(),
+    totalInputTokens,
+    totalOutputTokens,
   }, { reportFile });
 
   const gitInstance = getGitInstance();
@@ -483,6 +487,8 @@ async function finalizeRun(executionResults, projectDir, ctx) {
   }
 
   // Generate report (with inline action plan if available)
+  const totalInputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.inputTokens || 0), 0) || null;
+  const totalOutputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.outputTokens || 0), 0) || null;
   generateReport(executionResults, narration, {
     projectDir,
     branchName: ctx.runBranch,
@@ -490,6 +496,8 @@ async function finalizeRun(executionResults, projectDir, ctx) {
     originalBranch: ctx.originalBranch,
     startTime,
     endTime: Date.now(),
+    totalInputTokens,
+    totalOutputTokens,
   }, { actionPlanText, reportFile });
 
   // Commit report on run branch

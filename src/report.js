@@ -59,6 +59,8 @@ export function buildReportNames(projectDir, startTime = Date.now()) {
  * @property {number} startTime - Run start timestamp (ms)
  * @property {number} endTime - Run end timestamp (ms)
  * @property {number|null} [totalCostUSD] - Total cost in USD
+ * @property {number|null} [totalInputTokens] - Total input tokens (including cache)
+ * @property {number|null} [totalOutputTokens] - Total output tokens
  */
 
 /**
@@ -115,25 +117,41 @@ function formatDate(timestamp) {
   return new Date(timestamp).toISOString().split('T')[0];
 }
 
+/** Phrases that indicate the output is a generic Claude greeting, not a changelog. */
+const JUNK_MARKERS = [
+  'what would you like',
+  'let me know what you need',
+  'i can help with',
+  'how can i help',
+  'what can i help',
+];
+
 /**
  * Strip conversational preamble that Claude sometimes adds despite instructions.
- * Applied to AI-generated narration before embedding in the report.
+ * Returns null if the entire text appears to be a generic Claude greeting rather
+ * than actual changelog content (detected via JUNK_MARKERS).
  *
  * @param {string|null} text - Raw narration text
- * @returns {string|null} Cleaned text, or null if input was null
+ * @returns {string|null} Cleaned text, or null if input was null/junk
  */
 export function cleanNarration(text) {
   if (!text) return text;
   let cleaned = text.trim();
   // Strip common conversational openers that end with a period or exclamation
-  const preamblePattern = /^(?:I understand|I'm ready|I'll help|Sure|Here is|Here's|Based on|Certainly|Of course|Absolutely|Let me)[^.!]*[.!]\s*/i;
+  const preamblePattern = /^(?:I understand|I'm ready|I'll help|I can see|I can|I see|Sure|Here is|Here's|Based on|Certainly|Of course|Absolutely|Great|Let me)[^.!]*[.!]\s*/i;
   // May need multiple passes (e.g. "I understand. I'm ready to help.")
   for (let i = 0; i < 3; i++) {
     const before = cleaned;
     cleaned = cleaned.replace(preamblePattern, '');
     if (cleaned === before) break;
   }
-  return cleaned.trim() || text.trim();
+  cleaned = cleaned.trim() || text.trim();
+
+  // Reject entire output if it looks like a generic Claude greeting
+  const lower = cleaned.toLowerCase();
+  if (JUNK_MARKERS.some(marker => lower.includes(marker))) return null;
+
+  return cleaned;
 }
 
 /**
@@ -153,14 +171,31 @@ function fallbackNarration(results) {
 }
 
 /**
- * Format a cost in USD for display.
+ * Format a cost in USD for display (rounded to nearest cent).
  *
  * @param {number|null|undefined} costUSD - Cost in USD
- * @returns {string|null} Formatted cost (e.g., "$0.1234"), or null if no cost
+ * @returns {string|null} Formatted cost (e.g., "$14.02"), or null if no cost
  */
 function formatCost(costUSD) {
   if (costUSD == null) return null;
-  return `$${costUSD.toFixed(4)}`;
+  return `$${costUSD.toFixed(2)}`;
+}
+
+/**
+ * Format a token count for human-readable display.
+ * >=1M → "1.2M", >=1000 → "45k", else raw number with commas.
+ *
+ * @param {number|null|undefined} tokens - Token count
+ * @returns {string|null} Formatted token count, or null if no data
+ */
+function formatTokens(tokens) {
+  if (tokens == null || !Number.isFinite(tokens) || tokens === 0) return null;
+  if (tokens >= 1_000_000) {
+    const m = tokens / 1_000_000;
+    return m >= 10 ? `${Math.round(m).toLocaleString('en-US')}M` : `${m.toFixed(1)}M`;
+  }
+  if (tokens >= 1000) return `${Math.round(tokens / 1000).toLocaleString('en-US')}k`;
+  return tokens.toLocaleString('en-US');
 }
 
 /**
@@ -186,6 +221,12 @@ function buildSummarySection(results, metadata) {
 
   if (metadata.totalCostUSD != null) {
     section += `- **Total cost**: ${formatCost(metadata.totalCostUSD)}\n`;
+  }
+
+  const fmtIn = formatTokens(metadata.totalInputTokens);
+  const fmtOut = formatTokens(metadata.totalOutputTokens);
+  if (fmtIn || fmtOut) {
+    section += `- **Total tokens**: ${fmtIn || '0'} input / ${fmtOut || '0'} output\n`;
   }
 
   return section + '\n';

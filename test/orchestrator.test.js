@@ -551,6 +551,25 @@ describe('finishRun', () => {
     expect(options.actionPlanText).toBe('Mock action plan content');
   });
 
+  it('passes totalInputTokens and totalOutputTokens to generateReport', async () => {
+    const stateWithCost = {
+      ...validState,
+      completedSteps: [
+        { number: 1, name: 'Documentation', status: 'completed', duration: 120000, attempts: 1, cost: { costUSD: 0.05, inputTokens: 8000, outputTokens: 2000 } },
+      ],
+      failedSteps: [
+        { number: 2, name: 'Test Coverage', status: 'failed', duration: 30000, attempts: 4, cost: { costUSD: 0.03, inputTokens: 5000, outputTokens: 1000 } },
+      ],
+    };
+    readFileSync.mockReturnValue(JSON.stringify(stateWithCost));
+
+    await finishRun('/fake/project');
+
+    const [, , metadata] = generateReport.mock.calls[0];
+    expect(metadata.totalInputTokens).toBe(13000);
+    expect(metadata.totalOutputTokens).toBe(3000);
+  });
+
   it('releases lock and deletes state file', async () => {
     await finishRun('/fake/project');
 

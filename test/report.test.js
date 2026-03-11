@@ -103,8 +103,8 @@ describe('generateReport', () => {
 
     const reportContent = writeFileSync.mock.calls[0][1];
     expect(reportContent).toContain('| Cost |');
-    expect(reportContent).toContain('$0.0500');
-    expect(reportContent).toContain('$0.1000');
+    expect(reportContent).toContain('$0.05');
+    expect(reportContent).toContain('$0.10');
   });
 
   it('omits Cost column when no results have cost data', async () => {
@@ -124,7 +124,7 @@ describe('generateReport', () => {
     await generateReport(results, 'Narration.', metadata);
 
     const reportContent = writeFileSync.mock.calls[0][1];
-    expect(reportContent).toContain('**Total cost**: $0.1500');
+    expect(reportContent).toContain('**Total cost**: $0.15');
   });
 
   it('omits total cost from summary when metadata has no totalCostUSD', async () => {
@@ -170,5 +170,42 @@ describe('cleanNarration', () => {
     // Should return the original trimmed text, not an empty string
     expect(result).toBe('I understand.');
     expect(result.length).toBeGreaterThan(0);
+  });
+
+  it('strips "I can see" preamble from narration', () => {
+    const raw = 'I can see this is a React app. Last night I added 47 tests.';
+    expect(cleanNarration(raw)).toBe('Last night I added 47 tests.');
+  });
+
+  it('returns null when entire output is a Claude greeting', () => {
+    const raw = 'I can see this is an Electron desktop app. What would you like to work on? I can help with:\n- Bug fixes\n- Testing';
+    expect(cleanNarration(raw)).toBeNull();
+  });
+
+  it('returns null when output contains "let me know what you need"', () => {
+    const raw = 'This looks like a Node.js project. Let me know what you need!';
+    expect(cleanNarration(raw)).toBeNull();
+  });
+});
+
+describe('generateReport — tokens', () => {
+  it('includes total tokens in summary when metadata has token data', async () => {
+    const results = makeResults({ completedCount: 2, failedCount: 0, withCost: true });
+    const metadata = makeMetadata({ totalCostUSD: 0.15, totalInputTokens: 1_250_000, totalOutputTokens: 45_000 });
+
+    await generateReport(results, 'Narration.', metadata);
+
+    const reportContent = writeFileSync.mock.calls[0][1];
+    expect(reportContent).toContain('**Total tokens**: 1.3M input / 45k output');
+  });
+
+  it('omits total tokens from summary when metadata has no token data', async () => {
+    const results = makeResults({ completedCount: 2, failedCount: 0 });
+    const metadata = makeMetadata();
+
+    await generateReport(results, 'Narration.', metadata);
+
+    const reportContent = writeFileSync.mock.calls[0][1];
+    expect(reportContent).not.toContain('**Total tokens**');
   });
 });

@@ -167,7 +167,7 @@ describe('generateReport — cost column', () => {
     const reportContent = writeFileSync.mock.calls[0][1];
     expect(reportContent).toContain('| Cost |');
     // Completed step has cost, failed step gets a dash
-    expect(reportContent).toContain('$0.0500');
+    expect(reportContent).toContain('$0.05');
     expect(reportContent).toMatch(/\u2014/); // em-dash for null cost
   });
 
@@ -186,7 +186,7 @@ describe('generateReport — cost column', () => {
 
     const reportContent = writeFileSync.mock.calls[0][1];
     expect(reportContent).toContain('| Cost |');
-    expect(reportContent).toContain('$0.0312');
+    expect(reportContent).toContain('$0.03');
     expect(reportContent).toMatch(/\u2014/); // dash for null cost step
   });
 });

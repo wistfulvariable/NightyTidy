@@ -68,7 +68,7 @@ test/
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 11 tests — getGitInstance, getHeadHash, tag/branch collision, ensureOnBranch recovery
   notifications.test.js    # 2 tests — mock node-notifier
-  report.test.js           # 17 tests — mock fs, verify report format, inline actionPlanText, cost column, cleanNarration
+  report.test.js           # 22 tests — mock fs, verify report format, inline actionPlanText, cost column, cleanNarration, junk detection, token summary
   report-extended.test.js  # 17 tests — updateClaudeMd, formatDuration edge cases, cost rendering
   consolidation.test.js    # 15 tests — buildConsolidationPrompt, generateActionPlan, heading downgrade, error handling
   steps.test.js            # 11 tests — structural integrity of prompt data + manifest validation + reloadSteps
@@ -78,7 +78,7 @@ test/
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
-  orchestrator.test.js     # 61 tests — initRun, runStep, finishRun (changelog + action plan), dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync, 3-tier step recovery, inter-tier branch guard
+  orchestrator.test.js     # 62 tests — initRun, runStep, finishRun (changelog + action plan + token passthrough), dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync, 3-tier step recovery, inter-tier branch guard
   contracts.test.js        # 39 tests — module API contract verification against CLAUDE.md
   gui-logic.test.js        # 138 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, formatTime, detectGitError, detectStaleState, detectRateLimit, formatCountdown, preprocessClaudeOutput, etc.)
   gui-server.test.js       # 47 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, log-error, log-path, security headers, traversal, singleton guard

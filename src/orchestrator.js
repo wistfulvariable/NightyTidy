@@ -768,6 +768,8 @@ export async function finishRun(projectDir) {
       startTime: state.startTime,
       endTime: Date.now(),
       totalCostUSD: totalCostUSD || null,
+      totalInputTokens,
+      totalOutputTokens,
     }, { actionPlanText, reportFile });
 
     // Commit report

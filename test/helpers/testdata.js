@@ -25,7 +25,7 @@ export function makeResults({ completedCount = 2, failedCount = 0, withCost = fa
       duration: 60000,
       attempts: 1,
       error: null,
-      cost: withCost ? { costUSD: 0.05 * (i + 1), numTurns: 3, durationApiMs: 5000, sessionId: `sess-${i + 1}` } : null,
+      cost: withCost ? { costUSD: 0.05 * (i + 1), inputTokens: 5000 * (i + 1), outputTokens: 1000 * (i + 1), numTurns: 3, durationApiMs: 5000, sessionId: `sess-${i + 1}` } : null,
     });
   }
 
