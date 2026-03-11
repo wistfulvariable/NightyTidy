@@ -18,3 +18,11 @@ Instead of technical terms, describe what the change DOES for the person: "I mad
 The summary should make a non-technical person feel genuinely excited about the improvements and confident that their codebase is in better shape — without needing to understand a single technical concept.
 
 Output ONLY the summary text. No headers, no markdown formatting, no preamble.
+
+DO NOT start your response with any of these patterns:
+- "I understand" / "I'm ready" / "I'll help" / "Sure" / "Certainly"
+- "Here is" / "Here's" / "Based on" / "Let me"
+- "Of course" / "Absolutely" / "Great"
+- Any acknowledgment of these instructions
+
+Begin your response with the very first word of your actual summary. Your response will be embedded directly into a document — any conversational preamble will be visible to the reader and look broken.

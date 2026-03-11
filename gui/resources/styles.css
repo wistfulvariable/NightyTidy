@@ -608,6 +608,14 @@ body {
 
 .elapsed { font-variant-numeric: tabular-nums; }
 
+.running-totals {
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  gap: 12px;
+}
+.running-totals .cost { color: var(--yellow); }
+.running-totals .tokens { color: var(--cyan); }
+
 /* ═══════════════════════════════════════
    Screen 4: Finishing
    ═══════════════════════════════════════ */
@@ -798,6 +806,66 @@ body {
 @keyframes pulse-yellow {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
+}
+
+/* ── Side Drawer (step output / report viewer) ── */
+.step-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 42%;
+  min-width: 340px;
+  max-width: 640px;
+  height: 100vh;
+  background: var(--bg);
+  border-left: 1px solid var(--border);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.25s ease-out;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.4);
+}
+.step-drawer.open {
+  transform: translateX(0);
+}
+.step-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.step-drawer-header h2 {
+  color: var(--cyan);
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 12px;
+}
+.step-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+body.drawer-open .screen.active {
+  max-width: calc(100vw - 42% - 48px);
+  margin-right: 0;
+  transition: max-width 0.25s ease-out;
+}
+@media (max-width: 900px) {
+  .step-drawer {
+    width: 80%;
+    min-width: 280px;
+    max-width: none;
+  }
+  body.drawer-open .screen.active {
+    max-width: 1200px;
+  }
 }
 
 /* ── Scrollbar ── */

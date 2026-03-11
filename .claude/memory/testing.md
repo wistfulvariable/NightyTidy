@@ -17,9 +17,9 @@ Assumes CLAUDE.md loaded. 766 tests, 34 files, Vitest v3.
 | `git.test.js` | `git.js` | 16 |
 | `git-extended.test.js` | `git.js` | 11 |
 | `notifications.test.js` | `notifications.js` | 2 |
-| `report.test.js` | `report.js` | 9 |
-| `report-extended.test.js` | `report.js` | 15 |
-| `consolidation.test.js` | `consolidation.js` | 16 |
+| `report.test.js` | `report.js` | 17 |
+| `report-extended.test.js` | `report.js` | 17 |
+| `consolidation.test.js` | `consolidation.js` | 15 |
 | `steps.test.js` | `prompts/loader.js` | 9 |
 | `integration.test.js` | Multi-module | 5 |
 | `setup.test.js` | `setup.js` | 7 |

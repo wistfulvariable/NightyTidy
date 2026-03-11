@@ -706,7 +706,6 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
  * @property {boolean} [merged]
  * @property {boolean} [mergeConflict]
  * @property {string} [reportPath]
- * @property {string|null} [actionsPath]
  * @property {string} [tagName]
  * @property {string} [runBranch]
  */
@@ -751,17 +750,16 @@ export async function finishRun(projectDir) {
     const narration = changelogResult.success ? changelogResult.output : null;
     if (!narration) warn('Narrated changelog generation failed — using fallback text');
 
-    // Build unique report filenames (numbered + timestamped)
-    const { reportFile, actionsFile } = buildReportNames(projectDir, state.startTime);
+    // Build unique report filename (numbered + timestamped)
+    const { reportFile } = buildReportNames(projectDir, state.startTime);
 
     // Consolidated action plan
     info('Generating consolidated action plan...');
-    const actionPlan = await generateActionPlan(executionResults, projectDir, {
+    const actionPlanText = await generateActionPlan(executionResults, projectDir, {
       timeout: state.timeout || undefined,
-      actionsFile,
     });
 
-    // Generate report
+    // Generate report (with inline action plan if available)
     generateReport(executionResults, narration, {
       projectDir,
       branchName: state.runBranch,
@@ -770,18 +768,21 @@ export async function finishRun(projectDir) {
       startTime: state.startTime,
       endTime: Date.now(),
       totalCostUSD: totalCostUSD || null,
-    }, { actionPlan: !!actionPlan, reportFile, actionsFile });
+    }, { actionPlanText, reportFile });
 
-    // Commit report + action plan
+    // Commit report
     const gitInstance = getGitInstance();
     try {
       const filesToCommit = [reportFile, 'CLAUDE.md'];
-      if (actionPlan) filesToCommit.push(actionsFile);
       await gitInstance.add(filesToCommit);
       await gitInstance.commit('NightyTidy: Add run report and update CLAUDE.md');
     } catch (err) {
       warn(`Failed to commit report: ${err.message}`);
     }
+
+    // Read report content for embedding in response (avoids fragile file-read API in GUI)
+    let reportContent = null;
+    try { reportContent = readFileSync(path.join(projectDir, reportFile), 'utf-8'); } catch { /* merge will bring file back */ }
 
     // Merge
     const mergeResult = await mergeRunBranch(state.originalBranch, state.runBranch);
@@ -815,7 +816,7 @@ export async function finishRun(projectDir) {
       merged: mergeResult.success,
       mergeConflict: mergeResult.conflict || false,
       reportPath: reportFile,
-      actionsPath: actionPlan ? actionsFile : null,
+      reportContent,
       tagName: state.tagName,
       runBranch: state.runBranch,
     });

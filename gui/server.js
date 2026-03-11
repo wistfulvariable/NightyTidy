@@ -440,11 +440,14 @@ async function handleReadFile(req, res) {
     return;
   }
 
+  const resolved = resolve(filePath);
   try {
-    const content = await readFile(resolve(filePath), 'utf-8');
+    const content = await readFile(resolved, 'utf-8');
     sendJson(res, { ok: true, content });
-  } catch {
-    sendJson(res, { ok: false, error: 'File not found or unreadable' });
+  } catch (err) {
+    guiLog('warn', `read-file failed: path="${resolved}" error="${err.code || err.message}"`);
+    const detail = err.code === 'ENOENT' ? 'File not found' : err.code || err.message;
+    sendJson(res, { ok: false, error: detail, path: resolved });
   }
 }
 

@@ -933,7 +933,7 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
     vi.doMock('../src/report.js', () => ({
       generateReport: vi.fn(),
       formatDuration: vi.fn(() => '0m'),
-      buildReportNames: vi.fn(() => ({ reportFile: 'NIGHTYTIDY-REPORT_01_2026-01-01-0000.md', actionsFile: 'NIGHTYTIDY-ACTIONS_01_2026-01-01-0000.md' })),
+      buildReportNames: vi.fn(() => ({ reportFile: 'NIGHTYTIDY-REPORT_01_2026-01-01-0000.md' })),
     }));
 
     vi.doMock('../src/lock.js', () => ({

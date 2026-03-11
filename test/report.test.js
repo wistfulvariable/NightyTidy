@@ -12,7 +12,7 @@ import { createLoggerMock } from './helpers/mocks.js';
 vi.mock('../src/logger.js', () => createLoggerMock());
 
 import { writeFileSync, readFileSync, existsSync } from 'fs';
-import { generateReport, formatDuration } from '../src/report.js';
+import { generateReport, formatDuration, cleanNarration } from '../src/report.js';
 import { makeMetadata, makeResults } from './helpers/testdata.js';
 
 beforeEach(() => {
@@ -71,25 +71,28 @@ describe('generateReport', () => {
     expect(reportContent).toContain('Try re-running the changelog step individually');
   });
 
-  it('includes Action Plan section when actionPlan option is true', async () => {
+  it('includes inline action plan text when actionPlanText is provided', async () => {
     const results = makeResults({ completedCount: 2, failedCount: 0 });
     const metadata = makeMetadata();
 
-    await generateReport(results, 'Narration.', metadata, { actionPlan: true });
+    await generateReport(results, 'Narration.', metadata, {
+      actionPlanText: '## NightyTidy Action Plan\n\nSome recommendations.',
+    });
 
     const reportContent = writeFileSync.mock.calls[0][1];
-    expect(reportContent).toContain('## Action Plan');
-    expect(reportContent).toContain('NIGHTYTIDY-ACTIONS.md');
+    expect(reportContent).toContain('## NightyTidy Action Plan');
+    expect(reportContent).toContain('Some recommendations.');
+    expect(reportContent).not.toContain('NIGHTYTIDY-ACTIONS.md');
   });
 
-  it('omits Action Plan section when actionPlan option is false or absent', async () => {
+  it('omits action plan section when actionPlanText is absent', async () => {
     const results = makeResults({ completedCount: 2, failedCount: 0 });
     const metadata = makeMetadata();
 
     await generateReport(results, 'Narration.', metadata);
 
     const reportContent = writeFileSync.mock.calls[0][1];
-    expect(reportContent).not.toContain('## Action Plan');
+    expect(reportContent).not.toContain('Action Plan');
   });
 
   it('includes Cost column in step table when results have cost data', async () => {
@@ -143,5 +146,29 @@ describe('formatDuration', () => {
     [5000, '0m 05s', 'sub-minute with padded seconds'],
   ])('formats %i ms as "%s" (%s)', (ms, expected) => {
     expect(formatDuration(ms)).toBe(expected);
+  });
+});
+
+describe('cleanNarration', () => {
+  it('strips conversational preamble from narration', () => {
+    const raw = "I understand. I'm ready to help.\n\nActual summary.";
+    expect(cleanNarration(raw)).toBe('Actual summary.');
+  });
+
+  it('leaves normal narration unchanged', () => {
+    const raw = 'Last night I worked on improving the test suite.';
+    expect(cleanNarration(raw)).toBe(raw);
+  });
+
+  it('returns null for null input', () => {
+    expect(cleanNarration(null)).toBeNull();
+  });
+
+  it('returns original text when text is only preamble', () => {
+    const raw = 'I understand.';
+    const result = cleanNarration(raw);
+    // Should return the original trimmed text, not an empty string
+    expect(result).toBe('I understand.');
+    expect(result.length).toBeGreaterThan(0);
   });
 });

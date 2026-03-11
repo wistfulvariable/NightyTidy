@@ -68,7 +68,7 @@ vi.mock('../src/report.js', () => ({
   generateReport: vi.fn(),
   formatDuration: vi.fn((ms) => `${Math.floor(ms / 60000)}m`),
   getVersion: vi.fn(() => '0.1.0'),
-  buildReportNames: vi.fn(() => ({ reportFile: 'NIGHTYTIDY-REPORT_01_2026-01-01-0000.md', actionsFile: 'NIGHTYTIDY-ACTIONS_01_2026-01-01-0000.md' })),
+  buildReportNames: vi.fn(() => ({ reportFile: 'NIGHTYTIDY-REPORT_01_2026-01-01-0000.md' })),
 }));
 
 vi.mock('../src/lock.js', () => ({
@@ -535,6 +535,7 @@ describe('finishRun', () => {
     expect(result.failed).toBe(1);
     expect(result.merged).toBe(true);
     expect(result.reportPath).toBe('NIGHTYTIDY-REPORT_01_2026-01-01-0000.md');
+    expect(result.reportContent).toBeTypeOf('string');
   });
 
   it('calls generateReport with accumulated results and narration', async () => {
@@ -547,7 +548,7 @@ describe('finishRun', () => {
     expect(results.results).toHaveLength(2);
     expect(metadata.branchName).toBe('nightytidy/run-2026-03-06-1430');
     expect(narration).toBe('Mock changelog narration');
-    expect(options.actionPlan).toBe(true);
+    expect(options.actionPlanText).toBe('Mock action plan content');
   });
 
   it('releases lock and deletes state file', async () => {
@@ -612,10 +613,10 @@ describe('finishRun', () => {
     const [execResults, projDir] = generateActionPlan.mock.calls[0];
     expect(execResults.completedCount).toBe(1);
     expect(projDir).toBe('/fake/project');
-    expect(result.actionsPath).toBe('NIGHTYTIDY-ACTIONS_01_2026-01-01-0000.md');
+    expect(result).not.toHaveProperty('actionsPath');
   });
 
-  it('commits actions file when action plan succeeds', async () => {
+  it('commits only report and CLAUDE.md when action plan succeeds', async () => {
     generateActionPlan.mockResolvedValue('Action plan content');
     const mockGit = { add: vi.fn(), commit: vi.fn() };
     getGitInstance.mockReturnValue(mockGit);
@@ -623,7 +624,7 @@ describe('finishRun', () => {
     await finishRun('/fake/project');
 
     const addedFiles = mockGit.add.mock.calls[0][0];
-    expect(addedFiles).toContain('NIGHTYTIDY-ACTIONS_01_2026-01-01-0000.md');
+    expect(addedFiles).toEqual(['NIGHTYTIDY-REPORT_01_2026-01-01-0000.md', 'CLAUDE.md']);
   });
 
   it('handles changelog failure gracefully (uses fallback narration)', async () => {
@@ -642,12 +643,12 @@ describe('finishRun', () => {
     const result = await finishRun('/fake/project');
 
     expect(result.success).toBe(true);
-    expect(result.actionsPath).toBeNull();
+    expect(result).not.toHaveProperty('actionsPath');
     const [, , , options] = generateReport.mock.calls[0];
-    expect(options.actionPlan).toBe(false);
+    expect(options.actionPlanText).toBeFalsy();
   });
 
-  it('does not commit actions file when action plan fails', async () => {
+  it('commits only report and CLAUDE.md when action plan fails', async () => {
     generateActionPlan.mockResolvedValue(null);
     const mockGit = { add: vi.fn(), commit: vi.fn() };
     getGitInstance.mockReturnValue(mockGit);
@@ -655,7 +656,7 @@ describe('finishRun', () => {
     await finishRun('/fake/project');
 
     const addedFiles = mockGit.add.mock.calls[0][0];
-    expect(addedFiles).not.toContain('NIGHTYTIDY-ACTIONS_01_2026-01-01-0000.md');
+    expect(addedFiles).toEqual(['NIGHTYTIDY-REPORT_01_2026-01-01-0000.md', 'CLAUDE.md']);
   });
 
   it('stops dashboard server and cleans up ephemeral files', async () => {

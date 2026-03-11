@@ -82,6 +82,7 @@
     <div class="card">
       <div class="progress-stats">
         <span id="progress-counter">0 / 0 steps</span>
+        <span class="running-totals" id="running-totals"></span>
         <span class="elapsed" id="progress-elapsed">0m 0s</span>
       </div>
       <div class="progress-bar-track" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Step completion progress" id="progress-bar-track">
@@ -99,7 +100,6 @@
       <div class="output-panel-header">
         <h2 id="output-title">Claude Output</h2>
         <span class="last-update" id="last-update-time"></span>
-        <button class="link-btn" id="btn-back-to-live" style="display:none">Back to live</button>
       </div>
       <div class="output-content" id="output-content" aria-live="polite" aria-atomic="false"></div>
       <div class="working-indicator" id="working-indicator" style="display:none" role="status" aria-live="polite">
@@ -156,20 +156,21 @@
 
     <div class="step-list" id="summary-step-list"></div>
 
-    <div class="output-panel" id="summary-output-panel" style="display:none">
-      <div class="output-panel-header">
-        <h2 id="summary-output-title">Step Output</h2>
-        <button class="link-btn" id="btn-close-output">Close</button>
-      </div>
-      <div class="output-content" id="summary-output-content"></div>
-    </div>
-
     <div class="summary-actions">
       <button class="btn btn-primary" id="btn-new-run">New Run</button>
       <button class="btn btn-secondary" id="btn-close-app">Close</button>
     </div>
   </section>
   </main>
+
+  <!-- ═══ Side Drawer (step output / report viewer) ═══ -->
+  <aside id="step-drawer" class="step-drawer" aria-labelledby="drawer-title">
+    <div class="step-drawer-header">
+      <h2 id="drawer-title">Step Output</h2>
+      <button class="link-btn" id="btn-close-drawer" aria-label="Close panel">&times; Close</button>
+    </div>
+    <div class="step-drawer-body output-content" id="drawer-content"></div>
+  </aside>
 
   <!-- ═══ Confirm Stop Modal ═══ -->
   <div class="modal-overlay hidden" id="confirm-stop-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-stop-title" aria-describedby="confirm-stop-desc">

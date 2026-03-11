@@ -1,16 +1,18 @@
 # Report Generation — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. Report logic in `src/report.js`.
+Assumes CLAUDE.md loaded. Report logic in `src/report.js`, action plan logic in `src/consolidation.js`.
 
 ## Exports
 
 | Function | Purpose |
 |----------|---------|
-| `generateReport(results, narration, metadata, { actionPlan })` | Writes NIGHTYTIDY-REPORT.md + updates CLAUDE.md. Optional `actionPlan` flag adds link to NIGHTYTIDY-ACTIONS.md |
+| `generateReport(results, narration, metadata, { actionPlanText, reportFile })` | Writes NIGHTYTIDY-REPORT.md (with inline action plan) + updates CLAUDE.md |
+| `cleanNarration(text)` | Strips conversational preamble from AI-generated narration (applied internally by `generateReport`) |
 | `formatDuration(ms)` | Format milliseconds to human-readable string |
 | `getVersion()` | Returns version from package.json (lazy-cached, defaults to '0.1.0' on error) |
+| `buildReportNames(projectDir, startTime)` | Returns `{ reportFile }` with auto-incremented number + timestamp |
 
-## Report Structure (NIGHTYTIDY-REPORT.md)
+## Report Structure (single file — no separate ACTIONS file)
 
 ```markdown
 # NightyTidy Report — YYYY-MM-DD
@@ -29,8 +31,8 @@ Assumes CLAUDE.md loaded. Report logic in `src/report.js`.
 ### Step N: Name
 - Error, Attempts, Suggestion
 
-## Action Plan           ← Only if actionPlan generated
-- Link to NIGHTYTIDY-ACTIONS.md
+## NightyTidy Action Plan ← Inline, only if generated (headings downgraded from consolidation.js output)
+### Critical / High / Medium / Low
 
 ## How to Undo This Run
 - Claude Code instruction + git command
@@ -38,8 +40,16 @@ Assumes CLAUDE.md loaded. Report logic in `src/report.js`.
 
 ## Narration Handling
 
-- Truthy `narration` param → use as-is
+- `cleanNarration()` strips known conversational preamble patterns ("I understand...", "Sure...", etc.)
+- Truthy cleaned narration → use in report
 - Null/empty → `fallbackNarration(results)` generates generic paragraph with step counts
+
+## Action Plan Flow
+
+1. `consolidation.js` `generateActionPlan()` calls Claude with step outputs + consolidation prompt
+2. Returns raw text with headings downgraded one level (H1→H2, etc.), or `null` on failure
+3. `generateReport()` embeds it inline when `actionPlanText` is truthy
+4. No separate file is written — everything is in one report
 
 ## CLAUDE.md Auto-Update
 
@@ -59,16 +69,10 @@ Content: last run date + undo tag reference.
 
 Imported by `cli.js` for terminal summary (single source — no duplication).
 
-## Metadata Shape
-
-```js
-{ projectDir, branchName, tagName, originalBranch, startTime, endTime, totalCostUSD? }
-```
-
-All strings except `startTime`/`endTime` (numbers from `Date.now()`) and `totalCostUSD` (number, optional — includes step + overhead costs).
-
 ## Error Handling
 
 - `getVersion()` swallows read errors → defaults to '0.1.0'
+- `cleanNarration()` returns original text if stripping would leave it empty
 - `updateClaudeMd()` wraps in try/catch → warns but never throws
 - `generateReport()` overall: warns but never throws (per error contract)
+- `generateActionPlan()` returns null on failure — report still generated without action plan

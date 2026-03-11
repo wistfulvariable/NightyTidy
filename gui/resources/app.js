@@ -116,7 +116,8 @@ const state = {
   stopping: false,        // stop button was clicked
   skippingStep: null,     // step number being skipped (null when not skipping)
   skippedSteps: [],       // step numbers that were skipped
-  viewingStepOutput: null, // step number whose stored output is shown (null = live mode)
+  viewingStepOutput: null, // step number whose output is shown in drawer (null = none)
+  drawerReportPath: null,  // report file path shown in drawer (null = none)
   initMsgTimer: null,      // setInterval ID for init overlay rotating messages
   currentStepNum: null,    // step number currently running (for live elapsed timer)
   stepStartTime: null,     // timestamp ms when current step started
@@ -187,6 +188,7 @@ function hideInitOverlay() {
 // ── Screen Management ──────────────────────────────────────────────
 
 function showScreen(name) {
+  closeDrawer();
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   const el = document.getElementById(`screen-${name}`);
   if (el) el.classList.add('active');
@@ -643,8 +645,23 @@ function updateElapsed() {
     }
   }
 
+  // Running totals of cost & tokens
+  const totalsEl = document.getElementById('running-totals');
+  if (totalsEl) {
+    let html = '';
+    const costs = state.stepResults.filter(r => r.costUSD != null).map(r => r.costUSD);
+    if (costs.length > 0) {
+      html += `<span class="cost">${NtLogic.formatCost(costs.reduce((a, b) => a + b, 0))}</span>`;
+    }
+    const tokens = state.stepResults.reduce((sum, r) => sum + (r.inputTokens || 0) + (r.outputTokens || 0), 0);
+    if (tokens > 0) {
+      html += `<span class="tokens">${NtLogic.formatTokens(tokens)} tokens</span>`;
+    }
+    totalsEl.innerHTML = html;
+  }
+
   // Refresh the "Last update" display so the "ago" counter stays current
-  if (lastOutputChangeTime && state.viewingStepOutput === null) {
+  if (lastOutputChangeTime) {
     updateLastUpdateDisplay();
   }
 }
@@ -870,16 +887,6 @@ async function pollProgress() {
 function renderProgressFromFile(progress) {
   if (!progress) return;
 
-  // When viewing stored output, still track output changes for the "Last update" display
-  // but skip DOM updates so the user can read undisturbed
-  if (state.viewingStepOutput !== null) {
-    if (progress.currentStepOutput && progress.currentStepOutput !== lastRenderedOutput) {
-      lastRenderedOutput = progress.currentStepOutput;
-      lastOutputChangeTime = Date.now();
-    }
-    return;
-  }
-
   // Detect prod signal from orchestrator (Tier 2: session resume)
   if (progress.prodding && !state.prodding) {
     state.prodding = true;
@@ -973,7 +980,6 @@ function renderProgressFromFile(progress) {
 
 function updateWorkingIndicator() {
   if (state.screen !== SCREENS.RUNNING) return;
-  if (state.viewingStepOutput !== null) return;
   const elapsed = Date.now() - (lastOutputChangeTime || state.runStartTime || Date.now());
   updateLastUpdateDisplay();
   if (elapsed >= WORKING_INDICATOR_DELAY_MS) {
@@ -1029,99 +1035,102 @@ function clearOutput() {
   if (tsEl) tsEl.textContent = '';
 }
 
-// ── Step Output Viewer ──────────────────────────────────────────
+// ── Side Drawer (step output & report viewer) ──────────────────
+
+function openDrawer(title, htmlContent) {
+  const drawer = document.getElementById('step-drawer');
+  document.getElementById('drawer-title').textContent = title;
+  document.getElementById('drawer-content').innerHTML = htmlContent;
+  drawer.classList.add('open');
+  document.body.classList.add('drawer-open');
+}
+
+function closeDrawer() {
+  const drawer = document.getElementById('step-drawer');
+  if (!drawer) return;
+  drawer.classList.remove('open');
+  document.body.classList.remove('drawer-open');
+  state.viewingStepOutput = null;
+  state.drawerReportPath = null;
+  // Remove step highlights from both running and summary lists
+  document.querySelectorAll('.step-item').forEach(el => el.classList.remove('step-active'));
+}
+
+function isDrawerOpen() {
+  const drawer = document.getElementById('step-drawer');
+  return drawer && drawer.classList.contains('open');
+}
 
 function viewStepOutput(stepNum) {
   const result = state.stepResults.find(r => r.step === stepNum);
   if (!result) return;
 
-  state.viewingStepOutput = stepNum;
-  const name = result.name || `Step ${stepNum}`;
-  const outputEl = document.getElementById('output-content');
-  const titleEl = document.getElementById('output-title');
-  const backBtn = document.getElementById('btn-back-to-live');
-
-  titleEl.textContent = `Step ${stepNum}: ${name}`;
-  const raw = result.output || (result.error ? `Error: ${result.error}` : '(No output recorded)');
-  outputEl.innerHTML = renderMarkdown(raw);
-  backBtn.style.display = 'inline';
-
-  // Highlight the active step in the running list
-  document.querySelectorAll('#running-step-list .step-item').forEach(el => el.classList.remove('step-active'));
-  const activeEl = document.getElementById(`run-step-${stepNum}`);
-  if (activeEl) activeEl.classList.add('step-active');
-}
-
-function backToLive() {
-  state.viewingStepOutput = null;
-  const titleEl = document.getElementById('output-title');
-  const backBtn = document.getElementById('btn-back-to-live');
-  const outputEl = document.getElementById('output-content');
-
-  titleEl.textContent = 'Claude Output';
-  backBtn.style.display = 'none';
-  outputEl.innerHTML = '';
-  lastRenderedOutput = '';
-
-  document.querySelectorAll('#running-step-list .step-item').forEach(el => el.classList.remove('step-active'));
-}
-
-function viewSummaryStepOutput(stepNum) {
-  const result = state.stepResults.find(r => r.step === stepNum);
-  if (!result) return;
-
-  const panel = document.getElementById('summary-output-panel');
-  const titleEl = document.getElementById('summary-output-title');
-  const contentEl = document.getElementById('summary-output-content');
-
-  // Toggle: clicking same step again closes the panel
-  if (panel.style.display !== 'none' && state.viewingStepOutput === stepNum) {
-    closeSummaryOutput();
+  // Toggle: clicking same step again closes the drawer
+  if (isDrawerOpen() && state.viewingStepOutput === stepNum) {
+    closeDrawer();
     return;
   }
 
   state.viewingStepOutput = stepNum;
+  state.drawerReportPath = null;
   const name = result.name || `Step ${stepNum}`;
-  titleEl.textContent = `Step ${stepNum}: ${name}`;
   const raw = result.output || (result.error ? `Error: ${result.error}` : '(No output recorded)');
-  contentEl.innerHTML = renderMarkdown(raw);
-  panel.style.display = 'block';
+  openDrawer(`Step ${stepNum}: ${name}`, renderMarkdown(raw));
 
-  // Highlight active step
-  document.querySelectorAll('#summary-step-list .step-item').forEach(el => el.classList.remove('step-active'));
-  const activeEl = document.querySelector(`#summary-step-list .step-item[data-step="${stepNum}"]`);
+  // Highlight active step in whichever list is visible
+  document.querySelectorAll('.step-item').forEach(el => el.classList.remove('step-active'));
+  const activeEl = document.getElementById(`run-step-${stepNum}`)
+    || document.querySelector(`.step-item[data-step="${stepNum}"]`);
   if (activeEl) activeEl.classList.add('step-active');
 }
 
+function viewSummaryStepOutput(stepNum) {
+  viewStepOutput(stepNum);
+}
+
+function backToLive() {
+  closeDrawer();
+}
+
 function closeSummaryOutput() {
-  state.viewingStepOutput = null;
-  document.getElementById('summary-output-panel').style.display = 'none';
-  document.querySelectorAll('#summary-step-list .step-item').forEach(el => el.classList.remove('step-active'));
+  closeDrawer();
 }
 
 async function viewReport(reportPath, title) {
-  const panel = document.getElementById('summary-output-panel');
-  const titleEl = document.getElementById('summary-output-title');
-  const contentEl = document.getElementById('summary-output-content');
+  // Toggle: clicking same report again closes the drawer
+  if (isDrawerOpen() && state.drawerReportPath === reportPath) {
+    closeDrawer();
+    return;
+  }
 
-  // Resolve the full path relative to the project directory
-  const fullPath = state.projectPath
-    ? state.projectPath.replace(/[\\/]$/, '') + '/' + reportPath
+  state.viewingStepOutput = null;
+  state.drawerReportPath = reportPath;
+  document.querySelectorAll('.step-item').forEach(el => el.classList.remove('step-active'));
+
+  openDrawer(title || reportPath, '<p style="color:var(--text-dim)">Loading report\u2026</p>');
+
+  // Prefer embedded content from finishRun response (no file read needed)
+  const finishData = state.finishResult;
+  if (finishData?.reportContent && reportPath === finishData.reportPath) {
+    document.getElementById('drawer-content').innerHTML = renderMarkdown(finishData.reportContent);
+    return;
+  }
+
+  // Fallback: read from disk via API
+  const sep = (state.projectDir && state.projectDir.includes('/')) ? '/' : '\\';
+  const fullPath = state.projectDir
+    ? state.projectDir.replace(/[\\/]$/, '') + sep + reportPath
     : reportPath;
 
-  titleEl.textContent = title || reportPath;
-  contentEl.innerHTML = '<p style="color:var(--muted)">Loading report\u2026</p>';
-  panel.style.display = 'block';
-
-  // Clear any active step highlight since we're viewing a report
-  state.viewingStepOutput = null;
-  document.querySelectorAll('#summary-step-list .step-item').forEach(el => el.classList.remove('step-active'));
+  logToServer('info', `viewReport: projectDir="${state.projectDir}", reportPath="${reportPath}", fullPath="${fullPath}"`);
 
   const result = await api('read-file', { path: fullPath });
   if (result.ok && result.content) {
-    contentEl.innerHTML = renderMarkdown(result.content);
+    document.getElementById('drawer-content').innerHTML = renderMarkdown(result.content);
   } else {
-    contentEl.innerHTML = `<p style="color:var(--red)">Could not load report: ${NtLogic.escapeHtml(result.error || 'Unknown error')}</p>`;
+    logToServer('warn', `viewReport failed: error="${result.error}", path="${result.path || fullPath}"`);
+    const pathHint = result.path ? `<br><small style="color:var(--text-dim)">Path: ${NtLogic.escapeHtml(result.path)}</small>` : '';
+    document.getElementById('drawer-content').innerHTML = `<p style="color:var(--red)">Could not load report: ${NtLogic.escapeHtml(result.error || 'Unknown error')}${pathHint}</p>`;
   }
 }
 
@@ -1548,9 +1557,6 @@ function renderSummary(finishData) {
     if (finishData.reportPath) {
       details += `<p>Report: <a href="#" class="link-btn report-link" data-report-path="${NtLogic.escapeHtml(finishData.reportPath)}" data-report-title="Run Report">${NtLogic.escapeHtml(finishData.reportPath)}</a></p>`;
     }
-    if (finishData.actionsPath) {
-      details += `<p>Action Plan: <a href="#" class="link-btn report-link" data-report-path="${NtLogic.escapeHtml(finishData.actionsPath)}" data-report-title="Action Plan">${NtLogic.escapeHtml(finishData.actionsPath)}</a></p>`;
-    }
     if (finishData.tagName) {
       details += `<p>Safety tag: <strong>${NtLogic.escapeHtml(finishData.tagName)}</strong></p>`;
     }
@@ -1647,6 +1653,8 @@ function resetApp() {
   state.skippingStep = null;
   state.skippedSteps = [];
   state.viewingStepOutput = null;
+  state.drawerReportPath = null;
+  closeDrawer();
   state.currentStepNum = null;
   state.stepStartTime = null;
   state.paused = false;
@@ -1714,15 +1722,14 @@ function bindEvents() {
   document.getElementById('btn-confirm-stop-cancel').addEventListener('click', cancelStopRun);
   document.getElementById('btn-resume-now').addEventListener('click', manualResume);
   document.getElementById('btn-finish-now').addEventListener('click', finishNow);
-  document.getElementById('btn-back-to-live').addEventListener('click', backToLive);
-  document.getElementById('btn-close-output').addEventListener('click', closeSummaryOutput);
+  document.getElementById('btn-close-drawer').addEventListener('click', closeDrawer);
   document.getElementById('btn-new-run').addEventListener('click', resetApp);
   document.getElementById('btn-close-app').addEventListener('click', () => {
     api('exit').catch(() => {});
     window.close();
   });
 
-  // Keyboard accessibility for modals — Escape key to close
+  // Keyboard accessibility — Escape key to close drawer and modals
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       const confirmOverlay = document.getElementById('confirm-stop-overlay');
@@ -1731,6 +1738,10 @@ function bindEvents() {
         return;
       }
       // Don't allow Escape on pause overlay — require explicit action
+      if (isDrawerOpen()) {
+        closeDrawer();
+        return;
+      }
     }
   });
 

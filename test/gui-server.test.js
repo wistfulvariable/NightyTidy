@@ -96,11 +96,13 @@ beforeAll(async () => {
         sendJson(res, { ok: false, error: 'No path provided' }, 400);
         return;
       }
+      const resolved = resolve(body.path);
       try {
-        const content = await readFile(resolve(body.path), 'utf-8');
+        const content = await readFile(resolved, 'utf-8');
         sendJson(res, { ok: true, content });
-      } catch {
-        sendJson(res, { ok: false, error: 'File not found or unreadable' });
+      } catch (err) {
+        const detail = err.code === 'ENOENT' ? 'File not found' : err.code || err.message;
+        sendJson(res, { ok: false, error: detail, path: resolved });
       }
       return;
     }

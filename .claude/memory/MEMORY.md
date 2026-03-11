@@ -5,9 +5,9 @@ NightyTidy: automated overnight codebase improvement via Claude Code subprocess 
 ## Current State
 
 - **Version**: 0.1.0
-- **Test count**: 789 (34 test files, all passing)
+- **Test count**: 802 (34 test files, all passing)
 - **Coverage**: src/ at 90% stmts, 80% branches, 80% functions (thresholds enforced by test:ci)
-- **Last major change**: Orchestrator `finishRun()` now generates narrated changelog + action plan (parity with CLI mode)
+- **Last major change**: Report + action plan combined into single file; `cleanNarration()` strips LLM preamble
 
 ## Recent Changes
 
@@ -16,7 +16,7 @@ NightyTidy: automated overnight codebase improvement via Claude Code subprocess 
 - Prompt refactor: monolithic `steps.js` replaced with `manifest.json` + individual markdown files in `src/prompts/`
 - Dashboard standalone server for orchestrator mode (`dashboard-standalone.js`)
 - GUI test coverage: `gui-logic.test.js` (138 tests), `gui-server.test.js` (45 tests)
-- Orchestrator `finishRun()` now calls Claude for narrated changelog + action plan (same as CLI `finalizeRun()`). Both are non-blocking — failures fall back gracefully.
+- Report + action plan merged into single NIGHTYTIDY-REPORT file. `consolidation.js` returns text (no file write); `report.js` embeds it inline. `cleanNarration()` strips LLM conversational preamble.
 - GUI FINISHING screen has escape hatch: skip button (10s delay) + 3-min auto-timeout + try/catch
 - `gui/server.js` `handleRunCommand` has `responded` guard to prevent double `sendJson` on spawn failure
 

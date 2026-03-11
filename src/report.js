@@ -1,9 +1,9 @@
 /**
  * @fileoverview Report generation and CLAUDE.md auto-update.
  *
- * Generates NIGHTYTIDY-REPORT.md with run summary, step results, and
- * undo instructions. Also updates the target project's CLAUDE.md with
- * a "Last Run" section.
+ * Generates NIGHTYTIDY-REPORT.md with run summary, step results, inline
+ * action plan, and undo instructions. Also updates the target project's
+ * CLAUDE.md with a "Last Run" section.
  *
  * Error contract: Warns but NEVER throws. Report failure must not crash a run.
  */
@@ -13,14 +13,13 @@ import path from 'path';
 import { info, warn } from './logger.js';
 
 const REPORT_PREFIX = 'NIGHTYTIDY-REPORT';
-const ACTIONS_PREFIX = 'NIGHTYTIDY-ACTIONS';
 
 /**
- * Build unique, numbered + timestamped filenames for the report and actions plan.
+ * Build a unique, numbered + timestamped filename for the report.
  * Scans the project directory for existing reports to auto-increment the number.
  * @param {string} projectDir - Target project directory
  * @param {number} [startTime] - Run start time (ms epoch); defaults to now
- * @returns {{ reportFile: string, actionsFile: string }}
+ * @returns {{ reportFile: string }}
  */
 export function buildReportNames(projectDir, startTime = Date.now()) {
   const d = new Date(startTime);
@@ -43,7 +42,6 @@ export function buildReportNames(projectDir, startTime = Date.now()) {
 
   return {
     reportFile: `${REPORT_PREFIX}${suffix}.md`,
-    actionsFile: `${ACTIONS_PREFIX}${suffix}.md`,
   };
 }
 
@@ -65,7 +63,8 @@ export function buildReportNames(projectDir, startTime = Date.now()) {
 
 /**
  * @typedef {Object} ReportOptions
- * @property {boolean} [actionPlan] - Whether action plan was generated
+ * @property {string|null} [actionPlanText] - Inline action plan markdown (headings already downgraded)
+ * @property {string} [reportFile] - Custom report filename
  */
 
 /** @type {string|undefined} */
@@ -114,6 +113,27 @@ export function formatDuration(ms) {
  */
 function formatDate(timestamp) {
   return new Date(timestamp).toISOString().split('T')[0];
+}
+
+/**
+ * Strip conversational preamble that Claude sometimes adds despite instructions.
+ * Applied to AI-generated narration before embedding in the report.
+ *
+ * @param {string|null} text - Raw narration text
+ * @returns {string|null} Cleaned text, or null if input was null
+ */
+export function cleanNarration(text) {
+  if (!text) return text;
+  let cleaned = text.trim();
+  // Strip common conversational openers that end with a period or exclamation
+  const preamblePattern = /^(?:I understand|I'm ready|I'll help|Sure|Here is|Here's|Based on|Certainly|Of course|Absolutely|Let me)[^.!]*[.!]\s*/i;
+  // May need multiple passes (e.g. "I understand. I'm ready to help.")
+  for (let i = 0; i < 3; i++) {
+    const before = cleaned;
+    cleaned = cleaned.replace(preamblePattern, '');
+    if (cleaned === before) break;
+  }
+  return cleaned.trim() || text.trim();
 }
 
 /**
@@ -252,13 +272,14 @@ function buildUndoSection(metadata) {
  * @param {ReportOptions} [options] - Report options
  * @returns {string} The report filename (basename only, e.g. 'NIGHTYTIDY-REPORT_01_2026-03-10-1448.md')
  */
-export function generateReport(results, narration, metadata, { actionPlan = false, reportFile, actionsFile } = {}) {
+export function generateReport(results, narration, metadata, { actionPlanText, reportFile } = {}) {
   const date = formatDate(metadata.startTime);
 
   let report = `# NightyTidy Report \u2014 ${date}\n\n`;
 
-  if (narration) {
-    report += `${narration}\n\n---\n\n`;
+  const cleanedNarration = cleanNarration(narration);
+  if (cleanedNarration) {
+    report += `${cleanedNarration}\n\n---\n\n`;
   } else {
     report += `${fallbackNarration(results)}\n\n---\n\n`;
   }
@@ -270,9 +291,8 @@ export function generateReport(results, narration, metadata, { actionPlan = fals
     report += buildFailedSection(results);
   }
 
-  if (actionPlan) {
-    const actionsRef = actionsFile || 'NIGHTYTIDY-ACTIONS.md';
-    report += `## Action Plan\n\nA prioritized action plan has been generated: [\`${actionsRef}\`](./${actionsRef})\n\n`;
+  if (actionPlanText) {
+    report += `${actionPlanText}\n\n`;
   }
 
   report += buildUndoSection(metadata);

@@ -466,24 +466,23 @@ async function finalizeRun(executionResults, projectDir, ctx) {
 
   ctx.spinner.stop();
 
-  // Build unique report filenames (numbered + timestamped)
+  // Build unique report filename (numbered + timestamped)
   const startTime = Date.now() - executionResults.totalDuration;
-  const { reportFile, actionsFile } = buildReportNames(projectDir, startTime);
+  const { reportFile } = buildReportNames(projectDir, startTime);
 
   // Consolidated action plan
   ctx.spinner = ora({ text: 'Generating action plan...', color: 'cyan' }).start();
-  const actionPlan = await generateActionPlan(executionResults, projectDir, {
+  const actionPlanText = await generateActionPlan(executionResults, projectDir, {
     timeout: ctx.timeoutMs,
-    actionsFile,
   });
   ctx.spinner.stop();
-  if (actionPlan) {
-    console.log(chalk.green(`Action plan generated: ${actionsFile}`));
+  if (actionPlanText) {
+    console.log(chalk.green('Action plan generated (included in report).'));
   } else {
     console.log(chalk.dim('Action plan skipped (no data or generation failed).'));
   }
 
-  // Generate report
+  // Generate report (with inline action plan if available)
   generateReport(executionResults, narration, {
     projectDir,
     branchName: ctx.runBranch,
@@ -491,13 +490,12 @@ async function finalizeRun(executionResults, projectDir, ctx) {
     originalBranch: ctx.originalBranch,
     startTime,
     endTime: Date.now(),
-  }, { actionPlan: !!actionPlan, reportFile, actionsFile });
+  }, { actionPlanText, reportFile });
 
   // Commit report on run branch
   const gitInstance = getGitInstance();
   try {
     const filesToCommit = [reportFile, 'CLAUDE.md'];
-    if (actionPlan) filesToCommit.push(actionsFile);
     await gitInstance.add(filesToCommit);
     await gitInstance.commit('NightyTidy: Add run report and update CLAUDE.md');
   } catch (err) {
