@@ -65,4 +65,5 @@ After each step:
 | `hasNewCommit(hash)` | boolean | If git fails |
 | `fallbackCommit(num, name)` | boolean | No (swallows) |
 | `mergeRunBranch(orig, run)` | `{ success, conflict? }` | **Never** |
+| `ensureOnBranch(expected)` | `{ recovered, strayBranch?, mergeOk? }` | **Never** |
 | `getGitInstance()` | git instance | No |

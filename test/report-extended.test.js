@@ -4,6 +4,7 @@ vi.mock('fs', () => ({
   writeFileSync: vi.fn(),
   readFileSync: vi.fn(),
   existsSync: vi.fn(),
+  readdirSync: vi.fn(() => []),
 }));
 
 import { createLoggerMock } from './helpers/mocks.js';

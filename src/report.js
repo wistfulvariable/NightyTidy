@@ -8,9 +8,44 @@
  * Error contract: Warns but NEVER throws. Report failure must not crash a run.
  */
 
-import { writeFileSync, readFileSync, existsSync } from 'fs';
+import { writeFileSync, readFileSync, existsSync, readdirSync } from 'fs';
 import path from 'path';
 import { info, warn } from './logger.js';
+
+const REPORT_PREFIX = 'NIGHTYTIDY-REPORT';
+const ACTIONS_PREFIX = 'NIGHTYTIDY-ACTIONS';
+
+/**
+ * Build unique, numbered + timestamped filenames for the report and actions plan.
+ * Scans the project directory for existing reports to auto-increment the number.
+ * @param {string} projectDir - Target project directory
+ * @param {number} [startTime] - Run start time (ms epoch); defaults to now
+ * @returns {{ reportFile: string, actionsFile: string }}
+ */
+export function buildReportNames(projectDir, startTime = Date.now()) {
+  const d = new Date(startTime);
+  const pad2 = n => String(n).padStart(2, '0');
+  const timestamp = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}`;
+
+  // Find next available number by scanning existing report files
+  let maxNum = 0;
+  try {
+    const files = readdirSync(projectDir);
+    const pattern = /^NIGHTYTIDY-REPORT_(\d+)_/;
+    for (const f of files) {
+      const m = f.match(pattern);
+      if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
+    }
+  } catch { /* directory unreadable — start at 1 */ }
+
+  const num = pad2(maxNum + 1);
+  const suffix = `_${num}_${timestamp}`;
+
+  return {
+    reportFile: `${REPORT_PREFIX}${suffix}.md`,
+    actionsFile: `${ACTIONS_PREFIX}${suffix}.md`,
+  };
+}
 
 /**
  * @typedef {import('./executor.js').ExecutionResults} ExecutionResults
@@ -215,9 +250,9 @@ function buildUndoSection(metadata) {
  * @param {string|null} narration - AI-generated changelog, or null for fallback
  * @param {ReportMetadata} metadata - Report metadata
  * @param {ReportOptions} [options] - Report options
- * @returns {void}
+ * @returns {string} The report filename (basename only, e.g. 'NIGHTYTIDY-REPORT_01_2026-03-10-1448.md')
  */
-export function generateReport(results, narration, metadata, { actionPlan = false } = {}) {
+export function generateReport(results, narration, metadata, { actionPlan = false, reportFile, actionsFile } = {}) {
   const date = formatDate(metadata.startTime);
 
   let report = `# NightyTidy Report \u2014 ${date}\n\n`;
@@ -236,17 +271,21 @@ export function generateReport(results, narration, metadata, { actionPlan = fals
   }
 
   if (actionPlan) {
-    report += `## Action Plan\n\nA prioritized action plan has been generated: [\`NIGHTYTIDY-ACTIONS.md\`](./NIGHTYTIDY-ACTIONS.md)\n\n`;
+    const actionsRef = actionsFile || 'NIGHTYTIDY-ACTIONS.md';
+    report += `## Action Plan\n\nA prioritized action plan has been generated: [\`${actionsRef}\`](./${actionsRef})\n\n`;
   }
 
   report += buildUndoSection(metadata);
 
-  const reportPath = path.join(metadata.projectDir, 'NIGHTYTIDY-REPORT.md');
+  const filename = reportFile || 'NIGHTYTIDY-REPORT.md';
+  const reportPath = path.join(metadata.projectDir, filename);
   writeFileSync(reportPath, report, 'utf8');
   info(`Report written to ${reportPath}`);
 
   // Update CLAUDE.md
   updateClaudeMd(metadata);
+
+  return filename;
 }
 
 /**

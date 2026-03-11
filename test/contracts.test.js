@@ -172,6 +172,7 @@ describe('contract: git.js — mergeRunBranch never throws on conflict', () => {
       'hasNewCommit',
       'fallbackCommit',
       'mergeRunBranch',
+      'ensureOnBranch',
       'getGitInstance',
     ];
 
@@ -871,6 +872,7 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
       existsSync: vi.fn(() => false),
       readFileSync: vi.fn(),
       writeFileSync: vi.fn(),
+      readdirSync: vi.fn(() => []),
       unlinkSync: vi.fn(),
       openSync: vi.fn(() => 99),
       closeSync: vi.fn(),
@@ -931,6 +933,7 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
     vi.doMock('../src/report.js', () => ({
       generateReport: vi.fn(),
       formatDuration: vi.fn(() => '0m'),
+      buildReportNames: vi.fn(() => ({ reportFile: 'NIGHTYTIDY-REPORT_01_2026-01-01-0000.md', actionsFile: 'NIGHTYTIDY-ACTIONS_01_2026-01-01-0000.md' })),
     }));
 
     vi.doMock('../src/lock.js', () => ({

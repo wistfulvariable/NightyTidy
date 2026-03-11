@@ -15,13 +15,13 @@ import path from 'path';
 
 import { initLogger, info, warn, error as logError } from './logger.js';
 import { runPreChecks } from './checks.js';
-import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from './git.js';
+import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance, ensureOnBranch } from './git.js';
 import { runPrompt, ERROR_TYPE } from './claude.js';
 import { STEPS, CHANGELOG_PROMPT, reloadSteps } from './prompts/loader.js';
 import { executeSingleStep, sumCosts, SAFETY_PREAMBLE, PROD_PREAMBLE } from './executor.js';
 import { generateActionPlan } from './consolidation.js';
 import { notify } from './notifications.js';
-import { generateReport, formatDuration, getVersion } from './report.js';
+import { generateReport, formatDuration, getVersion, buildReportNames } from './report.js';
 import { acquireLock, releaseLock } from './lock.js';
 
 /**
@@ -566,6 +566,9 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
 
     info(`Orchestrator: running step ${stepNumber} — ${step.name}`);
 
+    // Branch guard: ensure we're on the run branch before starting
+    await ensureOnBranch(state.runBranch);
+
     // Update progress: mark step as running
     const stepIdx = state.selectedSteps.indexOf(stepNumber);
     const progress = buildProgressState(state);
@@ -607,6 +610,9 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
         cost: sumCosts(result.cost, prodResult.cost),
       };
 
+      // Branch guard between tiers — recover before deciding next tier
+      await ensureOnBranch(state.runBranch);
+
       if (result.status === 'completed') {
         info(`Step ${stepNumber} succeeded on prod (session resume)`);
       } else if (result.errorType !== ERROR_TYPE.RATE_LIMIT) {
@@ -629,6 +635,9 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
           cost: sumCosts(result.cost, freshResult.cost),
         };
 
+        // Branch guard after Tier 3
+        await ensureOnBranch(state.runBranch);
+
         if (result.status === 'completed') {
           info(`Step ${stepNumber} succeeded on fresh retry`);
         } else {
@@ -638,6 +647,9 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
         warn(`Step ${stepNumber} prod hit rate limit — recording as failed`);
       }
     }
+
+    // Branch guard: final check before writing state
+    await ensureOnBranch(state.runBranch);
 
     // Update state
     const output = (result.output || '').slice(0, 6000);
@@ -739,10 +751,14 @@ export async function finishRun(projectDir) {
     const narration = changelogResult.success ? changelogResult.output : null;
     if (!narration) warn('Narrated changelog generation failed — using fallback text');
 
+    // Build unique report filenames (numbered + timestamped)
+    const { reportFile, actionsFile } = buildReportNames(projectDir, state.startTime);
+
     // Consolidated action plan
     info('Generating consolidated action plan...');
     const actionPlan = await generateActionPlan(executionResults, projectDir, {
       timeout: state.timeout || undefined,
+      actionsFile,
     });
 
     // Generate report
@@ -754,13 +770,13 @@ export async function finishRun(projectDir) {
       startTime: state.startTime,
       endTime: Date.now(),
       totalCostUSD: totalCostUSD || null,
-    }, { actionPlan: !!actionPlan });
+    }, { actionPlan: !!actionPlan, reportFile, actionsFile });
 
     // Commit report + action plan
     const gitInstance = getGitInstance();
     try {
-      const filesToCommit = ['NIGHTYTIDY-REPORT.md', 'CLAUDE.md'];
-      if (actionPlan) filesToCommit.push('NIGHTYTIDY-ACTIONS.md');
+      const filesToCommit = [reportFile, 'CLAUDE.md'];
+      if (actionPlan) filesToCommit.push(actionsFile);
       await gitInstance.add(filesToCommit);
       await gitInstance.commit('NightyTidy: Add run report and update CLAUDE.md');
     } catch (err) {
@@ -798,8 +814,8 @@ export async function finishRun(projectDir) {
       totalOutputTokens,
       merged: mergeResult.success,
       mergeConflict: mergeResult.conflict || false,
-      reportPath: 'NIGHTYTIDY-REPORT.md',
-      actionsPath: actionPlan ? 'NIGHTYTIDY-ACTIONS.md' : null,
+      reportPath: reportFile,
+      actionsPath: actionPlan ? actionsFile : null,
       tagName: state.tagName,
       runBranch: state.runBranch,
     });

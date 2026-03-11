@@ -112,6 +112,7 @@ const state = {
   elapsedTimer: null,     // setInterval ID for elapsed time
   runStartTime: null,     // timestamp ms
   finishResult: null,     // from --finish-run response
+  finishFailed: false,     // finish-run was skipped, timed out, or errored
   stopping: false,        // stop button was clicked
   skippingStep: null,     // step number being skipped (null when not skipping)
   skippedSteps: [],       // step numbers that were skipped
@@ -142,7 +143,7 @@ const INIT_MESSAGES = [
 ];
 
 function showInitOverlay() {
-  // Hide step selection UI
+  // Hide step selection UI immediately
   for (const id of ['step-checklist', 'options-bar', 'start-bar', 'steps-header']) {
     const el = document.querySelector(`.${id}`) || document.getElementById(id);
     if (el) el.style.display = 'none';
@@ -150,9 +151,11 @@ function showInitOverlay() {
   const overlay = document.getElementById('init-overlay');
   const statusEl = document.getElementById('init-status');
   statusEl.textContent = INIT_MESSAGES[0];
+  statusEl.style.opacity = '1';
   overlay.style.display = 'block';
 
   let idx = 0;
+  // Use shorter interval (1.5s) for snappier feel during init
   state.initMsgTimer = setInterval(() => {
     if (idx >= INIT_MESSAGES.length - 1) {
       clearInterval(state.initMsgTimer);
@@ -164,8 +167,8 @@ function showInitOverlay() {
     setTimeout(() => {
       statusEl.textContent = INIT_MESSAGES[idx];
       statusEl.style.opacity = '1';
-    }, 200);
-  }, 2000);
+    }, 150); // Faster fade-in (150ms instead of 200ms)
+  }, 1500); // Shorter interval (1.5s instead of 2s)
 }
 
 function hideInitOverlay() {
@@ -368,13 +371,29 @@ async function createInitialCommit() {
 
 async function selectFolder() {
   clearError('setup');
+
+  // Immediate visual feedback: disable button during OS dialog
+  const selectBtn = document.getElementById('btn-select-folder');
+  const originalText = selectBtn.textContent;
+  selectBtn.disabled = true;
+  selectBtn.textContent = 'Opening...';
+
   try {
     const result = await api('select-folder');
+
+    // Restore button state
+    selectBtn.disabled = false;
+    selectBtn.textContent = originalText;
+
     if (!result.ok || !result.folder) return; // User cancelled
     state.projectDir = result.folder;
     showFolderPath(result.folder);
     await loadSteps();
   } catch (err) {
+    // Restore button state on error
+    selectBtn.disabled = false;
+    selectBtn.textContent = originalText;
+
     logToServer('error', `Folder selection failed: ${err.message}`);
     showError('setup', 'Folder selection did not complete. Please try again or type the path manually.');
   }
@@ -460,6 +479,11 @@ async function startRun() {
   const selected = getCheckedSteps();
   if (!selected.length) return;
 
+  // Immediate visual feedback: disable button and show loading state
+  const startBtn = document.getElementById('btn-start-run');
+  startBtn.disabled = true;
+  startBtn.textContent = 'Starting...';
+
   state.selectedSteps = selected;
   state.timeout = parseInt(document.getElementById('timeout-input').value, 10) || 45;
   state.completedSteps = [];
@@ -474,6 +498,10 @@ async function startRun() {
   showInitOverlay();
   const result = await runCli(args);
   hideInitOverlay();
+
+  // Restore button state (in case of error return to steps screen)
+  startBtn.disabled = false;
+  startBtn.textContent = 'Start Run';
 
   if (!result.ok) {
     logToServer('error', `Init run failed: ${result.error}`);
@@ -557,14 +585,20 @@ function updateStepItemStatus(stepNum, status, duration) {
         if (tokStr) tokensEl.textContent = tokStr + ' tokens';
       }
       el.classList.add('step-clickable');
+      el.setAttribute('role', 'button');
+      el.setAttribute('tabindex', '0');
       el.onclick = () => viewStepOutput(stepNum);
+      el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); viewStepOutput(stepNum); } };
       break;
     }
     case 'skipped':
       iconEl.textContent = '\u27A0';
       if (duration) durEl.textContent = NtLogic.formatMs(duration);
       el.classList.add('step-clickable');
+      el.setAttribute('role', 'button');
+      el.setAttribute('tabindex', '0');
       el.onclick = () => viewStepOutput(stepNum);
+      el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); viewStepOutput(stepNum); } };
       break;
     default:
       iconEl.innerHTML = '&#9675;';
@@ -766,10 +800,14 @@ async function runNextStep() {
 
 // ── Progress Polling ───────────────────────────────────────────────
 
+const POLL_INTERVAL_FAST = 500;   // Normal polling interval (ms)
+const POLL_INTERVAL_SLOW = 1000;  // Slower polling when no changes detected
+
 function startProgressPolling() {
   stopProgressPolling();
   pollFailureCount = 0;
-  state.pollTimer = setInterval(pollProgress, 500);
+  state.pollInterval = POLL_INTERVAL_FAST;
+  state.pollTimer = setInterval(pollProgress, state.pollInterval);
 }
 
 function stopProgressPolling() {
@@ -913,10 +951,13 @@ function renderProgressFromFile(progress) {
     if (progress.currentStepOutput !== lastRenderedOutput) {
       lastRenderedOutput = progress.currentStepOutput;
       lastOutputChangeTime = Date.now();
-      const outputEl = document.getElementById('output-content');
-      outputEl.innerHTML = renderMarkdown(progress.currentStepOutput);
-      const panel = document.getElementById('output-panel');
-      panel.scrollTop = panel.scrollHeight;
+      // Use requestAnimationFrame for smoother DOM updates
+      requestAnimationFrame(() => {
+        const outputEl = document.getElementById('output-content');
+        outputEl.innerHTML = renderMarkdown(progress.currentStepOutput);
+        const panel = document.getElementById('output-panel');
+        panel.scrollTop = panel.scrollHeight;
+      });
       hideWorkingIndicator();
       updateLastUpdateDisplay();
     } else {
@@ -1058,6 +1099,32 @@ function closeSummaryOutput() {
   document.querySelectorAll('#summary-step-list .step-item').forEach(el => el.classList.remove('step-active'));
 }
 
+async function viewReport(reportPath, title) {
+  const panel = document.getElementById('summary-output-panel');
+  const titleEl = document.getElementById('summary-output-title');
+  const contentEl = document.getElementById('summary-output-content');
+
+  // Resolve the full path relative to the project directory
+  const fullPath = state.projectPath
+    ? state.projectPath.replace(/[\\/]$/, '') + '/' + reportPath
+    : reportPath;
+
+  titleEl.textContent = title || reportPath;
+  contentEl.innerHTML = '<p style="color:var(--muted)">Loading report\u2026</p>';
+  panel.style.display = 'block';
+
+  // Clear any active step highlight since we're viewing a report
+  state.viewingStepOutput = null;
+  document.querySelectorAll('#summary-step-list .step-item').forEach(el => el.classList.remove('step-active'));
+
+  const result = await api('read-file', { path: fullPath });
+  if (result.ok && result.content) {
+    contentEl.innerHTML = renderMarkdown(result.content);
+  } else {
+    contentEl.innerHTML = `<p style="color:var(--red)">Could not load report: ${NtLogic.escapeHtml(result.error || 'Unknown error')}</p>`;
+  }
+}
+
 // ── Rate Limit Pause / Resume ──────────────────────────────────────
 
 const BACKOFF_SCHEDULE_MS = [
@@ -1139,6 +1206,8 @@ function showPauseOverlay(stepNum, waitMs, hasRetryAfter) {
 
   const pauseOverlay = document.getElementById('pause-overlay');
   pauseOverlay.classList.remove('hidden');
+  // Set up focus trap
+  pauseFocusTrapCleanup = trapFocus(pauseOverlay.querySelector('.modal'));
   // Focus the Resume button (primary action)
   const resumeBtn = document.getElementById('btn-resume-now');
   if (resumeBtn) resumeBtn.focus();
@@ -1153,6 +1222,8 @@ function showPauseOverlay(stepNum, waitMs, hasRetryAfter) {
 
 function hidePauseOverlay() {
   document.getElementById('pause-overlay').classList.add('hidden');
+  // Clean up focus trap
+  if (pauseFocusTrapCleanup) { pauseFocusTrapCleanup(); pauseFocusTrapCleanup = null; }
   document.getElementById('btn-skip-step').disabled = false;
 
   const subtitle = document.getElementById('running-subtitle');
@@ -1201,6 +1272,29 @@ function resetSkipButton() {
   btn.textContent = 'Skip Step';
 }
 
+// ── Focus Trap (for modal accessibility) ────────────────────────────
+
+function trapFocus(modalEl) {
+  const focusable = modalEl.querySelectorAll('button:not([disabled]), [tabindex]:not([tabindex="-1"])');
+  if (focusable.length === 0) return null;
+  const first = focusable[0];
+  const last = focusable[focusable.length - 1];
+
+  const handler = (e) => {
+    if (e.key !== 'Tab') return;
+    if (e.shiftKey) {
+      if (document.activeElement === first) { e.preventDefault(); last.focus(); }
+    } else {
+      if (document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
+  };
+  modalEl.addEventListener('keydown', handler);
+  return () => modalEl.removeEventListener('keydown', handler);
+}
+
+let confirmStopFocusTrapCleanup = null;
+let pauseFocusTrapCleanup = null;
+
 // ── Stop Run ───────────────────────────────────────────────────────
 
 let lastFocusedElement = null;
@@ -1210,6 +1304,8 @@ function confirmStopRun() {
   lastFocusedElement = document.activeElement;
   const overlay = document.getElementById('confirm-stop-overlay');
   overlay.classList.remove('hidden');
+  // Set up focus trap
+  confirmStopFocusTrapCleanup = trapFocus(overlay.querySelector('.modal'));
   // Focus the cancel button (safer default action)
   const cancelBtn = document.getElementById('btn-confirm-stop-cancel');
   if (cancelBtn) cancelBtn.focus();
@@ -1217,6 +1313,8 @@ function confirmStopRun() {
 
 function cancelStopRun() {
   document.getElementById('confirm-stop-overlay').classList.add('hidden');
+  // Clean up focus trap
+  if (confirmStopFocusTrapCleanup) { confirmStopFocusTrapCleanup(); confirmStopFocusTrapCleanup = null; }
   // Restore focus to the element that opened the modal
   if (lastFocusedElement && typeof lastFocusedElement.focus === 'function') {
     lastFocusedElement.focus();
@@ -1226,6 +1324,8 @@ function cancelStopRun() {
 
 async function stopRun() {
   document.getElementById('confirm-stop-overlay').classList.add('hidden');
+  // Clean up focus trap
+  if (confirmStopFocusTrapCleanup) { confirmStopFocusTrapCleanup(); confirmStopFocusTrapCleanup = null; }
   if (state.stopping) return;
   state.stopping = true;
   logToServer('info', `stopRun: stopping run (currentStep=${state.currentStepNum}, processId=${state.currentProcessId})`);
@@ -1252,7 +1352,7 @@ async function stopRun() {
 // ── Finish Run ─────────────────────────────────────────────────────
 
 const FINISH_SKIP_DELAY_MS = 10_000;  // Show skip button after 10s
-const FINISH_TIMEOUT_MS = 180_000;    // Auto-skip after 3 minutes
+const FINISH_TIMEOUT_MS = 900_000;    // Auto-skip after 15 minutes (finish-run makes 2 AI calls)
 
 async function finishRun() {
   logToServer('info', 'finishRun: starting');
@@ -1284,7 +1384,7 @@ async function finishRun() {
   skipBtn.addEventListener('click', onSkip, { once: true });
 
   const timeoutId = setTimeout(() => {
-    logToServer('warn', 'Finishing timed out after 3 minutes');
+    logToServer('warn', 'Finishing timed out after 15 minutes');
     skipResolve({ skipped: true, timedOut: true });
   }, FINISH_TIMEOUT_MS);
 
@@ -1299,6 +1399,7 @@ async function finishRun() {
     skipBtn.removeEventListener('click', onSkip);
     skipBtn.style.display = 'none';
     logToServer('error', `finishRun exception: ${err.message || err}`);
+    state.finishFailed = true;
     renderSummary(null);
     showScreen(SCREENS.SUMMARY);
     return;
@@ -1315,10 +1416,7 @@ async function finishRun() {
     if (state.currentProcessId) {
       try { await api('kill-process', { id: state.currentProcessId }); } catch { /* ignore */ }
     }
-    const msg = outcome.timedOut
-      ? 'Finishing timed out — your changes are still on the run branch.'
-      : 'Finishing was skipped — your changes are still on the run branch.';
-    showError('finishing', msg);
+    state.finishFailed = true;
     renderSummary(null);
     showScreen(SCREENS.SUMMARY);
     return;
@@ -1327,7 +1425,7 @@ async function finishRun() {
   const result = outcome.result;
   if (!result.ok) {
     logToServer('error', `Finish run failed: ${result.error}`);
-    showError('finishing', result.error);
+    state.finishFailed = true;
     renderSummary(null);
     showScreen(SCREENS.SUMMARY);
     return;
@@ -1355,6 +1453,10 @@ function renderSummary(finishData) {
     resultEl.className = 'summary-result partial';
     titleEl.textContent = 'Run Stopped';
     document.title = 'Stopped — NightyTidy';
+  } else if (state.finishFailed && failed === 0 && completed > 0) {
+    resultEl.className = 'summary-result warning';
+    titleEl.textContent = 'Run Complete (report pending)';
+    document.title = 'Complete (report pending) — NightyTidy';
   } else if (failed === 0 && skipped === 0 && completed > 0) {
     resultEl.className = 'summary-result success';
     titleEl.textContent = 'Run Complete';
@@ -1444,7 +1546,10 @@ function renderSummary(finishData) {
       details += `<p style="color:var(--yellow)"><strong>Merge conflict</strong> &mdash; changes remain on the run branch</p>`;
     }
     if (finishData.reportPath) {
-      details += `<p>Report: <strong>${NtLogic.escapeHtml(finishData.reportPath)}</strong></p>`;
+      details += `<p>Report: <a href="#" class="link-btn report-link" data-report-path="${NtLogic.escapeHtml(finishData.reportPath)}" data-report-title="Run Report">${NtLogic.escapeHtml(finishData.reportPath)}</a></p>`;
+    }
+    if (finishData.actionsPath) {
+      details += `<p>Action Plan: <a href="#" class="link-btn report-link" data-report-path="${NtLogic.escapeHtml(finishData.actionsPath)}" data-report-title="Action Plan">${NtLogic.escapeHtml(finishData.actionsPath)}</a></p>`;
     }
     if (finishData.tagName) {
       details += `<p>Safety tag: <strong>${NtLogic.escapeHtml(finishData.tagName)}</strong></p>`;
@@ -1452,8 +1557,29 @@ function renderSummary(finishData) {
     if (finishData.runBranch) {
       details += `<p>Run branch: <strong>${NtLogic.escapeHtml(finishData.runBranch)}</strong></p>`;
     }
+  } else if (state.finishFailed) {
+    details += `<p style="color:var(--yellow)"><strong>Report generation did not complete.</strong> Your code changes are safe on the run branch.</p>`;
+    const branch = state.runInfo?.runBranch;
+    const tag = state.runInfo?.tagName;
+    if (branch) {
+      details += `<p>Run branch: <strong>${NtLogic.escapeHtml(branch)}</strong></p>`;
+    }
+    if (tag) {
+      details += `<p>Safety tag: <strong>${NtLogic.escapeHtml(tag)}</strong></p>`;
+    }
+    details += `<p style="color:var(--text-dim)">To generate the report manually, run: <code>npx nightytidy --finish-run</code> in the project directory.</p>`;
   }
   detailsEl.innerHTML = details;
+
+  // Attach click handlers for report links
+  detailsEl.querySelectorAll('.report-link').forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      const reportPath = link.getAttribute('data-report-path');
+      const title = link.getAttribute('data-report-title');
+      viewReport(reportPath, title);
+    });
+  });
 
   // Show log file path so users can find it for bug reports
   api('log-path').then(result => {
@@ -1474,7 +1600,7 @@ function renderSummary(finishData) {
     const tokens = NtLogic.formatTokens(stepTotalTokens);
     const tokensStr = tokens ? tokens + ' tokens' : '';
     return `
-      <div class="step-item step-${status} step-clickable" data-step="${r.step}">
+      <div class="step-item step-${status} step-clickable" data-step="${r.step}" role="button" tabindex="0">
         <span class="step-icon">${icon}</span>
         <span class="step-num">${r.step}.</span>
         <span class="step-name">${NtLogic.escapeHtml(name)}</span>
@@ -1485,11 +1611,15 @@ function renderSummary(finishData) {
     `;
   }).join('');
 
-  // Attach click handlers for viewing step output
+  // Attach click and keyboard handlers for viewing step output
   listEl.querySelectorAll('.step-item[data-step]').forEach(el => {
-    el.addEventListener('click', () => {
-      const stepNum = parseInt(el.getAttribute('data-step'), 10);
-      viewSummaryStepOutput(stepNum);
+    const stepNum = parseInt(el.getAttribute('data-step'), 10);
+    el.addEventListener('click', () => viewSummaryStepOutput(stepNum));
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        viewSummaryStepOutput(stepNum);
+      }
     });
   });
 }
@@ -1512,6 +1642,7 @@ function resetApp() {
   state.elapsedTimer = null;
   state.runStartTime = null;
   state.finishResult = null;
+  state.finishFailed = false;
   state.stopping = false;
   state.skippingStep = null;
   state.skippedSteps = [];
@@ -1613,10 +1744,19 @@ function bindEvents() {
 
 // ── Init ───────────────────────────────────────────────────────────
 
-document.addEventListener('DOMContentLoaded', async () => {
+document.addEventListener('DOMContentLoaded', () => {
+  // Show the UI immediately for instant perceived startup
   bindEvents();
   showScreen(SCREENS.SETUP);
 
+  // Start heartbeat systems immediately (fire-and-forget)
+  initHeartbeat();
+
+  // Load config in background (non-blocking)
+  loadConfigAsync();
+});
+
+function initHeartbeat() {
   // Heartbeat — lets the server detect if the browser window is gone.
   // Two layers: Web Worker (immune to tab throttling) + main-thread backup.
   // Chrome aggressively freezes setInterval in background tabs (even --app mode),
@@ -1637,10 +1777,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(() => {
     fetch('/api/heartbeat', { method: 'POST' }).catch(() => {});
   }, 5000);
+}
 
-  // Load server config (nightytidy binary path)
+async function loadConfigAsync() {
+  // Load server config (nightytidy binary path) — non-blocking background load
   try {
     const config = await api('config');
     if (config.ok && config.bin) state.bin = config.bin;
   } catch { /* fallback to npx */ }
-});
+}

@@ -102,10 +102,10 @@
         <button class="link-btn" id="btn-back-to-live" style="display:none">Back to live</button>
       </div>
       <div class="output-content" id="output-content" aria-live="polite" aria-atomic="false"></div>
-      <div class="working-indicator" id="working-indicator" style="display:none">
-        <span class="working-dot"></span>
-        <span class="working-dot"></span>
-        <span class="working-dot"></span>
+      <div class="working-indicator" id="working-indicator" style="display:none" role="status" aria-live="polite">
+        <span class="working-dot" aria-hidden="true"></span>
+        <span class="working-dot" aria-hidden="true"></span>
+        <span class="working-dot" aria-hidden="true"></span>
         <span class="working-text">Claude is working</span>
       </div>
     </div>
@@ -146,7 +146,7 @@
       <h2 id="summary-title">Run Complete</h2>
     </div>
 
-    <div class="summary-stats" id="summary-stats"></div>
+    <div class="summary-stats" id="summary-stats" role="region" aria-label="Run statistics"></div>
 
     <div class="card">
       <div class="summary-details" id="summary-details"></div>
@@ -172,10 +172,10 @@
   </main>
 
   <!-- ═══ Confirm Stop Modal ═══ -->
-  <div class="modal-overlay hidden" id="confirm-stop-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-stop-title">
+  <div class="modal-overlay hidden" id="confirm-stop-overlay" role="dialog" aria-modal="true" aria-labelledby="confirm-stop-title" aria-describedby="confirm-stop-desc">
     <div class="modal">
       <h2 id="confirm-stop-title">Stop Run?</h2>
-      <p>This will cancel all remaining steps. Completed steps will be kept and a report will be generated.</p>
+      <p id="confirm-stop-desc">This will cancel all remaining steps. Completed steps will be kept and a report will be generated.</p>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="btn-confirm-stop-cancel">Keep Running</button>
         <button class="btn btn-danger" id="btn-confirm-stop-yes">Stop Run</button>
@@ -184,11 +184,11 @@
   </div>
 
   <!-- ═══ Rate Limit Pause Modal ═══ -->
-  <div class="modal-overlay hidden" id="pause-overlay" role="dialog" aria-modal="true" aria-labelledby="pause-title">
+  <div class="modal-overlay hidden" id="pause-overlay" role="dialog" aria-modal="true" aria-labelledby="pause-title" aria-describedby="pause-desc">
     <div class="modal modal-pause">
       <div class="pause-icon" aria-hidden="true">&#9208;</div>
       <h2 id="pause-title">Rate Limit Reached</h2>
-      <p>Claude's API usage limit has been reached. NightyTidy will automatically retry when the limit resets.</p>
+      <p id="pause-desc">Claude's API usage limit has been reached. NightyTidy will automatically retry when the limit resets.</p>
       <p class="pause-step" id="pause-step-name"></p>
       <p class="pause-source" id="pause-source"></p>
       <div class="countdown-display">
