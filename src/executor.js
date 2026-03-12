@@ -140,10 +140,16 @@ export function sumCosts(a, b) {
   if (!a && !b) return null;
   if (!a) return b;
   if (!b) return a;
+  // Sum token counts. Use null only if BOTH inputs were null (no data),
+  // not if the sum happens to be zero (which is valid counted data).
+  const inputSum = (a.inputTokens ?? 0) + (b.inputTokens ?? 0);
+  const outputSum = (a.outputTokens ?? 0) + (b.outputTokens ?? 0);
+  const hasInputData = a.inputTokens != null || b.inputTokens != null;
+  const hasOutputData = a.outputTokens != null || b.outputTokens != null;
   return {
     costUSD: (a.costUSD || 0) + (b.costUSD || 0),
-    inputTokens: (a.inputTokens || 0) + (b.inputTokens || 0) || null,
-    outputTokens: (a.outputTokens || 0) + (b.outputTokens || 0) || null,
+    inputTokens: hasInputData ? inputSum : null,
+    outputTokens: hasOutputData ? outputSum : null,
     numTurns: (a.numTurns || 0) + (b.numTurns || 0),
     durationApiMs: (a.durationApiMs || 0) + (b.durationApiMs || 0),
     sessionId: b.sessionId || a.sessionId,
