@@ -71,6 +71,9 @@ function log(level, message) {
   const line = `[${timestamp}] [${tag}] ${message}\n`;
 
   try {
+    // Intentionally synchronous: guarantees log lines survive if the process crashes
+    // immediately after logging (e.g. unhandled exception, SIGKILL). Do not "optimize"
+    // to async — the crash-safety guarantee is more important than throughput.
     appendFileSync(logFilePath, line, 'utf8');
   } catch {
     // If file write fails, still print to stderr

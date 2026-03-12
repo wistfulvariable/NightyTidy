@@ -562,7 +562,8 @@ export async function run() {
     .option('--sync', 'Sync prompts from the published Google Doc')
     .option('--sync-dry-run', 'Preview what --sync would change without writing files')
     .option('--sync-url <url>', 'Override the Google Doc URL for sync')
-    .option('--skip-sync', 'Skip automatic prompt sync from Google Doc before running');
+    .option('--skip-sync', 'Skip automatic prompt sync from Google Doc before running')
+    .option('--skip-dashboard', 'Skip launching the standalone dashboard server (used by GUI)');
 
   program.parse();
   const opts = program.opts();
@@ -586,7 +587,7 @@ export async function run() {
   }
 
   if (opts.initRun) {
-    const result = await initRun(projectDir, { steps: opts.steps, timeout: timeoutMs });
+    const result = await initRun(projectDir, { steps: opts.steps, timeout: timeoutMs, skipDashboard: opts.skipDashboard });
     console.log(JSON.stringify(result));
     process.exit(result.success ? 0 : 1);
   }

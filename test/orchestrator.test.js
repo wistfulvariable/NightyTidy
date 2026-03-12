@@ -763,6 +763,30 @@ describe('dashboard integration', () => {
     }
   });
 
+  it('initRun with skipDashboard skips dashboard phase and spawn', async () => {
+    const result = await initRun('/fake/project', { steps: '1,2', skipDashboard: true });
+
+    expect(result.success).toBe(true);
+    expect(result.dashboardUrl).toBeNull();
+
+    // Dashboard spawn should not have been called
+    expect(mockSpawn).not.toHaveBeenCalled();
+
+    // Should have only 7 init phases (no 'dashboard')
+    const initProgressCalls = writeFileSync.mock.calls
+      .filter(c => c[0].includes('nightytidy-progress.json'))
+      .map(c => JSON.parse(c[1]))
+      .filter(p => p.status === 'initializing');
+
+    expect(initProgressCalls.length).toBe(7);
+    const phases = initProgressCalls.map(p => p.initPhase);
+    expect(phases).not.toContain('dashboard');
+    expect(phases).toEqual([
+      'lock', 'git_init', 'pre_checks', 'sync_prompts',
+      'validate_steps', 'git_branch', 'copy_prompts',
+    ]);
+  });
+
   it('initRun succeeds without dashboard URL when spawn fails', async () => {
     mockSpawn.mockReturnValue(createMockChildProcess(undefined));
     // Override: child emits error instead of data

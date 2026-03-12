@@ -326,12 +326,10 @@ function cleanupDashboard(projectDir) {
 function spawnDashboardServer(projectDir) {
   try {
     const serverScript = fileURLToPath(new URL('./dashboard-standalone.js', import.meta.url));
-    const useShell = process.platform === 'win32';
 
-    const child = spawn('node', [serverScript, projectDir], {
+    const child = spawn(process.execPath, [serverScript, projectDir], {
       detached: true,
       stdio: ['ignore', 'pipe', 'ignore'],
-      shell: useShell,
       windowsHide: true,
     });
 
@@ -408,7 +406,7 @@ function stopDashboardServer(pid) {
  * @param {number} [options.timeout] - Per-step timeout in ms
  * @returns {Promise<InitRunResult>} Result object (never throws)
  */
-export async function initRun(projectDir, { steps, timeout } = {}) {
+export async function initRun(projectDir, { steps, timeout, skipDashboard } = {}) {
   try {
     initLogger(projectDir, { quiet: true });
     info(`NightyTidy v${getVersion()} orchestrator starting (Node ${process.version}, ${process.platform} ${process.arch})`);
@@ -487,7 +485,9 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
       warn(`Failed to commit refactor prompts: ${err.message}`);
     }
 
-    writeProgress(projectDir, { status: 'initializing', initPhase: 'dashboard' });
+    if (!skipDashboard) {
+      writeProgress(projectDir, { status: 'initializing', initPhase: 'dashboard' });
+    }
     const state = {
       version: STATE_VERSION,
       originalBranch,
@@ -505,12 +505,14 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
 
     // Write running progress JSON and spawn dashboard server
     writeProgress(projectDir, buildProgressState(state));
-    const dashboard = await spawnDashboardServer(projectDir);
-    if (dashboard) {
-      state.dashboardPid = dashboard.pid;
-      state.dashboardUrl = dashboard.url;
-      writeState(projectDir, state);
-      info(`Dashboard server at ${dashboard.url} (PID ${dashboard.pid})`);
+    if (!skipDashboard) {
+      const dashboard = await spawnDashboardServer(projectDir);
+      if (dashboard) {
+        state.dashboardPid = dashboard.pid;
+        state.dashboardUrl = dashboard.url;
+        writeState(projectDir, state);
+        info(`Dashboard server at ${dashboard.url} (PID ${dashboard.pid})`);
+      }
     }
 
     notify('NightyTidy Started', `Orchestrator run initialized with ${selectedNums.length} steps.`);

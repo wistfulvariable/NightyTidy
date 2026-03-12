@@ -105,14 +105,18 @@ body {
 .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .btn-primary { background: var(--cyan); color: #000; }
+.btn-primary:active:not(:disabled) { background: #00b8d9; }
 .btn-danger  { background: var(--red); color: #fff; }
+.btn-danger:active:not(:disabled)  { background: #dc2626; }
 .btn-secondary {
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text-dim);
 }
 .btn-secondary:hover { border-color: var(--text-dim); }
+.btn-secondary:active:not(:disabled) { background: rgba(255,255,255,0.05); border-color: var(--text); }
 .btn-success { background: var(--green); color: #000; }
+.btn-success:active:not(:disabled) { background: #16a34a; }
 
 .btn-sm {
   padding: 6px 14px;
@@ -799,6 +803,24 @@ body {
   from { transform: scale(0.95); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
 }
+.modal {
+  position: relative;
+}
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: color 0.1s;
+}
+.modal-close:hover { color: var(--text); }
 .modal h2 {
   font-size: 1.1rem;
   color: var(--text);

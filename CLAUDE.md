@@ -70,7 +70,7 @@ test/
   git-extended.test.js     # 11 tests — getGitInstance, getHeadHash, tag/branch collision, ensureOnBranch recovery
   notifications.test.js    # 2 tests — mock node-notifier
   report.test.js           # 43 tests — mock fs, verify report format, inline actionPlanText, cost column, cleanNarration, junk detection, token summary
-  report-extended.test.js  # 21 tests — updateClaudeMd, formatDuration edge cases, cost rendering
+  report-extended.test.js  # 19 tests — updateClaudeMd, formatDuration edge cases, cost rendering
   consolidation.test.js    # 15 tests — buildConsolidationPrompt, generateActionPlan, heading downgrade, error handling
   steps.test.js            # 12 tests — structural integrity of prompt data + manifest validation + reloadSteps
   integration.test.js      # 5 tests — multi-module integration with real git repos
@@ -154,6 +154,7 @@ npx nightytidy --list     # List all available steps with descriptions
 npx nightytidy --timeout 60  # Set per-step timeout to 60 minutes (default: 45)
 npx nightytidy --dry-run  # Run pre-checks + step selection, show plan, exit without running
 npx nightytidy --skip-sync  # Skip automatic prompt sync from Google Doc before running
+npx nightytidy --skip-dashboard  # Skip standalone dashboard server (GUI passes this automatically)
 npx nightytidy --setup    # Add Claude Code integration to target project's CLAUDE.md
 npx nightytidy --list --json    # List steps as JSON (for Claude Code orchestrator)
 npx nightytidy --init-run --steps 1,5,12  # Initialize orchestrated run (pre-checks, git, state file)
@@ -260,6 +261,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **Env var allowlist**: `cleanEnv()` in `env.js` uses an explicit allowlist (system paths, locale, Anthropic/Claude/Git prefixes) instead of a blocklist. Unknown env vars are filtered out and logged via `debug()`. `CLAUDECODE` is explicitly blocked. Tests in `env.test.js`.
 - **Branch guard**: `ensureOnBranch()` in `git.js` is called before and after every step execution in `runStep()`. If Claude Code switched to a different branch during a step, it commits any uncommitted work, checks out the run branch, and merges the stray branch back. On merge conflict, the merge is aborted (step work preserved on the stray branch). This prevents the "branch drift" problem where Claude Code creates its own branches, scattering commits across multiple branches.
 - **Gitleaks CI scan**: `.github/workflows/ci.yml` runs `gitleaks/gitleaks-action@v2` on every push/PR to detect committed secrets.
+- **`.npmrc` with `ignore-scripts=true`**: Blocks malicious post-install scripts from dependencies. Do not remove.
 - **`npm run check:security`**: Runs `npm audit --audit-level=high`. Use before releases.
 
 ## Architectural Rules

@@ -579,7 +579,7 @@ async function startRun() {
 
   const stepArgs = NtLogic.buildStepArgs(selected, state.steps.length);
   const timeoutArg = state.timeout !== 45 ? ` --timeout ${state.timeout}` : '';
-  const args = `--init-run ${stepArgs}${timeoutArg}`;
+  const args = `--init-run ${stepArgs}${timeoutArg} --skip-dashboard`;
 
   showInitOverlay();
   const result = await runCli(args);
@@ -617,6 +617,7 @@ async function startRun() {
 
   state.runInfo = result.data;
   state.runStartTime = Date.now();
+  saveRunState();
 
   logToServer('info', `Run initialized: ${state.selectedSteps.length} steps, timeout=${state.timeout}m, branch=${result.data.runBranch || 'unknown'}`);
 
@@ -1553,6 +1554,7 @@ async function finishRun() {
 }
 
 function completeFinish(data, failed, skipped) {
+  clearSavedRunState();
   stopProgressPolling();
   stopElapsedTimer();
 
@@ -1575,7 +1577,7 @@ function completeFinish(data, failed, skipped) {
       name: 'Final Report',
       status: 'completed',
       duration: data.finishDuration || finishDuration,
-      output: lastRenderedOutput || '',
+      output: data.reportContent || lastRenderedOutput || '',
       costUSD: data.finishCostUSD ?? null,
       inputTokens: data.finishInputTokens ?? null,
       outputTokens: data.finishOutputTokens ?? null,
@@ -1808,6 +1810,7 @@ function renderSummary(finishData) {
 // ── Reset ──────────────────────────────────────────────────────────
 
 function resetApp() {
+  clearSavedRunState();
   stopInitPolling();
   stopProgressPolling();
   stopElapsedTimer();
@@ -1897,6 +1900,7 @@ function bindEvents() {
   document.getElementById('btn-stop-run').addEventListener('click', confirmStopRun);
   document.getElementById('btn-confirm-stop-yes').addEventListener('click', stopRun);
   document.getElementById('btn-confirm-stop-cancel').addEventListener('click', cancelStopRun);
+  document.getElementById('btn-confirm-stop-close').addEventListener('click', cancelStopRun);
   document.getElementById('btn-resume-now').addEventListener('click', manualResume);
   document.getElementById('btn-finish-now').addEventListener('click', finishNow);
   document.getElementById('btn-close-drawer').addEventListener('click', closeDrawer);
@@ -1968,6 +1972,155 @@ function resetCachedTotals() {
   cachedResultsCount = 0;
 }
 
+// ── Run State Persistence (page-refresh recovery) ─────────────────
+
+function saveRunState() {
+  try {
+    sessionStorage.setItem('nightytidy-run', JSON.stringify({
+      projectDir: state.projectDir,
+      bin: state.bin,
+      selectedSteps: state.selectedSteps,
+      steps: state.steps,
+      timeout: state.timeout,
+      runInfo: state.runInfo,
+      runStartTime: state.runStartTime,
+    }));
+  } catch { /* sessionStorage may be unavailable */ }
+}
+
+function clearSavedRunState() {
+  try { sessionStorage.removeItem('nightytidy-run'); } catch { /* ignore */ }
+}
+
+/**
+ * Check sessionStorage for a saved run and verify it's still active
+ * by reading the progress JSON file. Returns { runData, progress } or null.
+ */
+async function checkForActiveRun() {
+  let saved;
+  try { saved = sessionStorage.getItem('nightytidy-run'); } catch { return null; }
+  if (!saved) return null;
+
+  let runData;
+  try { runData = JSON.parse(saved); } catch { return null; }
+  if (!runData?.projectDir) return null;
+
+  const progressPath = `${runData.projectDir}\\nightytidy-progress.json`;
+  const result = await api('read-file', { path: progressPath }, 5000);
+  if (!result.ok || !result.content) {
+    clearSavedRunState();
+    return null;
+  }
+
+  let progress;
+  try { progress = JSON.parse(result.content); } catch { return null; }
+
+  if (progress.status === 'completed' || !progress.steps) {
+    clearSavedRunState();
+    return null;
+  }
+
+  return { runData, progress };
+}
+
+/**
+ * Reconnect to an in-progress run after a page refresh.
+ * Restores state from sessionStorage + progress JSON, waits for any
+ * currently-running step to finish, then resumes the step loop.
+ */
+async function reconnectToRun(runData, progress) {
+  logToServer('info', 'Reconnecting to in-progress run after page refresh');
+
+  state.projectDir = runData.projectDir;
+  state.bin = runData.bin;
+  state.selectedSteps = runData.selectedSteps;
+  state.steps = runData.steps;
+  state.timeout = runData.timeout;
+  state.runInfo = runData.runInfo;
+  state.runStartTime = runData.runStartTime || Date.now();
+  state.completedSteps = [];
+  state.failedSteps = [];
+  state.stepResults = [];
+  resetCachedTotals();
+
+  let runningStepNum = null;
+
+  for (const s of progress.steps) {
+    if (s.status === 'completed') {
+      state.completedSteps.push(s.number);
+      const r = { step: s.number, name: s.name, status: 'completed', duration: s.duration || null, output: '', costUSD: null, inputTokens: null, outputTokens: null };
+      state.stepResults.push(r);
+      updateCachedTotals(r);
+    } else if (s.status === 'failed') {
+      state.failedSteps.push(s.number);
+      const r = { step: s.number, name: s.name, status: 'failed', duration: s.duration || null, output: '', error: 'Failed before page refresh', costUSD: null, inputTokens: null, outputTokens: null };
+      state.stepResults.push(r);
+      updateCachedTotals(r);
+    } else if (s.status === 'running') {
+      runningStepNum = s.number;
+    }
+  }
+
+  showScreen(SCREENS.RUNNING);
+  renderRunningStepList();
+  for (const r of state.stepResults) updateStepItemStatus(r.step, r.status, r.duration);
+  updateProgressBar();
+  startElapsedTimer();
+  startProgressPolling();
+
+  if (runningStepNum !== null) {
+    updateStepItemStatus(runningStepNum, 'running');
+    showCurrentStep(runningStepNum);
+    state.currentStepNum = runningStepNum;
+    state.stepStartTime = Date.now();
+    lastOutputChangeTime = Date.now();
+    await waitForStepCompletion(runningStepNum);
+  }
+
+  runNextStep();
+}
+
+/**
+ * Poll progress.json until a specific step transitions out of 'running'.
+ * Resolves once the step is completed/failed so the step loop can continue.
+ */
+function waitForStepCompletion(stepNum) {
+  return new Promise(resolve => {
+    const check = setInterval(async () => {
+      if (!state.projectDir) { clearInterval(check); resolve(); return; }
+      const progressPath = `${state.projectDir}\\nightytidy-progress.json`;
+      try {
+        const result = await api('read-file', { path: progressPath }, 5000);
+        if (!result.ok || !result.content) return;
+        const progress = JSON.parse(result.content);
+        if (!progress.steps) return;
+
+        const step = progress.steps.find(s => s.number === stepNum);
+        if (!step || step.status === 'running') return;
+
+        clearInterval(check);
+        if (step.status === 'completed') {
+          state.completedSteps.push(stepNum);
+        } else {
+          state.failedSteps.push(stepNum);
+        }
+        const stepResult = {
+          step: stepNum, name: step.name, status: step.status,
+          duration: step.duration || (state.stepStartTime ? Date.now() - state.stepStartTime : null),
+          output: progress.currentStepOutput || '', costUSD: null, inputTokens: null, outputTokens: null,
+        };
+        state.stepResults.push(stepResult);
+        updateCachedTotals(stepResult);
+        updateStepItemStatus(stepNum, step.status, stepResult.duration);
+        state.currentStepNum = null;
+        state.stepStartTime = null;
+        updateProgressBar();
+        resolve();
+      } catch { /* polling error — keep trying */ }
+    }, 2000);
+  });
+}
+
 // ── Init ───────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1980,6 +2133,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load config in background (non-blocking)
   loadConfigAsync();
+
+  // Check for an active run (page-refresh recovery)
+  checkForActiveRun().then(active => {
+    if (active) reconnectToRun(active.runData, active.progress);
+  });
 });
 
 function initHeartbeat() {

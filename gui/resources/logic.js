@@ -272,7 +272,6 @@ const INIT_PHASES = [
   { key: 'validate_steps', label: 'Validating steps' },
   { key: 'git_branch',     label: 'Creating safety branch' },
   { key: 'copy_prompts',   label: 'Copying prompts for audit trail' },
-  { key: 'dashboard',      label: 'Launching dashboard' },
 ];
 
 /**

@@ -1,6 +1,6 @@
 # Testing — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. 848 tests, 34 files, Vitest v3.
+Assumes CLAUDE.md loaded. 886 tests, 39 files, Vitest v3.
 
 ## Test File -> Module Coverage
 
@@ -36,10 +36,15 @@ Assumes CLAUDE.md loaded. 848 tests, 34 files, Vitest v3.
 | `orchestrator.test.js` | `orchestrator.js` | 61 |
 | `orchestrator-extended.test.js` | `orchestrator.js` | 11 |
 | `report.test.js` | `report.js` | 43 |
-| `report-extended.test.js` | `report.js` | 21 |
+| `report-extended.test.js` | `report.js` | 19 |
 | `setup.test.js` | `setup.js` | 7 |
 | `steps.test.js` | `prompts/loader.js` | 12 |
 | `sync.test.js` | `sync.js` | 67 |
+| `checks-timeout.test.js` | `checks.js` | 1 |
+| `dashboard-error-paths.test.js` | `dashboard.js` | 7 |
+| `lock-edge-cases.test.js` | `lock.js` | 6 |
+| `mutation-testing.test.js` | Multi-module | 16 |
+| `report-edge-cases.test.js` | `report.js` | 10 |
 
 ## Test Helpers (`test/helpers/`)
 

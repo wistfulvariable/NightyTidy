@@ -528,7 +528,7 @@ describe('INIT_PHASES', () => {
 describe('getInitPhaseIndex', () => {
   it('returns correct index for first and last phases', () => {
     expect(NtLogic.getInitPhaseIndex('lock')).toBe(0);
-    expect(NtLogic.getInitPhaseIndex('dashboard')).toBe(NtLogic.INIT_PHASES.length - 1);
+    expect(NtLogic.getInitPhaseIndex('copy_prompts')).toBe(NtLogic.INIT_PHASES.length - 1);
   });
 
   it('returns correct index for a middle phase', () => {
