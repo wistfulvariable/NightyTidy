@@ -1,41 +1,45 @@
 # Testing — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. 766 tests, 34 files, Vitest v3.
+Assumes CLAUDE.md loaded. 848 tests, 34 files, Vitest v3.
 
 ## Test File -> Module Coverage
 
 | Test File | Module | Tests |
 |-----------|--------|-------|
 | `smoke.test.js` | All (structural) | 6 |
-| `cli.test.js` | `cli.js` | 27 |
-| `dashboard.test.js` | `dashboard.js` | 20 |
-| `logger.test.js` | `logger.js` | 10 |
+| `cli.test.js` | `cli.js` | 33 |
+| `cli-extended.test.js` | `cli.js` | 31 |
+| `cli-sync.test.js` | `cli.js` (sync paths) | 6 |
 | `checks.test.js` | `checks.js` | 4 |
 | `checks-extended.test.js` | `checks.js` | 23 |
-| `claude.test.js` | `claude.js` | 62 |
-| `executor.test.js` | `executor.js` | 32 |
+| `claude.test.js` | `claude.js` | 73 |
+| `consolidation.test.js` | `consolidation.js` | 15 |
+| `contracts.test.js` | All modules | 39 |
+| `dashboard.test.js` | `dashboard.js` | 20 |
+| `dashboard-broadcastoutput.test.js` | `dashboard.js` | 5 |
+| `dashboard-extended.test.js` | `dashboard.js` | 3 |
+| `dashboard-extended2.test.js` | `dashboard.js` | 4 |
+| `dashboard-tui.test.js` | `dashboard-tui.js` | 29 |
+| `env.test.js` | `env.js` | 15 |
+| `executor.test.js` | `executor.js` | 50 |
+| `executor-extended.test.js` | `executor.js` | 13 |
 | `git.test.js` | `git.js` | 16 |
 | `git-extended.test.js` | `git.js` | 11 |
-| `notifications.test.js` | `notifications.js` | 2 |
-| `report.test.js` | `report.js` | 17 |
-| `report-extended.test.js` | `report.js` | 17 |
-| `consolidation.test.js` | `consolidation.js` | 15 |
-| `steps.test.js` | `prompts/loader.js` | 9 |
+| `gui-logic.test.js` | `gui/resources/logic.js` | 145 |
+| `gui-server.test.js` | `gui/server.js` | 47 |
 | `integration.test.js` | Multi-module | 5 |
-| `setup.test.js` | `setup.js` | 7 |
-| `cli-extended.test.js` | `cli.js` | 31 |
-| `dashboard-extended.test.js` | `dashboard.js` | 3 |
-| `dashboard-tui.test.js` | `dashboard-tui.js` | 29 |
 | `integration-extended.test.js` | Multi-module | 6 |
-| `orchestrator.test.js` | `orchestrator.js` | 61 |
-| `contracts.test.js` | All modules | 38 |
-| `gui-logic.test.js` | `gui/resources/logic.js` | 133 |
-| `gui-server.test.js` | `gui/server.js` | 44 |
 | `lock.test.js` | `lock.js` | 9 |
+| `lock-extended.test.js` | `lock.js` | 6 |
+| `logger.test.js` | `logger.js` | 10 |
+| `notifications.test.js` | `notifications.js` | 2 |
+| `orchestrator.test.js` | `orchestrator.js` | 61 |
 | `orchestrator-extended.test.js` | `orchestrator.js` | 11 |
-| `dashboard-broadcastoutput.test.js` | `dashboard.js` | 5 |
-| `env.test.js` | `env.js` | 15 |
-| `sync.test.js` | `sync.js` | 64 |
+| `report.test.js` | `report.js` | 43 |
+| `report-extended.test.js` | `report.js` | 21 |
+| `setup.test.js` | `setup.js` | 7 |
+| `steps.test.js` | `prompts/loader.js` | 12 |
+| `sync.test.js` | `sync.js` | 67 |
 
 ## Test Helpers (`test/helpers/`)
 
@@ -52,7 +56,7 @@ import { createLoggerMock } from './helpers/mocks.js';
 vi.mock('../src/logger.js', () => createLoggerMock());
 ```
 
-All 20 test files (except `logger.test.js`) use `createLoggerMock()` from `test/helpers/mocks.js`. The factory returns `{ initLogger, info, warn, error, debug }` as `vi.fn()` mocks. Without this: tests crash writing `nightytidy-run.log`. Exception: `logger.test.js` tests real logger.
+All 33 test files (except `logger.test.js`) use `createLoggerMock()` from `test/helpers/mocks.js`. The factory returns `{ initLogger, info, warn, error, debug }` as `vi.fn()` mocks. Without this: tests crash writing `nightytidy-run.log`. Exception: `logger.test.js` tests real logger.
 
 ## Common Pitfalls
 

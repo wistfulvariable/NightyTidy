@@ -18,10 +18,10 @@
     <div class="setup-hero">
       <h1 id="setup-heading">NightyTidy</h1>
       <p>Automated overnight codebase improvement</p>
-      <button class="btn btn-primary" id="btn-select-folder">Select Project Folder</button>
+      <button class="btn btn-primary" id="btn-select-folder" type="button">Select Project Folder</button>
       <div class="folder-display" id="folder-display" style="display:none">
         <span class="path" id="folder-path"></span>
-        <button class="link-btn" id="btn-change-folder">Change</button>
+        <button class="link-btn" id="btn-change-folder" type="button">Change</button>
       </div>
       <div id="setup-loading" role="status" aria-live="polite" style="display:none; margin-top:12px; color:var(--text-dim); font-size:0.85rem;">
         <span class="spinner" aria-hidden="true" style="vertical-align:middle;margin-right:8px;"></span>
@@ -41,12 +41,12 @@
     <div class="steps-header">
       <span class="project-path" id="steps-project-path"></span>
       <div class="btn-group">
-        <button class="btn btn-secondary btn-sm" id="btn-select-all">Select All</button>
-        <button class="btn btn-secondary btn-sm" id="btn-select-none">Deselect All</button>
+        <button class="btn btn-secondary btn-sm" id="btn-select-all" type="button">Select All</button>
+        <button class="btn btn-secondary btn-sm" id="btn-select-none" type="button">Deselect All</button>
       </div>
     </div>
 
-    <div class="step-checklist" id="step-checklist"></div>
+    <div class="step-checklist" id="step-checklist" role="group" aria-label="Select steps to run"></div>
 
     <div class="options-bar">
       <div class="timeout-group">
@@ -58,8 +58,8 @@
     </div>
 
     <div class="start-bar">
-      <button class="link-btn" id="btn-back-setup">Back</button>
-      <button class="btn btn-primary" id="btn-start-run">Start Run</button>
+      <button class="link-btn" id="btn-back-setup" type="button">Back</button>
+      <button class="btn btn-primary" id="btn-start-run" type="button">Start Run</button>
     </div>
 
     <div class="error-msg" id="steps-error" role="alert"></div>
@@ -94,7 +94,7 @@
       </div>
     </div>
 
-    <div class="step-list" id="running-step-list"></div>
+    <div class="step-list" id="running-step-list" role="list" aria-label="Step execution status"></div>
 
     <div class="output-panel" id="output-panel">
       <div class="output-panel-header">
@@ -111,8 +111,8 @@
     </div>
 
     <div class="actions">
-      <button class="btn btn-secondary" id="btn-skip-step">Skip Step</button>
-      <button class="btn btn-danger" id="btn-stop-run">Stop Run</button>
+      <button class="btn btn-secondary" id="btn-skip-step" type="button">Skip Step</button>
+      <button class="btn btn-danger" id="btn-stop-run" type="button">Stop Run</button>
     </div>
 
     <div class="error-msg" id="running-error" role="alert"></div>
@@ -129,7 +129,7 @@
       <p id="finishing-status">Generating report and merging changes...</p>
     </div>
     <div class="finishing-actions">
-      <button class="btn btn-secondary" id="btn-skip-finishing" style="display:none">Skip &amp; Show Results</button>
+      <button class="btn btn-secondary" id="btn-skip-finishing" type="button" style="display:none">Skip &amp; Show Results</button>
     </div>
     <div class="error-msg" id="finishing-error" role="alert"></div>
   </section>
@@ -154,11 +154,11 @@
 
     <p id="summary-log-path" class="log-path-hint"></p>
 
-    <div class="step-list" id="summary-step-list"></div>
+    <div class="step-list" id="summary-step-list" role="list" aria-label="Final step results"></div>
 
     <div class="summary-actions">
-      <button class="btn btn-primary" id="btn-new-run">New Run</button>
-      <button class="btn btn-secondary" id="btn-close-app">Close</button>
+      <button class="btn btn-primary" id="btn-new-run" type="button">New Run</button>
+      <button class="btn btn-secondary" id="btn-close-app" type="button">Close</button>
     </div>
   </section>
   </main>
@@ -168,8 +168,8 @@
     <div class="step-drawer-header">
       <h2 id="drawer-title">Step Output</h2>
       <div class="drawer-actions">
-        <button class="drawer-copy-btn" id="btn-copy-drawer" aria-label="Copy markdown to clipboard" title="Copy markdown">&#x2398; Copy</button>
-        <button class="link-btn" id="btn-close-drawer" aria-label="Close panel">&times; Close</button>
+        <button class="drawer-copy-btn" id="btn-copy-drawer" aria-label="Copy markdown to clipboard" title="Copy markdown" type="button">&#x2398; Copy</button>
+        <button class="link-btn" id="btn-close-drawer" aria-label="Close panel" type="button">&times; Close</button>
       </div>
     </div>
     <div class="step-drawer-body output-content" id="drawer-content"></div>
@@ -181,8 +181,8 @@
       <h2 id="confirm-stop-title">Stop Run?</h2>
       <p id="confirm-stop-desc">This will cancel all remaining steps. Completed steps will be kept and a report will be generated.</p>
       <div class="modal-actions">
-        <button class="btn btn-secondary" id="btn-confirm-stop-cancel">Keep Running</button>
-        <button class="btn btn-danger" id="btn-confirm-stop-yes">Stop Run</button>
+        <button class="btn btn-secondary" id="btn-confirm-stop-cancel" type="button">Keep Running</button>
+        <button class="btn btn-danger" id="btn-confirm-stop-yes" type="button">Stop Run</button>
       </div>
     </div>
   </div>
@@ -200,8 +200,8 @@
         <span class="countdown-value" id="pause-countdown">--</span>
       </div>
       <div class="modal-actions">
-        <button class="btn btn-primary" id="btn-resume-now">Resume Now</button>
-        <button class="btn btn-secondary" id="btn-finish-now">Finish with Partial Results</button>
+        <button class="btn btn-primary" id="btn-resume-now" type="button">Resume Now</button>
+        <button class="btn btn-secondary" id="btn-finish-now" type="button">Finish with Partial Results</button>
       </div>
       <p class="pause-hint">If you've added credits or upgraded your plan, click <strong>Resume Now</strong>.</p>
     </div>

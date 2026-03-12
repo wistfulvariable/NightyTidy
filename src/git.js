@@ -247,47 +247,94 @@ export async function mergeRunBranch(originalBranch, runBranch) {
  * @returns {Promise<BranchGuardResult>} Result (never throws)
  */
 export async function ensureOnBranch(expectedBranch) {
+  let current;
   try {
-    const current = await getCurrentBranch();
+    current = await getCurrentBranch();
+  } catch (err) {
+    warn(`Branch guard error: ${err.message}`);
+    return { recovered: false };
+  }
 
-    // Detached HEAD (current is null) — force checkout expected branch
-    if (!current) {
+  // Detached HEAD (current is null) — force checkout expected branch
+  if (!current) {
+    try {
       warn(`Branch drift: detached HEAD — checking out "${expectedBranch}"`);
       await git.checkout(expectedBranch);
       return { recovered: true, strayBranch: '(detached HEAD)', mergeOk: false };
-    }
-
-    if (current === expectedBranch) {
+    } catch (err) {
+      warn(`Branch guard error: ${err.message}`);
       return { recovered: false };
     }
+  }
 
-    warn(`Branch drift: expected "${expectedBranch}" but on "${current}" — recovering`);
+  // Already on expected branch — no recovery needed
+  if (current === expectedBranch) {
+    return { recovered: false };
+  }
 
-    // Stage any uncommitted work on the stray branch before switching
-    const status = await git.status();
-    if (status.files.length > 0) {
-      debug(`Stray branch has ${status.files.length} uncommitted files — committing before merge`);
-      await git.raw(['add', '-A']);
-      await git.commit('NightyTidy: save uncommitted work before branch recovery');
-    }
+  // Recovery needed: we're on a stray branch
+  return recoverFromStrayBranch(current, expectedBranch);
+}
+
+/**
+ * Recover from being on a stray branch by committing work, switching back,
+ * and merging the stray branch's commits.
+ *
+ * @param {string} strayBranch - The branch we're currently on (wrong branch)
+ * @param {string} expectedBranch - The branch we should be on
+ * @returns {Promise<BranchGuardResult>} Result (never throws)
+ */
+async function recoverFromStrayBranch(strayBranch, expectedBranch) {
+  warn(`Branch drift: expected "${expectedBranch}" but on "${strayBranch}" — recovering`);
+
+  try {
+    // Commit any uncommitted work on the stray branch before switching
+    await commitUncommittedWork(strayBranch);
 
     // Switch back to the expected branch
     await git.checkout(expectedBranch);
 
     // Merge the stray branch to capture its commits
-    try {
-      await git.merge([current, '--no-ff', '-m', `NightyTidy: merge step work from ${current}`]);
-      info(`Branch guard: merged "${current}" into "${expectedBranch}"`);
-      return { recovered: true, strayBranch: current, mergeOk: true };
-    } catch {
-      // Merge conflict — abort and warn. Step work is preserved on the stray branch.
-      try { await git.merge(['--abort']); } catch { /* may not be in merge state */ }
-      warn(`Branch guard: could not auto-merge "${current}" — step work preserved on that branch`);
-      return { recovered: true, strayBranch: current, mergeOk: false };
-    }
+    return await mergeStrayBranch(strayBranch, expectedBranch);
   } catch (err) {
     warn(`Branch guard error: ${err.message}`);
     return { recovered: false };
+  }
+}
+
+/**
+ * Commit any uncommitted work on the current branch.
+ *
+ * @param {string} branchName - Branch name for logging
+ * @returns {Promise<void>}
+ */
+async function commitUncommittedWork(branchName) {
+  const status = await git.status();
+  if (status.files.length === 0) return;
+
+  debug(`Stray branch has ${status.files.length} uncommitted files — committing before merge`);
+  await git.raw(['add', '-A']);
+  await git.commit('NightyTidy: save uncommitted work before branch recovery');
+}
+
+/**
+ * Merge a stray branch into the expected branch.
+ * Handles merge conflicts gracefully by aborting the merge.
+ *
+ * @param {string} strayBranch - The branch to merge from
+ * @param {string} expectedBranch - The branch we merged into
+ * @returns {Promise<BranchGuardResult>} Result (never throws)
+ */
+async function mergeStrayBranch(strayBranch, expectedBranch) {
+  try {
+    await git.merge([strayBranch, '--no-ff', '-m', `NightyTidy: merge step work from ${strayBranch}`]);
+    info(`Branch guard: merged "${strayBranch}" into "${expectedBranch}"`);
+    return { recovered: true, strayBranch, mergeOk: true };
+  } catch {
+    // Merge conflict — abort and warn. Step work is preserved on the stray branch.
+    try { await git.merge(['--abort']); } catch { /* may not be in merge state */ }
+    warn(`Branch guard: could not auto-merge "${strayBranch}" — step work preserved on that branch`);
+    return { recovered: true, strayBranch, mergeOk: false };
   }
 }
 

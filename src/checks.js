@@ -1,12 +1,44 @@
+/**
+ * @fileoverview Pre-run validation checks for NightyTidy.
+ *
+ * Error contract: Throws with user-friendly messages on validation failure.
+ * All thrown errors are intended to be caught by cli.js and displayed to the user.
+ *
+ * @module checks
+ */
+
 import { spawn } from 'child_process';
 import { platform } from 'os';
 import { info, debug, warn } from './logger.js';
 import { cleanEnv } from './env.js';
 
+/** @typedef {import('simple-git').SimpleGit} SimpleGit */
+
+/**
+ * @typedef {Object} CommandResult
+ * @property {number|null} code - Exit code
+ * @property {string} stdout - Standard output
+ * @property {string} stderr - Standard error
+ */
+
+/** Timeout for Claude authentication check (ms) */
 const AUTH_TIMEOUT_MS = 30000;
+
+/** Critical disk space threshold (MB) - throws error below this */
 const CRITICAL_DISK_MB = 100;
+
+/** Low disk space threshold (MB) - warns below this */
 const LOW_DISK_MB = 1024;
 
+/**
+ * Run a shell command with optional timeout.
+ *
+ * @param {string} cmd - Command to run
+ * @param {string[]} args - Command arguments
+ * @param {Object} [options] - Options
+ * @param {number} [options.timeoutMs] - Timeout in milliseconds
+ * @returns {Promise<CommandResult>} Command result
+ */
 function runCommand(cmd, args, { timeoutMs, ...spawnOptions } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, args, {
@@ -36,6 +68,10 @@ function runCommand(cmd, args, { timeoutMs, ...spawnOptions } = {}) {
   });
 }
 
+/**
+ * Verify git is installed and available on PATH.
+ * @throws {Error} If git is not installed
+ */
 async function checkGitInstalled() {
   try {
     const result = await runCommand('git', ['--version']);
@@ -49,6 +85,11 @@ async function checkGitInstalled() {
   }
 }
 
+/**
+ * Verify the project directory is a git repository.
+ * @param {SimpleGit} git - Git instance
+ * @throws {Error} If not a git repository
+ */
 async function checkGitRepo(git) {
   const isRepo = await git.checkIsRepo();
   if (!isRepo) {
@@ -60,6 +101,11 @@ async function checkGitRepo(git) {
   info('Pre-check: git repository \u2713');
 }
 
+/**
+ * Verify the repository has at least one commit.
+ * @param {SimpleGit} git - Git instance
+ * @throws {Error} If no commits exist
+ */
 async function checkHasCommits(git) {
   try {
     const log = await git.log({ maxCount: 1 });
@@ -73,6 +119,10 @@ async function checkHasCommits(git) {
   info('Pre-check: has commits \u2713');
 }
 
+/**
+ * Verify Claude Code CLI is installed.
+ * @throws {Error} If Claude Code is not installed
+ */
 async function checkClaudeInstalled() {
   try {
     const result = await runCommand('claude', ['--version'], { env: cleanEnv() });
@@ -86,6 +136,10 @@ async function checkClaudeInstalled() {
   }
 }
 
+/**
+ * Run Claude Code interactively for sign-in with terminal access.
+ * @returns {Promise<void>} Resolves on successful auth
+ */
 function runInteractiveAuth() {
   return new Promise((resolve, reject) => {
     const child = spawn('claude', ['-p', 'Say OK'], {
@@ -101,6 +155,10 @@ function runInteractiveAuth() {
   });
 }
 
+/**
+ * Verify Claude Code is authenticated. Falls back to interactive sign-in if needed.
+ * @throws {Error} If authentication fails or times out
+ */
 async function checkClaudeAuthenticated() {
   // First try silently (captured output) — fast path for already-authenticated
   try {
@@ -137,6 +195,11 @@ async function checkClaudeAuthenticated() {
   }
 }
 
+/**
+ * Get free disk space on Windows.
+ * @param {string} projectDir - Project directory (to determine drive)
+ * @returns {Promise<number|null>} Free bytes or null if unavailable
+ */
 async function getFreeBytesWindows(projectDir) {
   const driveLetter = projectDir.charAt(0).toUpperCase();
   // Try PowerShell first (wmic is deprecated on newer Windows)
@@ -156,6 +219,11 @@ async function getFreeBytesWindows(projectDir) {
   return match ? parseInt(match[1], 10) : null;
 }
 
+/**
+ * Get free disk space on Unix-like systems.
+ * @param {string} projectDir - Project directory
+ * @returns {Promise<number|null>} Free bytes or null if unavailable
+ */
 async function getFreeBytesUnix(projectDir) {
   const result = await runCommand('df', ['-k', projectDir]);
   const lines = result.stdout.trim().split('\n');
@@ -166,12 +234,22 @@ async function getFreeBytesUnix(projectDir) {
   return null;
 }
 
+/**
+ * Get free disk space for the project directory.
+ * @param {string} projectDir - Project directory
+ * @returns {Promise<number|null>} Free bytes or null if unavailable
+ */
 async function getFreeBytes(projectDir) {
   return platform() === 'win32'
     ? getFreeBytesWindows(projectDir)
     : getFreeBytesUnix(projectDir);
 }
 
+/**
+ * Check available disk space. Throws on critical low, warns on low.
+ * @param {string} projectDir - Project directory
+ * @throws {Error} If disk space is critically low
+ */
 async function checkDiskSpace(projectDir) {
   let freeBytes = null;
 
@@ -206,6 +284,11 @@ async function checkDiskSpace(projectDir) {
   info(`Pre-check: disk space OK (${freeGB} GB free) \u2713`);
 }
 
+/**
+ * Check for uncommitted changes and warn if present.
+ * Non-critical check that never throws.
+ * @param {SimpleGit} git - Git instance
+ */
 async function checkCleanWorkingTree(git) {
   try {
     const status = await git.status();
@@ -226,6 +309,11 @@ async function checkCleanWorkingTree(git) {
   }
 }
 
+/**
+ * Check for existing NightyTidy branches from previous runs.
+ * Non-critical informational check that never throws.
+ * @param {SimpleGit} git - Git instance
+ */
 async function checkExistingBranches(git) {
   try {
     const branches = await git.branch();
@@ -239,6 +327,17 @@ async function checkExistingBranches(git) {
   info('Pre-check: no branch conflicts \u2713');
 }
 
+/**
+ * Run all pre-flight validation checks.
+ *
+ * Checks are run in an optimized order:
+ * 1. Git installed (must pass before any git operations)
+ * 2. Parallel checks: git chain, Claude chain, disk space
+ *
+ * @param {string} projectDir - Project directory
+ * @param {SimpleGit} git - Git instance
+ * @throws {Error} If any critical check fails
+ */
 export async function runPreChecks(projectDir, git) {
   // Phase 1: git-installed must pass before any git operations
   await checkGitInstalled();

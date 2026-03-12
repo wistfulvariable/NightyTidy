@@ -65,6 +65,7 @@ test/
   checks-extended.test.js  # 23 tests — auth paths, disk space characterization, branch warnings, empty repo, dirty working tree
   claude.test.js           # 73 tests — fake child process, fake timers, abort signal, Windows shell mode, stream-json NDJSON parsing, classifyError, rate-limit retry skip, stderr capture, inactivity timeout
   executor.test.js         # 50 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection, continueSession/promptOverride, rate-limit pause/resume, copyPromptsToProject
+  executor-extended.test.js # 13 tests — fallbackCommit error path, waitForRateLimit probe errors, empty steps, hash mismatch
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 11 tests — getGitInstance, getHeadHash, tag/branch collision, ensureOnBranch recovery
   notifications.test.js    # 2 tests — mock node-notifier
@@ -76,13 +77,16 @@ test/
   setup.test.js            # 7 tests — integration snippet generation, idempotent setup
   dashboard-tui.test.js    # 29 tests — formatMs, progressBar, render with chalk proxy mock
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
+  cli-sync.test.js         # 6 tests — --sync and --sync-dry-run command flow
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
+  dashboard-extended2.test.js # 4 tests — platform-specific TUI spawn, server failure handling
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
   orchestrator.test.js     # 61 tests — initRun, runStep, finishRun (changelog + action plan + token passthrough), dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync, 3-tier step recovery, inter-tier branch guard, init phase progress
   contracts.test.js        # 39 tests — module API contract verification against CLAUDE.md
   gui-logic.test.js        # 145 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, formatTime, detectGitError, detectStaleState, detectRateLimit, formatCountdown, preprocessClaudeOutput, INIT_PHASES, getInitPhaseIndex, etc.)
   gui-server.test.js       # 47 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, log-error, log-path, security headers, traversal, singleton guard
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
+  lock-extended.test.js    # 6 tests — EEXIST retry, missing started field, invalid date in lock file
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks
   dashboard-broadcastoutput.test.js # 5 tests — buffer overflow, throttled writes, clearOutputBuffer with state
   env.test.js              # 15 tests — allowlist filtering, prefix matching, CLAUDECODE blocking, debug logging
@@ -337,7 +341,7 @@ Each command is a separate process invocation. State persists via `nightytidy-ru
 ## Testing
 
 - **Framework**: Vitest v3, `vitest.config.js` for coverage thresholds + strip-shebang plugin
-- **Tests** across 30 files — `npm test` to run, `npm run test:ci` for coverage enforcement
+- **Tests** across 34 files — `npm test` to run, `npm run test:ci` for coverage enforcement
 - **Coverage thresholds**: 90% statements, 80% branches, 80% functions — enforced by `test:ci`
 - **Philosophy**: Mock Claude Code subprocess, use real git against temp directories. Test failure paths harder than success paths
 - **Universal mock**: All test files mock `../src/logger.js` to prevent file I/O during tests (exception: `logger.test.js` tests the real logger)
@@ -384,4 +388,4 @@ When you learn something worth preserving, put it in the right place:
 
 ## NightyTidy — Last Run
 
-Last run: 2026-03-10. To undo, reset to git tag `nightytidy-before-2026-03-10-1305`.
+Last run: 2026-03-12. To undo, reset to git tag `nightytidy-before-2026-03-11-2240`.

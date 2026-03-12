@@ -5,18 +5,17 @@ NightyTidy: automated overnight codebase improvement via Claude Code subprocess 
 ## Current State
 
 - **Version**: 0.1.0
-- **Test count**: 802 (34 test files, all passing)
+- **Test count**: 848 (34 test files, all passing)
 - **Coverage**: src/ at 90% stmts, 80% branches, 80% functions (thresholds enforced by test:ci)
-- **Last major change**: Report + action plan combined into single file; `cleanNarration()` strips LLM preamble
+- **Last major change**: Single-session report generation; init overlay real-time progress polling
 
 ## Recent Changes
 
-- Desktop GUI: `gui/server.js` + `gui/resources/` (Chrome app-mode launcher, folder dialog, process management)
-- Orchestrator mode: `--init-run`, `--run-step`, `--finish-run` for Claude Code-driven workflows
-- Prompt refactor: monolithic `steps.js` replaced with `manifest.json` + individual markdown files in `src/prompts/`
-- Dashboard standalone server for orchestrator mode (`dashboard-standalone.js`)
-- GUI test coverage: `gui-logic.test.js` (138 tests), `gui-server.test.js` (45 tests)
-- Report + action plan merged into single NIGHTYTIDY-REPORT file. `consolidation.js` returns text (no file write); `report.js` embeds it inline. `cleanNarration()` strips LLM conversational preamble.
+- Single-session report generation replaces fragmented 3-step process (`finishRun` combines narration + token summary)
+- Init overlay replaced rotating messages with real-time progress polling from orchestrator
+- Sync refactor prompts to target repo; `finishRun` output streaming
+- Report narration hardening, cost rounding to cents, token summary in reports
+- 4 new test files: `cli-sync.test.js`, `executor-extended.test.js`, `lock-extended.test.js`, `dashboard-extended2.test.js`
 - GUI FINISHING screen has escape hatch: skip button (10s delay) + 3-min auto-timeout + try/catch
 - `gui/server.js` `handleRunCommand` has `responded` guard to prevent double `sendJson` on spawn failure
 

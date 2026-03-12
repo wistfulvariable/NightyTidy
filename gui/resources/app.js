@@ -423,6 +423,9 @@ async function selectFolder() {
   selectBtn.textContent = 'Opening...';
 
   try {
+    // Prefetch config in parallel while folder dialog is open (perceived speed optimization)
+    const configPromise = !state.bin ? api('config') : Promise.resolve({ ok: true, bin: state.bin });
+
     const result = await api('select-folder');
 
     // Restore button state
@@ -430,6 +433,11 @@ async function selectFolder() {
     selectBtn.textContent = originalText;
 
     if (!result.ok || !result.folder) return; // User cancelled
+
+    // Apply prefetched config
+    const config = await configPromise;
+    if (config.ok && config.bin) state.bin = config.bin;
+
     state.projectDir = result.folder;
     showFolderPath(result.folder);
     await loadSteps();
@@ -461,22 +469,55 @@ async function loadSteps() {
     return;
   }
 
+  // Show skeleton placeholders immediately for perceived speed
+  showStepsSkeleton();
+  showScreen(SCREENS.STEPS);
+
   const result = await runCli('--list --json');
   loadingEl.style.display = 'none';
 
   if (!result.ok) {
+    showScreen(SCREENS.SETUP);
     showError('setup', result.error);
     return;
   }
 
   if (!result.data || !result.data.steps || !result.data.steps.length) {
+    showScreen(SCREENS.SETUP);
     showError('setup', 'No steps returned from NightyTidy CLI');
     return;
   }
 
   state.steps = result.data.steps;
   renderStepChecklist();
-  showScreen(SCREENS.STEPS);
+}
+
+/**
+ * Show skeleton loading placeholders in the step checklist.
+ * Creates instant visual feedback while actual steps are loading.
+ */
+function showStepsSkeleton() {
+  const container = document.getElementById('step-checklist');
+  const projectPath = document.getElementById('steps-project-path');
+  projectPath.textContent = state.projectDir;
+
+  // Show 10 skeleton lines as placeholders (roughly half of 33 steps visible at once)
+  let skeletonHtml = '';
+  for (let i = 0; i < 10; i++) {
+    const widthClass = i % 3 === 0 ? 'short' : i % 2 === 0 ? 'medium' : '';
+    skeletonHtml += `
+      <div class="step-check-item">
+        <span class="skeleton" style="width:14px;height:14px;flex-shrink:0;"></span>
+        <span class="skeleton" style="width:22px;height:1em;"></span>
+        <span class="skeleton skeleton-line ${widthClass}" style="flex:1;"></span>
+      </div>
+    `;
+  }
+  container.innerHTML = skeletonHtml;
+
+  // Disable start button until real steps load
+  document.getElementById('btn-start-run').disabled = true;
+  document.getElementById('step-count-badge').textContent = 'Loading steps...';
 }
 
 // ── Screen 2: Step Selection ───────────────────────────────────────
@@ -534,6 +575,7 @@ async function startRun() {
   state.failedSteps = [];
   state.stepResults = [];
   state.stopping = false;
+  resetCachedTotals();
 
   const stepArgs = NtLogic.buildStepArgs(selected, state.steps.length);
   const timeoutArg = state.timeout !== 45 ? ` --timeout ${state.timeout}` : '';
@@ -595,8 +637,8 @@ function renderRunningStepList() {
     const step = state.steps.find(s => s.number === num);
     const name = step ? step.name : `Step ${num}`;
     return `
-      <div class="step-item step-pending" id="run-step-${num}">
-        <span class="step-icon">&#9675;</span>
+      <div class="step-item step-pending" id="run-step-${num}" role="listitem">
+        <span class="step-icon"><span aria-hidden="true">&#9675;</span><span class="sr-only">Pending</span></span>
         <span class="step-num">${num}.</span>
         <span class="step-name">${NtLogic.escapeHtml(name)}</span>
         <span class="step-cost"></span>
@@ -608,8 +650,8 @@ function renderRunningStepList() {
 
   // Virtual "Final Report" step — always visible at the bottom
   const finishHtml = `
-    <div class="step-item step-pending step-finish" id="run-step-${FINISH_STEP_NUM}">
-      <span class="step-icon">&#9675;</span>
+    <div class="step-item step-pending step-finish" id="run-step-${FINISH_STEP_NUM}" role="listitem">
+      <span class="step-icon"><span aria-hidden="true">&#9675;</span><span class="sr-only">Pending</span></span>
       <span class="step-num"></span>
       <span class="step-name">Final Report</span>
       <span class="step-cost"></span>
@@ -632,11 +674,13 @@ function updateStepItemStatus(stepNum, status, duration) {
 
   switch (status) {
     case 'running':
-      iconEl.innerHTML = '<span class="spinner"></span>';
+      iconEl.innerHTML = '<span class="spinner" role="img" aria-label="Running"></span>';
       break;
     case 'completed':
     case 'failed': {
-      iconEl.textContent = status === 'completed' ? '\u2713' : '\u2717';
+      iconEl.innerHTML = status === 'completed'
+        ? '<span aria-hidden="true">\u2713</span><span class="sr-only">Completed</span>'
+        : '<span aria-hidden="true">\u2717</span><span class="sr-only">Failed</span>';
       if (duration) durEl.textContent = NtLogic.formatMs(duration);
       const r = state.stepResults.find(r => r.step === stepNum);
       if (costEl) {
@@ -656,7 +700,7 @@ function updateStepItemStatus(stepNum, status, duration) {
       break;
     }
     case 'skipped':
-      iconEl.textContent = '\u27A0';
+      iconEl.innerHTML = '<span aria-hidden="true">\u27A0</span><span class="sr-only">Skipped</span>';
       if (duration) durEl.textContent = NtLogic.formatMs(duration);
       el.classList.add('step-clickable');
       el.setAttribute('role', 'button');
@@ -665,7 +709,7 @@ function updateStepItemStatus(stepNum, status, duration) {
       el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); viewStepOutput(stepNum); } };
       break;
     default:
-      iconEl.innerHTML = '&#9675;';
+      iconEl.innerHTML = '<span aria-hidden="true">&#9675;</span><span class="sr-only">Pending</span>';
   }
 }
 
@@ -708,17 +752,15 @@ function updateElapsed() {
     }
   }
 
-  // Running totals of cost & tokens
+  // Running totals of cost & tokens (use cached values instead of O(n) reduce)
   const totalsEl = document.getElementById('running-totals');
   if (totalsEl) {
     let html = '';
-    const costs = state.stepResults.filter(r => r.costUSD != null).map(r => r.costUSD);
-    if (costs.length > 0) {
-      html += `<span class="cost">${NtLogic.formatCost(costs.reduce((a, b) => a + b, 0))}</span>`;
+    if (cachedTotalCost > 0) {
+      html += `<span class="cost">${NtLogic.formatCost(cachedTotalCost)}</span>`;
     }
-    const tokens = state.stepResults.reduce((sum, r) => sum + (r.inputTokens || 0) + (r.outputTokens || 0), 0);
-    if (tokens > 0) {
-      html += `<span class="tokens">${NtLogic.formatTokens(tokens)} tokens</span>`;
+    if (cachedTotalTokens > 0) {
+      html += `<span class="tokens">${NtLogic.formatTokens(cachedTotalTokens)} tokens</span>`;
     }
     totalsEl.innerHTML = html;
   }
@@ -790,7 +832,7 @@ async function runNextStep() {
 
     const liveSnapshot = lastRenderedOutput || '';
     const step = state.steps.find(s => s.number === skippedNum);
-    state.stepResults.push({
+    const skippedResult = {
       step: skippedNum,
       name: step ? step.name : undefined,
       status: 'skipped',
@@ -800,7 +842,9 @@ async function runNextStep() {
       costUSD: null,
       inputTokens: null,
       outputTokens: null,
-    });
+    };
+    state.stepResults.push(skippedResult);
+    updateCachedTotals(skippedResult);
     updateStepItemStatus(skippedNum, 'skipped', state.stepStartTime ? Date.now() - state.stepStartTime : null);
     resetSkipButton();
 
@@ -829,7 +873,9 @@ async function runNextStep() {
 
     logToServer('warn', `Step ${next} failed: ${result.error}`);
     state.failedSteps.push(next);
-    state.stepResults.push({ step: next, status: 'failed', error: result.error, output: liveSnapshot, costUSD: null, inputTokens: null, outputTokens: null });
+    const failedResult = { step: next, status: 'failed', error: result.error, output: liveSnapshot, costUSD: null, inputTokens: null, outputTokens: null };
+    state.stepResults.push(failedResult);
+    updateCachedTotals(failedResult);
     updateStepItemStatus(next, 'failed');
   } else {
     const data = result.data;
@@ -854,7 +900,7 @@ async function runNextStep() {
       state.failedSteps.push(next);
     }
 
-    state.stepResults.push({
+    const stepResult = {
       step: next,
       name: data.name,
       status,
@@ -866,7 +912,9 @@ async function runNextStep() {
       costUSD: data.costUSD ?? null,
       inputTokens: data.inputTokens ?? null,
       outputTokens: data.outputTokens ?? null,
-    });
+    };
+    state.stepResults.push(stepResult);
+    updateCachedTotals(stepResult);
 
     updateStepItemStatus(next, status, duration);
   }
@@ -1522,7 +1570,7 @@ function completeFinish(data, failed, skipped) {
     state.finishFailed = false;
     state.completedSteps.push(FINISH_STEP_NUM);
 
-    state.stepResults.push({
+    const finishResult = {
       step: FINISH_STEP_NUM,
       name: 'Final Report',
       status: 'completed',
@@ -1531,7 +1579,9 @@ function completeFinish(data, failed, skipped) {
       costUSD: data.finishCostUSD ?? null,
       inputTokens: data.finishInputTokens ?? null,
       outputTokens: data.finishOutputTokens ?? null,
-    });
+    };
+    state.stepResults.push(finishResult);
+    updateCachedTotals(finishResult);
     updateStepItemStatus(FINISH_STEP_NUM, 'completed', data.finishDuration || finishDuration);
 
     renderSummary(data);
@@ -1545,7 +1595,7 @@ function completeFinish(data, failed, skipped) {
       state.failedSteps.push(FINISH_STEP_NUM);
     }
 
-    state.stepResults.push({
+    const finishFailResult = {
       step: FINISH_STEP_NUM,
       name: 'Final Report',
       status,
@@ -1554,7 +1604,9 @@ function completeFinish(data, failed, skipped) {
       costUSD: null,
       inputTokens: null,
       outputTokens: null,
-    });
+    };
+    state.stepResults.push(finishFailResult);
+    updateCachedTotals(finishFailResult);
     updateStepItemStatus(FINISH_STEP_NUM, status, finishDuration);
 
     renderSummary(null);
@@ -1717,6 +1769,7 @@ function renderSummary(finishData) {
   const listEl = document.getElementById('summary-step-list');
   listEl.innerHTML = state.stepResults.map(r => {
     const status = r.status || 'pending';
+    const statusLabel = status === 'completed' ? 'Completed' : status === 'failed' ? 'Failed' : status === 'skipped' ? 'Skipped' : 'Pending';
     const icon = status === 'completed' ? '\u2713' : status === 'failed' ? '\u2717' : status === 'skipped' ? '\u27A0' : '&#9675;';
     const isFinishStep = r.step === FINISH_STEP_NUM;
     const name = isFinishStep ? 'Final Report' : (r.name || `Step ${r.step}`);
@@ -1728,8 +1781,8 @@ function renderSummary(finishData) {
     const tokensStr = tokens ? tokens + ' tokens' : '';
     const finishClass = isFinishStep ? ' step-finish' : '';
     return `
-      <div class="step-item step-${status}${finishClass} step-clickable" data-step="${r.step}" role="button" tabindex="0">
-        <span class="step-icon">${icon}</span>
+      <div class="step-item step-${status}${finishClass} step-clickable" data-step="${r.step}" role="listitem button" tabindex="0" aria-label="${name}: ${statusLabel}">
+        <span class="step-icon" aria-hidden="true">${icon}</span>
         <span class="step-num">${stepNumDisplay}</span>
         <span class="step-name">${NtLogic.escapeHtml(name)}</span>
         <span class="step-cost">${cost}</span>
@@ -1790,6 +1843,7 @@ function resetApp() {
   state._pauseTimer = null;
   state.retrying = false;
   state.prodding = false;
+  resetCachedTotals();
 
   clearError('setup');
   clearError('steps');
@@ -1886,6 +1940,32 @@ function bindEvents() {
       cancelStopRun();
     }
   });
+}
+
+// ── Running totals cache (optimization: avoid O(n) reduce on every 1s tick) ───
+let cachedTotalCost = 0;
+let cachedTotalTokens = 0;
+let cachedResultsCount = 0;
+
+/**
+ * Update running totals incrementally when a new result is added.
+ * Called from step completion handlers.
+ */
+function updateCachedTotals(result) {
+  if (result.costUSD != null && Number.isFinite(result.costUSD)) {
+    cachedTotalCost += result.costUSD;
+  }
+  cachedTotalTokens += (result.inputTokens || 0) + (result.outputTokens || 0);
+  cachedResultsCount++;
+}
+
+/**
+ * Reset cached totals (called on new run).
+ */
+function resetCachedTotals() {
+  cachedTotalCost = 0;
+  cachedTotalTokens = 0;
+  cachedResultsCount = 0;
 }
 
 // ── Init ───────────────────────────────────────────────────────────

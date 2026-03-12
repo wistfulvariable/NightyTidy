@@ -4,7 +4,7 @@ Current design tokens and patterns extracted from the codebase. This is document
 
 **Files**: `gui/resources/styles.css` (GUI), `src/dashboard-html.js` (dashboard inline styles)
 
-**Last Visual Audit**: 2026-03-10 (see `audit-reports/UI_DESIGN_QUALITY_REPORT_01_2026-03-10.md`)
+**Last Visual Audit**: 2026-03-12 (see `audit-reports/24_UI_DESIGN_QUALITY_REPORT_02_2026-03-12.md`)
 
 ---
 
