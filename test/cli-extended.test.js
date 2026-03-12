@@ -5,8 +5,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // ---------------------------------------------------------------------------
 
 vi.mock('fs', () => ({
-  existsSync: vi.fn(() => false),
-  readFileSync: vi.fn(() => '{}'),
+  existsSync: vi.fn((p) => typeof p === 'string' && p.includes('NIGHTYTIDY-REPORT')),
+  readFileSync: vi.fn((p) => {
+    if (typeof p === 'string' && p.includes('NIGHTYTIDY-REPORT')) return '# NightyTidy Report\nMock content';
+    return '{}';
+  }),
   writeFileSync: vi.fn(),
   unlinkSync: vi.fn(),
   openSync: vi.fn(() => 99),
@@ -82,7 +85,7 @@ vi.mock('../src/prompts/loader.js', () => ({
     { number: 2, name: 'Format', prompt: 'format the code' },
     { number: 3, name: 'Test', prompt: 'test the code' },
   ],
-  CHANGELOG_PROMPT: 'generate changelog',
+  REPORT_PROMPT: 'mock report prompt template',
   CONSOLIDATION_PROMPT: 'consolidate actions',
   reloadSteps: vi.fn(),
 }));
@@ -93,10 +96,6 @@ vi.mock('../src/sync.js', () => ({
     summary: { updated: [], added: [], removed: [], unchanged: [] },
     error: null,
   }),
-}));
-
-vi.mock('../src/consolidation.js', () => ({
-  generateActionPlan: vi.fn().mockResolvedValue({ text: null, cost: null }),
 }));
 
 vi.mock('../src/executor.js', () => ({
@@ -114,6 +113,9 @@ vi.mock('../src/report.js', () => ({
   formatDuration: vi.fn((ms) => `${Math.round(ms / 1000)}s`),
   getVersion: vi.fn(() => '0.1.0'),
   buildReportNames: vi.fn(() => ({ reportFile: 'NIGHTYTIDY-REPORT_01_2026-01-01-0000.md' })),
+  buildReportPrompt: vi.fn(() => 'mock report prompt'),
+  verifyReportContent: vi.fn(() => true),
+  updateClaudeMd: vi.fn(),
 }));
 
 vi.mock('../src/setup.js', () => ({
@@ -144,6 +146,7 @@ import { runPrompt } from '../src/claude.js';
 import { executeSteps } from '../src/executor.js';
 import { setupProject } from '../src/setup.js';
 import { updateDashboard, startDashboard, stopDashboard } from '../src/dashboard.js';
+import { verifyReportContent, updateClaudeMd } from '../src/report.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -188,9 +191,14 @@ describe('cli.js extended coverage', () => {
 
     checkbox.mockResolvedValue([{ number: 1, name: 'Lint', prompt: 'lint the code' }]);
     executeSteps.mockResolvedValue(makeExecutionResults({ completedCount: 1, failedCount: 0 }));
-    runPrompt.mockResolvedValue({ success: true, output: 'Changelog text', error: null });
+    runPrompt.mockResolvedValue({ success: true, output: 'Report text', error: null });
     runPreChecks.mockResolvedValue(undefined);
     mergeRunBranch.mockResolvedValue({ success: true });
+
+    // Reset report verification mocks to happy-path defaults
+    existsSync.mockImplementation((p) => typeof p === 'string' && p.includes('NIGHTYTIDY-REPORT'));
+    verifyReportContent.mockReturnValue(true);
+    updateClaudeMd.mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -406,15 +414,17 @@ describe('cli.js extended coverage', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Changelog warning
+  // Report generation fallback
   // -------------------------------------------------------------------------
-  describe('changelog generation', () => {
-    it('warns when changelog generation fails', async () => {
+  describe('report generation', () => {
+    it('warns and falls back to template when AI report generation fails', async () => {
       runPrompt.mockResolvedValue({ success: false, output: '', error: 'timeout' });
+      existsSync.mockReturnValue(false);
+      verifyReportContent.mockReturnValue(false);
 
       await run();
 
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining('changelog generation failed'));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('AI report generation failed'));
     });
   });
 

@@ -79,6 +79,9 @@ vi.mock('../src/notifications.js', () => ({
 
 vi.mock('../src/report.js', () => ({
   generateReport: vi.fn(),
+  buildReportPrompt: vi.fn(() => 'mock report prompt'),
+  verifyReportContent: vi.fn(() => true),
+  updateClaudeMd: vi.fn(),
   formatDuration: vi.fn((ms) => `${Math.floor(ms / 60000)}m`),
   getVersion: vi.fn(() => '0.1.0'),
   buildReportNames: vi.fn(() => ({ reportFile: 'NIGHTYTIDY-REPORT_01_2026-01-01-0000.md' })),
@@ -89,10 +92,6 @@ vi.mock('../src/lock.js', () => ({
   releaseLock: vi.fn(),
 }));
 
-vi.mock('../src/consolidation.js', () => ({
-  generateActionPlan: vi.fn().mockResolvedValue({ text: null, cost: null }),
-}));
-
 vi.mock('../src/prompts/loader.js', () => ({
   STEPS: [
     { number: 1, name: 'Documentation', prompt: 'Fix docs' },
@@ -100,7 +99,7 @@ vi.mock('../src/prompts/loader.js', () => ({
     { number: 3, name: 'Security Audit', prompt: 'Check security' },
   ],
   DOC_UPDATE_PROMPT: 'Update docs',
-  CHANGELOG_PROMPT: 'Generate changelog',
+  REPORT_PROMPT: 'mock report prompt template',
   CONSOLIDATION_PROMPT: 'Consolidate actions',
   reloadSteps: vi.fn(),
 }));
@@ -119,6 +118,7 @@ import { warn } from '../src/logger.js';
 import { getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from '../src/git.js';
 import { executeSingleStep } from '../src/executor.js';
 import { runPrompt } from '../src/claude.js';
+import { generateReport, buildReportPrompt, verifyReportContent } from '../src/report.js';
 
 function createMockChildProcess(jsonOutput) {
   const stdout = new EventEmitter();
@@ -155,12 +155,24 @@ describe('finishRun edge cases', () => {
   };
 
   beforeEach(() => {
-    runPrompt.mockResolvedValue({ success: true, output: 'Mock changelog' });
+    runPrompt.mockResolvedValue({ success: true, output: 'Report generated successfully' });
+    buildReportPrompt.mockReturnValue('mock report prompt');
+    verifyReportContent.mockReturnValue(true);
   });
 
-  it('warns but continues when git commit of report fails', async () => {
+  /** Helper to mock existsSync + readFileSync for finishRun (state file + report file) */
+  function setupFinishRunMocks(state) {
     existsSync.mockReturnValue(true);
-    readFileSync.mockReturnValue(JSON.stringify(validState));
+    readFileSync.mockImplementation((filePath) => {
+      if (typeof filePath === 'string' && filePath.includes('NIGHTYTIDY-REPORT')) {
+        return 'mock report file content';
+      }
+      return JSON.stringify(state);
+    });
+  }
+
+  it('warns but continues when git commit of report fails', async () => {
+    setupFinishRunMocks(validState);
     mergeRunBranch.mockResolvedValue({ success: true });
 
     const mockGit = {
@@ -176,8 +188,7 @@ describe('finishRun edge cases', () => {
   });
 
   it('returns fail result when unexpected error occurs during merge', async () => {
-    existsSync.mockReturnValue(true);
-    readFileSync.mockReturnValue(JSON.stringify(validState));
+    setupFinishRunMocks(validState);
     // Force an error by making mergeRunBranch throw (not reject)
     mergeRunBranch.mockImplementation(() => { throw new Error('catastrophic git failure'); });
     getGitInstance.mockReturnValue({ add: vi.fn(), commit: vi.fn() });
@@ -188,12 +199,12 @@ describe('finishRun edge cases', () => {
     expect(result.error).toContain('catastrophic git failure');
   });
 
-  it('returns fail result when generateReport throws', async () => {
-    existsSync.mockReturnValue(true);
-    readFileSync.mockReturnValue(JSON.stringify(validState));
+  it('returns fail result when generateReport throws in fallback path', async () => {
+    setupFinishRunMocks(validState);
     getGitInstance.mockReturnValue({ add: vi.fn(), commit: vi.fn() });
 
-    const { generateReport } = await import('../src/report.js');
+    // Make AI report fail verification so fallback is triggered
+    verifyReportContent.mockReturnValue(false);
     generateReport.mockImplementation(() => { throw new Error('cannot write report'); });
 
     const result = await finishRun('/fake/project');
@@ -224,12 +235,13 @@ describe('finishRun edge cases', () => {
         { number: 2, name: 'Test Coverage', status: 'failed', duration: 10000, attempts: 4 },
       ],
     };
-    existsSync.mockReturnValue(true);
-    readFileSync.mockReturnValue(JSON.stringify(mixedState));
+    setupFinishRunMocks(mixedState);
     mergeRunBranch.mockResolvedValue({ success: true });
     getGitInstance.mockReturnValue({ add: vi.fn(), commit: vi.fn() });
 
-    const { generateReport } = await import('../src/report.js');
+    // verifyReportContent returns false so fallback generateReport is called
+    verifyReportContent.mockReturnValue(false);
+
     await finishRun('/fake/project');
 
     const [results] = generateReport.mock.calls[0];

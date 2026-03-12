@@ -37,6 +37,8 @@ export let CHANGELOG_PROMPT = loadFile('specials', 'changelog.md');
 
 export let CONSOLIDATION_PROMPT = loadFile('specials', 'consolidation.md');
 
+export let REPORT_PROMPT = loadFile('specials', 'report.md');
+
 /**
  * Re-read manifest and all prompt files from disk.
  * Uses ESM live bindings — all importers see the updated values
@@ -49,4 +51,5 @@ export function reloadSteps() {
   DOC_UPDATE_PROMPT = loadFile('specials', 'doc-update.md');
   CHANGELOG_PROMPT = loadFile('specials', 'changelog.md');
   CONSOLIDATION_PROMPT = loadFile('specials', 'consolidation.md');
+  REPORT_PROMPT = loadFile('specials', 'report.md');
 }

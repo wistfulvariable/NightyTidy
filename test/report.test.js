@@ -11,8 +11,12 @@ import { createLoggerMock } from './helpers/mocks.js';
 
 vi.mock('../src/logger.js', () => createLoggerMock());
 
+vi.mock('../src/prompts/loader.js', () => ({
+  REPORT_PROMPT: 'mock report prompt template',
+}));
+
 import { writeFileSync, readFileSync, existsSync } from 'fs';
-import { generateReport, formatDuration, cleanNarration } from '../src/report.js';
+import { generateReport, formatDuration, cleanNarration, buildReportPrompt, verifyReportContent } from '../src/report.js';
 import { makeMetadata, makeResults } from './helpers/testdata.js';
 
 beforeEach(() => {
@@ -207,5 +211,187 @@ describe('generateReport — tokens', () => {
 
     const reportContent = writeFileSync.mock.calls[0][1];
     expect(reportContent).not.toContain('**Total tokens**');
+  });
+});
+
+describe('buildReportPrompt', () => {
+  it('returns a string containing the REPORT_PROMPT template text', () => {
+    const results = makeResults({ completedCount: 2, failedCount: 0 });
+    const metadata = makeMetadata();
+
+    const prompt = buildReportPrompt(results, metadata, { reportFile: 'NIGHTYTIDY-REPORT_01_2026-02-28-0100.md' });
+
+    expect(typeof prompt).toBe('string');
+    expect(prompt).toContain('mock report prompt template');
+  });
+
+  it('includes VERBATIM markers for pre-built sections', () => {
+    const results = makeResults({ completedCount: 1, failedCount: 0 });
+    const metadata = makeMetadata();
+
+    const prompt = buildReportPrompt(results, metadata, { reportFile: 'report.md' });
+
+    expect(prompt).toContain('<!-- VERBATIM: summary -->');
+    expect(prompt).toContain('<!-- END VERBATIM -->');
+    expect(prompt).toContain('<!-- VERBATIM: table -->');
+    expect(prompt).toContain('<!-- VERBATIM: undo -->');
+  });
+
+  it('includes the reportFile name in the prompt', () => {
+    const results = makeResults({ completedCount: 1, failedCount: 0 });
+    const metadata = makeMetadata();
+    const reportFile = 'NIGHTYTIDY-REPORT_05_2026-02-28-0100.md';
+
+    const prompt = buildReportPrompt(results, metadata, { reportFile });
+
+    expect(prompt).toContain(reportFile);
+  });
+
+  it('includes pre-built summary, table, and undo sections', () => {
+    const results = makeResults({ completedCount: 2, failedCount: 0 });
+    const metadata = makeMetadata();
+
+    const prompt = buildReportPrompt(results, metadata, { reportFile: 'report.md' });
+
+    expect(prompt).toContain('## Run Summary');
+    expect(prompt).toContain('## Step Results');
+    expect(prompt).toContain('## How to Undo This Run');
+    expect(prompt).toContain(metadata.tagName);
+    expect(prompt).toContain(metadata.branchName);
+  });
+
+  it('includes step outputs for completed steps', () => {
+    const results = makeResults({ completedCount: 2, failedCount: 1 });
+    const metadata = makeMetadata();
+
+    const prompt = buildReportPrompt(results, metadata, { reportFile: 'report.md' });
+
+    expect(prompt).toContain('Step 1: Step1 (completed)');
+    expect(prompt).toContain('Step 2: Step2 (completed)');
+    expect(prompt).toContain('Step 3: FailStep1 (failed)');
+    expect(prompt).toContain('No output (step failed)');
+  });
+
+  it('includes failed section VERBATIM marker when there are failures', () => {
+    const results = makeResults({ completedCount: 1, failedCount: 1 });
+    const metadata = makeMetadata();
+
+    const prompt = buildReportPrompt(results, metadata, { reportFile: 'report.md' });
+
+    expect(prompt).toContain('<!-- VERBATIM: failed -->');
+    expect(prompt).toContain('## Failed Steps');
+  });
+
+  it('omits failed section VERBATIM marker when no failures', () => {
+    const results = makeResults({ completedCount: 2, failedCount: 0 });
+    const metadata = makeMetadata();
+
+    const prompt = buildReportPrompt(results, metadata, { reportFile: 'report.md' });
+
+    expect(prompt).not.toContain('<!-- VERBATIM: failed -->');
+    expect(prompt).not.toContain('## Failed Steps');
+  });
+});
+
+describe('verifyReportContent', () => {
+  const metadata = makeMetadata();
+
+  /** Build a valid report string for testing */
+  function validReport() {
+    return (
+      '# NightyTidy Report\n\n' +
+      'Last night we improved your codebase significantly.\n\n' +
+      '## Run Summary\n\n- **Date**: 2026-02-28\n- **Steps completed**: 2/2\n\n' +
+      '## Step Results\n\n| # | Step | Status |\n|---|---|---|\n| 1 | Step1 | ok |\n\n' +
+      '## How to Undo This Run\n\n' +
+      `Reset to tag \`${metadata.tagName}\`\n`
+    );
+  }
+
+  it('returns true for valid content with all required markers', () => {
+    expect(verifyReportContent(validReport(), metadata)).toBe(true);
+  });
+
+  it('returns false for null content', () => {
+    expect(verifyReportContent(null, metadata)).toBe(false);
+  });
+
+  it('returns false for empty string content', () => {
+    expect(verifyReportContent('', metadata)).toBe(false);
+  });
+
+  it('returns false for content shorter than 200 chars', () => {
+    const shortContent = '# NightyTidy Report\n## Run Summary\n## Step Results\n## How to Undo This Run\n' + metadata.tagName;
+    expect(shortContent.length).toBeLessThan(200);
+    expect(verifyReportContent(shortContent, metadata)).toBe(false);
+  });
+
+  it('returns false for content missing "# NightyTidy Report"', () => {
+    const content = validReport().replace('# NightyTidy Report', '# Some Other Report');
+    expect(verifyReportContent(content, metadata)).toBe(false);
+  });
+
+  it('returns false for content missing "## Run Summary"', () => {
+    const content = validReport().replace('## Run Summary', '## Overview');
+    expect(verifyReportContent(content, metadata)).toBe(false);
+  });
+
+  it('returns false for content missing "## Step Results"', () => {
+    const content = validReport().replace('## Step Results', '## Outcomes');
+    expect(verifyReportContent(content, metadata)).toBe(false);
+  });
+
+  it('returns false for content missing "## How to Undo This Run"', () => {
+    const content = validReport().replace('## How to Undo This Run', '## Rollback');
+    expect(verifyReportContent(content, metadata)).toBe(false);
+  });
+
+  it('returns false for content missing the tagName', () => {
+    const content = validReport().replace(metadata.tagName, 'some-other-tag');
+    expect(verifyReportContent(content, metadata)).toBe(false);
+  });
+
+  it('returns false for junk content containing "what would you like"', () => {
+    const content = validReport() + '\nWhat would you like me to do next?\n';
+    expect(verifyReportContent(content, metadata)).toBe(false);
+  });
+
+  it('returns false for junk content containing "let me know what you need"', () => {
+    const content = validReport() + '\nLet me know what you need!\n';
+    expect(verifyReportContent(content, metadata)).toBe(false);
+  });
+
+  it('returns false for junk content containing "how can i help"', () => {
+    const content = validReport() + '\nHow can I help you today?\n';
+    expect(verifyReportContent(content, metadata)).toBe(false);
+  });
+});
+
+describe('generateReport — skipClaudeMdUpdate', () => {
+  it('does not update CLAUDE.md when skipClaudeMdUpdate is true', () => {
+    const results = makeResults({ completedCount: 1, failedCount: 0 });
+    const metadata = makeMetadata();
+
+    generateReport(results, 'Narration.', metadata, { skipClaudeMdUpdate: true });
+
+    // Only the report file should be written, not CLAUDE.md
+    const claudeWriteCall = writeFileSync.mock.calls.find(
+      (call) => call[0].endsWith('CLAUDE.md')
+    );
+    expect(claudeWriteCall).toBeUndefined();
+  });
+
+  it('still updates CLAUDE.md by default (no skipClaudeMdUpdate option)', () => {
+    existsSync.mockReturnValue(false);
+    const results = makeResults({ completedCount: 1, failedCount: 0 });
+    const metadata = makeMetadata();
+
+    generateReport(results, 'Narration.', metadata);
+
+    // CLAUDE.md should be written as well as the report
+    const claudeWriteCall = writeFileSync.mock.calls.find(
+      (call) => call[0].endsWith('CLAUDE.md')
+    );
+    expect(claudeWriteCall).toBeDefined();
   });
 });

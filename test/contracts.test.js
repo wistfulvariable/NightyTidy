@@ -483,8 +483,8 @@ describe('contract: steps.js — data shape', () => {
     }
   });
 
-  it('exports DOC_UPDATE_PROMPT, CHANGELOG_PROMPT, and CONSOLIDATION_PROMPT as non-empty strings', async () => {
-    const { DOC_UPDATE_PROMPT, CHANGELOG_PROMPT, CONSOLIDATION_PROMPT } = await import('../src/prompts/loader.js');
+  it('exports DOC_UPDATE_PROMPT, CHANGELOG_PROMPT, CONSOLIDATION_PROMPT, and REPORT_PROMPT as non-empty strings', async () => {
+    const { DOC_UPDATE_PROMPT, CHANGELOG_PROMPT, CONSOLIDATION_PROMPT, REPORT_PROMPT } = await import('../src/prompts/loader.js');
 
     expect(typeof DOC_UPDATE_PROMPT).toBe('string');
     expect(DOC_UPDATE_PROMPT.length).toBeGreaterThan(50);
@@ -494,6 +494,9 @@ describe('contract: steps.js — data shape', () => {
 
     expect(typeof CONSOLIDATION_PROMPT).toBe('string');
     expect(CONSOLIDATION_PROMPT.length).toBeGreaterThan(50);
+
+    expect(typeof REPORT_PROMPT).toBe('string');
+    expect(REPORT_PROMPT.length).toBeGreaterThan(50);
   });
 
   it('exports reloadSteps as a function', async () => {
@@ -935,6 +938,10 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
       generateReport: vi.fn(),
       formatDuration: vi.fn(() => '0m'),
       buildReportNames: vi.fn(() => ({ reportFile: 'NIGHTYTIDY-REPORT_01_2026-01-01-0000.md' })),
+      buildReportPrompt: vi.fn(() => 'mock report prompt'),
+      verifyReportContent: vi.fn(() => true),
+      updateClaudeMd: vi.fn(),
+      getVersion: vi.fn(() => '0.1.0'),
     }));
 
     vi.doMock('../src/lock.js', () => ({
@@ -942,15 +949,12 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
       releaseLock: vi.fn(),
     }));
 
-    vi.doMock('../src/consolidation.js', () => ({
-      generateActionPlan: vi.fn().mockResolvedValue({ text: null, cost: null }),
-    }));
-
     vi.doMock('../src/prompts/loader.js', () => ({
       STEPS: [{ number: 1, name: 'Test', prompt: 'test' }],
       DOC_UPDATE_PROMPT: 'doc',
       CHANGELOG_PROMPT: 'log',
       CONSOLIDATION_PROMPT: 'consolidate',
+      REPORT_PROMPT: 'report',
       reloadSteps: vi.fn(),
     }));
   });
@@ -966,7 +970,6 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
     vi.doUnmock('../src/notifications.js');
     vi.doUnmock('../src/report.js');
     vi.doUnmock('../src/lock.js');
-    vi.doUnmock('../src/consolidation.js');
     vi.doUnmock('../src/prompts/loader.js');
     vi.restoreAllMocks();
   });

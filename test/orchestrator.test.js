@@ -68,6 +68,9 @@ vi.mock('../src/notifications.js', () => ({
 
 vi.mock('../src/report.js', () => ({
   generateReport: vi.fn(),
+  buildReportPrompt: vi.fn(() => 'mock report prompt'),
+  verifyReportContent: vi.fn(() => true),
+  updateClaudeMd: vi.fn(),
   formatDuration: vi.fn((ms) => `${Math.floor(ms / 60000)}m`),
   getVersion: vi.fn(() => '0.1.0'),
   buildReportNames: vi.fn(() => ({ reportFile: 'NIGHTYTIDY-REPORT_01_2026-01-01-0000.md' })),
@@ -78,10 +81,6 @@ vi.mock('../src/lock.js', () => ({
   releaseLock: vi.fn(),
 }));
 
-vi.mock('../src/consolidation.js', () => ({
-  generateActionPlan: vi.fn().mockResolvedValue({ text: null, cost: null }),
-}));
-
 vi.mock('../src/prompts/loader.js', () => ({
   STEPS: [
     { number: 1, name: 'Documentation', prompt: 'Fix docs' },
@@ -89,7 +88,7 @@ vi.mock('../src/prompts/loader.js', () => ({
     { number: 3, name: 'Security Audit', prompt: 'Check security' },
   ],
   DOC_UPDATE_PROMPT: 'Update docs',
-  CHANGELOG_PROMPT: 'Generate changelog',
+  REPORT_PROMPT: 'mock report prompt template',
   CONSOLIDATION_PROMPT: 'Consolidate actions',
   reloadSteps: vi.fn(),
 }));
@@ -110,8 +109,7 @@ import { getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, get
 import { executeSingleStep, sumCosts } from '../src/executor.js';
 import { runPrompt } from '../src/claude.js';
 import { acquireLock, releaseLock } from '../src/lock.js';
-import { generateReport } from '../src/report.js';
-import { generateActionPlan } from '../src/consolidation.js';
+import { generateReport, buildReportPrompt, verifyReportContent, updateClaudeMd } from '../src/report.js';
 import { syncPrompts } from '../src/sync.js';
 import { reloadSteps } from '../src/prompts/loader.js';
 
@@ -522,11 +520,17 @@ describe('finishRun', () => {
 
   beforeEach(() => {
     existsSync.mockReturnValue(true);
-    readFileSync.mockReturnValue(JSON.stringify(validState));
+    readFileSync.mockImplementation((filePath) => {
+      if (typeof filePath === 'string' && filePath.includes('NIGHTYTIDY-REPORT')) {
+        return 'mock report file content';
+      }
+      return JSON.stringify(validState);
+    });
     mergeRunBranch.mockResolvedValue({ success: true });
     getGitInstance.mockReturnValue({ add: vi.fn(), commit: vi.fn() });
-    runPrompt.mockResolvedValue({ success: true, output: 'Mock changelog narration' });
-    generateActionPlan.mockResolvedValue({ text: 'Mock action plan content', cost: { costUSD: 0.02, inputTokens: 500, outputTokens: 200 } });
+    runPrompt.mockResolvedValue({ success: true, output: 'Report generated successfully' });
+    buildReportPrompt.mockReturnValue('mock report prompt');
+    verifyReportContent.mockReturnValue(true);
   });
 
   it('generates report and merges successfully', async () => {
@@ -538,22 +542,25 @@ describe('finishRun', () => {
     expect(result.merged).toBe(true);
     expect(result.reportPath).toBe('NIGHTYTIDY-REPORT_01_2026-01-01-0000.md');
     expect(result.reportContent).toBeTypeOf('string');
+    // AI report succeeded, so generateReport fallback should NOT be called
+    expect(buildReportPrompt).toHaveBeenCalled();
+    expect(verifyReportContent).toHaveBeenCalled();
+    expect(generateReport).not.toHaveBeenCalled();
   });
 
-  it('calls generateReport with accumulated results and narration', async () => {
+  it('calls buildReportPrompt with execution results and metadata', async () => {
     await finishRun('/fake/project');
 
-    expect(generateReport).toHaveBeenCalledOnce();
-    const [results, narration, metadata, options] = generateReport.mock.calls[0];
-    expect(results.completedCount).toBe(1);
-    expect(results.failedCount).toBe(1);
-    expect(results.results).toHaveLength(2);
+    expect(buildReportPrompt).toHaveBeenCalledOnce();
+    const [executionResults, metadata, options] = buildReportPrompt.mock.calls[0];
+    expect(executionResults.completedCount).toBe(1);
+    expect(executionResults.failedCount).toBe(1);
+    expect(executionResults.results).toHaveLength(2);
     expect(metadata.branchName).toBe('nightytidy/run-2026-03-06-1430');
-    expect(narration).toBe('Mock changelog narration');
-    expect(options.actionPlanText).toBe('Mock action plan content');
+    expect(options.reportFile).toBe('NIGHTYTIDY-REPORT_01_2026-01-01-0000.md');
   });
 
-  it('passes totalInputTokens and totalOutputTokens to generateReport (including finish-phase costs)', async () => {
+  it('passes totalInputTokens and totalOutputTokens in metadata to buildReportPrompt', async () => {
     const stateWithCost = {
       ...validState,
       completedSteps: [
@@ -563,17 +570,19 @@ describe('finishRun', () => {
         { number: 2, name: 'Test Coverage', status: 'failed', duration: 30000, attempts: 4, cost: { costUSD: 0.03, inputTokens: 5000, outputTokens: 1000 } },
       ],
     };
-    readFileSync.mockReturnValue(JSON.stringify(stateWithCost));
-    // Changelog AI call returns cost
-    runPrompt.mockResolvedValue({ success: true, output: 'Mock changelog narration', cost: { costUSD: 0.01, inputTokens: 400, outputTokens: 100 } });
+    readFileSync.mockImplementation((filePath) => {
+      if (typeof filePath === 'string' && filePath.includes('NIGHTYTIDY-REPORT')) {
+        return 'mock report file content';
+      }
+      return JSON.stringify(stateWithCost);
+    });
 
     await finishRun('/fake/project');
 
-    const [, , metadata] = generateReport.mock.calls[0];
+    const [, metadata] = buildReportPrompt.mock.calls[0];
     // Steps: 8000+5000=13000 input, 2000+1000=3000 output
-    // Finish: changelog 400+100, action plan 500+200 (from beforeEach mock)
-    expect(metadata.totalInputTokens).toBe(13900);
-    expect(metadata.totalOutputTokens).toBe(3300);
+    expect(metadata.totalInputTokens).toBe(13000);
+    expect(metadata.totalOutputTokens).toBe(3000);
   });
 
   it('releases lock and deletes state file', async () => {
@@ -599,7 +608,12 @@ describe('finishRun', () => {
       completedSteps: [],
       failedSteps: [],
     };
-    readFileSync.mockReturnValue(JSON.stringify(emptyState));
+    readFileSync.mockImplementation((filePath) => {
+      if (typeof filePath === 'string' && filePath.includes('NIGHTYTIDY-REPORT')) {
+        return 'mock report file content';
+      }
+      return JSON.stringify(emptyState);
+    });
 
     const result = await finishRun('/fake/project');
 
@@ -617,64 +631,28 @@ describe('finishRun', () => {
     expect(result.error).toContain('No active orchestrator run');
   });
 
-  it('generates narrated changelog via runPrompt', async () => {
-    runPrompt.mockResolvedValue({ success: true, output: 'Test changelog text' });
-
+  it('makes a single runPrompt call for report generation', async () => {
     await finishRun('/fake/project');
 
     expect(runPrompt).toHaveBeenCalledOnce();
-    const promptArg = runPrompt.mock.calls[0][0];
-    expect(promptArg).toContain('Generate changelog');
-    const [, narration] = generateReport.mock.calls[0];
-    expect(narration).toBe('Test changelog text');
+    const [promptArg, , options] = runPrompt.mock.calls[0];
+    expect(promptArg).toContain('mock report prompt');
+    expect(options.label).toBe('Report generation');
   });
 
-  it('generates action plan via generateActionPlan', async () => {
-    generateActionPlan.mockResolvedValue({ text: 'Action plan content', cost: { costUSD: 0.03, inputTokens: 600, outputTokens: 300 } });
-
-    const result = await finishRun('/fake/project');
-
-    expect(generateActionPlan).toHaveBeenCalledOnce();
-    const [execResults, projDir] = generateActionPlan.mock.calls[0];
-    expect(execResults.completedCount).toBe(1);
-    expect(projDir).toBe('/fake/project');
-    expect(result).not.toHaveProperty('actionsPath');
-  });
-
-  it('commits only report and CLAUDE.md when action plan succeeds', async () => {
-    generateActionPlan.mockResolvedValue({ text: 'Action plan content', cost: { costUSD: 0.03, inputTokens: 600, outputTokens: 300 } });
-    const mockGit = { add: vi.fn(), commit: vi.fn() };
-    getGitInstance.mockReturnValue(mockGit);
-
-    await finishRun('/fake/project');
-
-    const addedFiles = mockGit.add.mock.calls[0][0];
-    expect(addedFiles).toEqual(['NIGHTYTIDY-REPORT_01_2026-01-01-0000.md', 'CLAUDE.md']);
-  });
-
-  it('handles changelog failure gracefully (uses fallback narration)', async () => {
-    runPrompt.mockResolvedValue({ success: false, output: '', error: 'timeout' });
+  it('falls back to generateReport when AI report fails verification', async () => {
+    verifyReportContent.mockReturnValue(false);
 
     const result = await finishRun('/fake/project');
 
     expect(result.success).toBe(true);
-    const [, narration] = generateReport.mock.calls[0];
+    expect(generateReport).toHaveBeenCalledOnce();
+    const [, narration, , options] = generateReport.mock.calls[0];
     expect(narration).toBeNull();
+    expect(options.skipClaudeMdUpdate).toBe(true);
   });
 
-  it('handles action plan failure gracefully', async () => {
-    generateActionPlan.mockResolvedValue({ text: null, cost: null });
-
-    const result = await finishRun('/fake/project');
-
-    expect(result.success).toBe(true);
-    expect(result).not.toHaveProperty('actionsPath');
-    const [, , , options] = generateReport.mock.calls[0];
-    expect(options.actionPlanText).toBeFalsy();
-  });
-
-  it('commits only report and CLAUDE.md when action plan fails', async () => {
-    generateActionPlan.mockResolvedValue({ text: null, cost: null });
+  it('commits report and CLAUDE.md', async () => {
     const mockGit = { add: vi.fn(), commit: vi.fn() };
     getGitInstance.mockReturnValue(mockGit);
 
@@ -682,6 +660,14 @@ describe('finishRun', () => {
 
     const addedFiles = mockGit.add.mock.calls[0][0];
     expect(addedFiles).toEqual(['NIGHTYTIDY-REPORT_01_2026-01-01-0000.md', 'CLAUDE.md']);
+  });
+
+  it('calls updateClaudeMd independently', async () => {
+    await finishRun('/fake/project');
+
+    expect(updateClaudeMd).toHaveBeenCalledOnce();
+    const [metadata] = updateClaudeMd.mock.calls[0];
+    expect(metadata.branchName).toBe('nightytidy/run-2026-03-06-1430');
   });
 
   it('stops dashboard server and cleans up ephemeral files', async () => {
@@ -700,7 +686,12 @@ describe('finishRun', () => {
 
   it('handles missing dashboard PID gracefully', async () => {
     const stateNoDash = { ...validState, dashboardPid: null, dashboardUrl: null };
-    readFileSync.mockReturnValue(JSON.stringify(stateNoDash));
+    readFileSync.mockImplementation((filePath) => {
+      if (typeof filePath === 'string' && filePath.includes('NIGHTYTIDY-REPORT')) {
+        return 'mock report file content';
+      }
+      return JSON.stringify(stateNoDash);
+    });
 
     const result = await finishRun('/fake/project');
 
@@ -733,13 +724,43 @@ describe('dashboard integration', () => {
   it('initRun writes initial progress JSON', async () => {
     await initRun('/fake/project', { steps: '1,2' });
 
-    const progressCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-progress.json'));
+    // Find the final 'running' progress (init phases write 'initializing' first)
+    const progressCall = writeFileSync.mock.calls.find(c => {
+      if (!c[0].includes('nightytidy-progress.json')) return false;
+      const data = JSON.parse(c[1]);
+      return data.status === 'running';
+    });
     expect(progressCall).toBeDefined();
     const progress = JSON.parse(progressCall[1]);
     expect(progress.status).toBe('running');
     expect(progress.totalSteps).toBe(2);
     expect(progress.steps).toHaveLength(2);
     expect(progress.steps[0].status).toBe('pending');
+  });
+
+  it('initRun writes init phase progress at each stage', async () => {
+    await initRun('/fake/project', { steps: '1,2' });
+
+    const initProgressCalls = writeFileSync.mock.calls
+      .filter(c => c[0].includes('nightytidy-progress.json'))
+      .map(c => JSON.parse(c[1]))
+      .filter(p => p.status === 'initializing');
+
+    // Should have all 8 init phases
+    expect(initProgressCalls.length).toBe(8);
+
+    // Phases should appear in correct order
+    const phases = initProgressCalls.map(p => p.initPhase);
+    expect(phases).toEqual([
+      'lock', 'git_init', 'pre_checks', 'sync_prompts',
+      'validate_steps', 'git_branch', 'copy_prompts', 'dashboard',
+    ]);
+
+    // Each should only contain status + initPhase
+    for (const p of initProgressCalls) {
+      expect(p.status).toBe('initializing');
+      expect(typeof p.initPhase).toBe('string');
+    }
   });
 
   it('initRun succeeds without dashboard URL when spawn fails', async () => {
@@ -812,9 +833,16 @@ describe('dashboard integration', () => {
       dashboardUrl: 'http://localhost:9999',
     };
     existsSync.mockReturnValue(true);
-    readFileSync.mockReturnValue(JSON.stringify(validState));
+    readFileSync.mockImplementation((filePath) => {
+      if (typeof filePath === 'string' && filePath.includes('NIGHTYTIDY-REPORT')) {
+        return 'mock report file content';
+      }
+      return JSON.stringify(validState);
+    });
     mergeRunBranch.mockResolvedValue({ success: true });
     runPrompt.mockResolvedValue({ success: true, output: 'changelog', attempts: 1 });
+    buildReportPrompt.mockReturnValue('mock report prompt');
+    verifyReportContent.mockReturnValue(true);
     getGitInstance.mockReturnValue({ add: vi.fn(), commit: vi.fn() });
     vi.spyOn(process, 'kill').mockImplementation(() => {});
 

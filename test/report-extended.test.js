@@ -11,8 +11,12 @@ import { createLoggerMock } from './helpers/mocks.js';
 
 vi.mock('../src/logger.js', () => createLoggerMock());
 
+vi.mock('../src/prompts/loader.js', () => ({
+  REPORT_PROMPT: 'mock report prompt template',
+}));
+
 import { writeFileSync, readFileSync, existsSync } from 'fs';
-import { generateReport, formatDuration } from '../src/report.js';
+import { generateReport, formatDuration, updateClaudeMd } from '../src/report.js';
 import { warn } from '../src/logger.js';
 import { makeMetadata, makeResults } from './helpers/testdata.js';
 
@@ -223,5 +227,72 @@ describe('generateReport — content structure', () => {
     const reportContent = writeFileSync.mock.calls[0][1];
     expect(reportContent).toContain('Suggestion');
     expect(reportContent).toContain('4 (1 initial + 3 retries)');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Direct updateClaudeMd tests
+// ---------------------------------------------------------------------------
+
+describe('updateClaudeMd — direct', () => {
+  it('writes the NightyTidy section with correct date and tag', () => {
+    existsSync.mockReturnValue(false);
+    const metadata = makeMetadata();
+
+    updateClaudeMd(metadata);
+
+    const claudeWriteCall = writeFileSync.mock.calls.find(
+      (call) => call[0].endsWith('CLAUDE.md')
+    );
+    expect(claudeWriteCall).toBeDefined();
+    const content = claudeWriteCall[1];
+    expect(content).toContain('## NightyTidy');
+    expect(content).toContain('2026-02-28');
+    expect(content).toContain('nightytidy-before-2026-02-28-0100');
+  });
+
+  it('appends section when CLAUDE.md exists without NightyTidy section', () => {
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue('# My Project\n\nContent here.\n');
+
+    updateClaudeMd(makeMetadata());
+
+    const claudeWriteCall = writeFileSync.mock.calls.find(
+      (call) => call[0].endsWith('CLAUDE.md')
+    );
+    expect(claudeWriteCall).toBeDefined();
+    const content = claudeWriteCall[1];
+    expect(content).toContain('# My Project');
+    expect(content).toContain('Content here.');
+    expect(content).toContain('## NightyTidy');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// skipClaudeMdUpdate option
+// ---------------------------------------------------------------------------
+
+describe('generateReport — skipClaudeMdUpdate', () => {
+  it('skips CLAUDE.md update when skipClaudeMdUpdate is true', () => {
+    const results = makeResults({ completedCount: 1, failedCount: 0 });
+
+    generateReport(results, 'narration', makeMetadata(), { skipClaudeMdUpdate: true });
+
+    const claudeWriteCall = writeFileSync.mock.calls.find(
+      (call) => call[0].endsWith('CLAUDE.md')
+    );
+    expect(claudeWriteCall).toBeUndefined();
+  });
+
+  it('updates CLAUDE.md by default when skipClaudeMdUpdate is not set', () => {
+    existsSync.mockReturnValue(false);
+    const results = makeResults({ completedCount: 1, failedCount: 0 });
+
+    generateReport(results, 'narration', makeMetadata());
+
+    const claudeWriteCall = writeFileSync.mock.calls.find(
+      (call) => call[0].endsWith('CLAUDE.md')
+    );
+    expect(claudeWriteCall).toBeDefined();
   });
 });

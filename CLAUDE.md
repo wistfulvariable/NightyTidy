@@ -68,19 +68,19 @@ test/
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 11 tests — getGitInstance, getHeadHash, tag/branch collision, ensureOnBranch recovery
   notifications.test.js    # 2 tests — mock node-notifier
-  report.test.js           # 22 tests — mock fs, verify report format, inline actionPlanText, cost column, cleanNarration, junk detection, token summary
-  report-extended.test.js  # 17 tests — updateClaudeMd, formatDuration edge cases, cost rendering
+  report.test.js           # 43 tests — mock fs, verify report format, inline actionPlanText, cost column, cleanNarration, junk detection, token summary
+  report-extended.test.js  # 21 tests — updateClaudeMd, formatDuration edge cases, cost rendering
   consolidation.test.js    # 15 tests — buildConsolidationPrompt, generateActionPlan, heading downgrade, error handling
-  steps.test.js            # 11 tests — structural integrity of prompt data + manifest validation + reloadSteps
+  steps.test.js            # 12 tests — structural integrity of prompt data + manifest validation + reloadSteps
   integration.test.js      # 5 tests — multi-module integration with real git repos
   setup.test.js            # 7 tests — integration snippet generation, idempotent setup
   dashboard-tui.test.js    # 29 tests — formatMs, progressBar, render with chalk proxy mock
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
-  orchestrator.test.js     # 62 tests — initRun, runStep, finishRun (changelog + action plan + token passthrough), dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync, 3-tier step recovery, inter-tier branch guard
+  orchestrator.test.js     # 61 tests — initRun, runStep, finishRun (changelog + action plan + token passthrough), dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync, 3-tier step recovery, inter-tier branch guard, init phase progress
   contracts.test.js        # 39 tests — module API contract verification against CLAUDE.md
-  gui-logic.test.js        # 138 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, formatTime, detectGitError, detectStaleState, detectRateLimit, formatCountdown, preprocessClaudeOutput, etc.)
+  gui-logic.test.js        # 145 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, formatTime, detectGitError, detectStaleState, detectRateLimit, formatCountdown, preprocessClaudeOutput, INIT_PHASES, getInitPhaseIndex, etc.)
   gui-server.test.js       # 47 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, log-error, log-path, security headers, traversal, singleton guard
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks
@@ -130,7 +130,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/dashboard-tui.js` | Standalone TUI progress display (reads progress JSON, renders with chalk) | chalk (standalone script) |
 | `src/lock.js` | Atomic lock file — prevents concurrent runs (async, TTY override prompt) | readline, logger |
 | `src/logger.js` | File + stdout logger (universal dep) | none |
-| `src/report.js` | Report generation + CLAUDE.md update + `getVersion()` | logger |
+| `src/report.js` | Report generation + prompt builder + verification + CLAUDE.md update + `getVersion()` | logger |
 | `src/consolidation.js` | Post-run action plan — consolidates step outputs into tiered recommendations (returns text for inline embedding) | claude, logger, executor, prompts/loader |
 | `src/setup.js` | `--setup` command: CLAUDE.md integration for target projects | logger, prompts/loader |
 | `src/sync.js` | Google Doc prompt sync — fetches published doc, parses HTML, updates prompt files + manifest + STEPS_HASH | crypto, logger |
@@ -300,7 +300,7 @@ bin/nightytidy.js
         ├── src/consolidation.js     → claude, logger, executor, prompts/loader
         ├── src/setup.js             → logger, prompts/loader
         ├── src/sync.js              → crypto, logger (dynamic import from cli.js)
-        ├── src/orchestrator.js      → logger, checks, git, claude, executor, lock, report, consolidation, notifications, prompts, dashboard-standalone
+        ├── src/orchestrator.js      → logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone
         │     └── src/dashboard-standalone.js → dashboard-html (standalone detached process)
         └── src/report.js            → logger  (cli.js imports formatDuration + getVersion)
 ```

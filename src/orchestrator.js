@@ -17,11 +17,10 @@ import { initLogger, info, warn, error as logError } from './logger.js';
 import { runPreChecks } from './checks.js';
 import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance, ensureOnBranch } from './git.js';
 import { runPrompt, ERROR_TYPE } from './claude.js';
-import { STEPS, CHANGELOG_PROMPT, reloadSteps } from './prompts/loader.js';
+import { STEPS, reloadSteps } from './prompts/loader.js';
 import { executeSingleStep, sumCosts, SAFETY_PREAMBLE, PROD_PREAMBLE, copyPromptsToProject } from './executor.js';
-import { generateActionPlan } from './consolidation.js';
 import { notify } from './notifications.js';
-import { generateReport, formatDuration, getVersion, buildReportNames } from './report.js';
+import { generateReport, formatDuration, getVersion, buildReportNames, buildReportPrompt, verifyReportContent, updateClaudeMd } from './report.js';
 import { acquireLock, releaseLock } from './lock.js';
 
 /**
@@ -419,13 +418,18 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
       return fail('A run is already in progress. Call --finish-run to complete it, or delete nightytidy-run-state.json to force-reset.');
     }
 
+    writeProgress(projectDir, { status: 'initializing', initPhase: 'lock' });
     await acquireLock(projectDir, { persistent: true });
 
+    writeProgress(projectDir, { status: 'initializing', initPhase: 'git_init' });
     const git = initGit(projectDir);
     excludeEphemeralFiles();
+
+    writeProgress(projectDir, { status: 'initializing', initPhase: 'pre_checks' });
     await runPreChecks(projectDir, git);
 
     // Auto-sync prompts from Google Doc (non-blocking)
+    writeProgress(projectDir, { status: 'initializing', initPhase: 'sync_prompts' });
     try {
       const { syncPrompts } = await import('./sync.js');
       const syncResult = await syncPrompts();
@@ -447,6 +451,7 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
     }
 
     // Validate and select steps
+    writeProgress(projectDir, { status: 'initializing', initPhase: 'validate_steps' });
     let selectedNums;
     if (steps) {
       const rawTokens = steps.split(',').map(s => s.trim());
@@ -466,11 +471,13 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
       selectedNums = STEPS.map(s => s.number);
     }
 
+    writeProgress(projectDir, { status: 'initializing', initPhase: 'git_branch' });
     const originalBranch = await getCurrentBranch();
     const tagName = await createPreRunTag();
     const runBranch = await createRunBranch(originalBranch);
 
     // Sync all prompts into the target project for audit trail
+    writeProgress(projectDir, { status: 'initializing', initPhase: 'copy_prompts' });
     copyPromptsToProject(projectDir);
     try {
       const git = getGitInstance();
@@ -480,6 +487,7 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
       warn(`Failed to commit refactor prompts: ${err.message}`);
     }
 
+    writeProgress(projectDir, { status: 'initializing', initPhase: 'dashboard' });
     const state = {
       version: STATE_VERSION,
       originalBranch,
@@ -495,7 +503,7 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
     };
     writeState(projectDir, state);
 
-    // Write initial progress JSON and spawn dashboard server
+    // Write running progress JSON and spawn dashboard server
     writeProgress(projectDir, buildProgressState(state));
     const dashboard = await spawnDashboardServer(projectDir);
     if (dashboard) {
@@ -755,41 +763,61 @@ export async function finishRun(projectDir) {
     const stepsInputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.inputTokens || 0), 0) || null;
     const stepsOutputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.outputTokens || 0), 0) || null;
 
-    // ── Finish-phase AI calls with output streaming ──
+    // Build unique report filename (numbered + timestamped)
+    const { reportFile } = buildReportNames(projectDir, state.startTime);
+
+    // ── Single AI call for report generation ──
     const finishStart = Date.now();
 
-    // Build progress state with virtual "Finalizing Report" step
+    // Build progress state with virtual "Final Report" step
     const progress = buildProgressState(state);
-    progress.steps.push({ number: 0, name: 'Finalizing Report', status: 'running', duration: null });
+    progress.steps.push({ number: 0, name: 'Final Report', status: 'running', duration: null });
     progress.currentStepIndex = state.selectedSteps.length;
-    progress.currentStepName = 'Finalizing Report';
+    progress.currentStepName = 'Final Report';
     writeProgress(projectDir, progress);
 
     const onOutput = createOutputHandler(progress, projectDir);
 
-    // Narrated changelog (AI call 1)
-    info('Generating narrated changelog...');
-    const changelogResult = await runPrompt(SAFETY_PREAMBLE + CHANGELOG_PROMPT, projectDir, {
-      label: 'Narrated changelog',
+    // Build metadata for pre-built report sections
+    const metadata = {
+      projectDir,
+      branchName: state.runBranch,
+      tagName: state.tagName,
+      originalBranch: state.originalBranch,
+      startTime: state.startTime,
+      endTime: Date.now(),
+      totalCostUSD: stepsCostUSD || null,
+      totalInputTokens: stepsInputTokens,
+      totalOutputTokens: stepsOutputTokens,
+    };
+
+    // Generate report in a single fresh Claude session (like other steps)
+    info('Generating report (narration + action plan)...');
+    const reportPrompt = buildReportPrompt(executionResults, metadata, { reportFile });
+    const reportResult = await runPrompt(SAFETY_PREAMBLE + reportPrompt, projectDir, {
+      label: 'Report generation',
       timeout: state.timeout || undefined,
       onOutput,
     });
-    const narration = changelogResult.success ? changelogResult.output : null;
-    if (!narration) warn('Narrated changelog generation failed — using fallback text');
-    let finishCost = changelogResult.cost || null;
-
-    // Build unique report filename (numbered + timestamped)
-    const { reportFile } = buildReportNames(projectDir, state.startTime);
-
-    // Consolidated action plan (AI call 2)
-    info('Generating consolidated action plan...');
-    const { text: actionPlanText, cost: actionCost } = await generateActionPlan(executionResults, projectDir, {
-      timeout: state.timeout || undefined,
-      onOutput,
-    });
-    finishCost = sumCosts(finishCost, actionCost);
+    let finishCost = reportResult.cost || null;
 
     const finishDuration = Date.now() - finishStart;
+
+    // Verify the report file was created correctly
+    const reportPath = path.join(projectDir, reportFile);
+    let reportOk = false;
+    try {
+      if (existsSync(reportPath)) {
+        const content = readFileSync(reportPath, 'utf8');
+        reportOk = verifyReportContent(content, metadata);
+      }
+    } catch { /* verification failed */ }
+
+    // Fallback: generate report via JS template if AI failed
+    if (!reportOk) {
+      warn('AI report generation failed or produced invalid output — using template fallback');
+      generateReport(executionResults, null, metadata, { reportFile, skipClaudeMdUpdate: true });
+    }
 
     // Update progress: mark finish step as completed
     const lastStep = progress.steps[progress.steps.length - 1];
@@ -799,24 +827,14 @@ export async function finishRun(projectDir) {
     writeProgress(projectDir, progress);
 
     // Include finish-phase costs in totals
-    const totalCostUSD = stepsCostUSD + (finishCost?.costUSD || 0) || null;
+    const totalCostUSD = (stepsCostUSD || 0) + (finishCost?.costUSD || 0) || null;
     const totalInputTokens = (stepsInputTokens || 0) + (finishCost?.inputTokens || 0) || null;
     const totalOutputTokens = (stepsOutputTokens || 0) + (finishCost?.outputTokens || 0) || null;
 
-    // Generate report (with inline action plan if available)
-    generateReport(executionResults, narration, {
-      projectDir,
-      branchName: state.runBranch,
-      tagName: state.tagName,
-      originalBranch: state.originalBranch,
-      startTime: state.startTime,
-      endTime: Date.now(),
-      totalCostUSD,
-      totalInputTokens,
-      totalOutputTokens,
-    }, { actionPlanText, reportFile });
+    // Always update CLAUDE.md via JS (not AI)
+    updateClaudeMd(metadata);
 
-    // Commit report
+    // Commit report + CLAUDE.md (if not already committed by Claude)
     const gitInstance = getGitInstance();
     try {
       const filesToCommit = [reportFile, 'CLAUDE.md'];

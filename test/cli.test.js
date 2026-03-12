@@ -5,8 +5,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // ---------------------------------------------------------------------------
 
 vi.mock('fs', () => ({
-  existsSync: vi.fn(() => false),
-  readFileSync: vi.fn(() => '{}'),
+  existsSync: vi.fn((p) => typeof p === 'string' && p.includes('NIGHTYTIDY-REPORT')),
+  readFileSync: vi.fn((p) => {
+    if (typeof p === 'string' && p.includes('NIGHTYTIDY-REPORT')) return '# NightyTidy Report\nMock content';
+    return '{}';
+  }),
   writeFileSync: vi.fn(),
   unlinkSync: vi.fn(),
   openSync: vi.fn(() => 99),
@@ -82,7 +85,7 @@ vi.mock('../src/prompts/loader.js', () => ({
     { number: 1, name: 'Lint', prompt: 'lint the code' },
     { number: 2, name: 'Format', prompt: 'format the code' },
   ],
-  CHANGELOG_PROMPT: 'generate changelog',
+  REPORT_PROMPT: 'mock report prompt template',
   CONSOLIDATION_PROMPT: 'consolidate actions',
   reloadSteps: vi.fn(),
 }));
@@ -93,10 +96,6 @@ vi.mock('../src/sync.js', () => ({
     summary: { updated: [], added: [], removed: [], unchanged: [] },
     error: null,
   }),
-}));
-
-vi.mock('../src/consolidation.js', () => ({
-  generateActionPlan: vi.fn().mockResolvedValue({ text: null, cost: null }),
 }));
 
 vi.mock('../src/executor.js', () => ({
@@ -114,6 +113,9 @@ vi.mock('../src/report.js', () => ({
   formatDuration: vi.fn((ms) => `${Math.round(ms / 1000)}s`),
   getVersion: vi.fn(() => '0.1.0'),
   buildReportNames: vi.fn(() => ({ reportFile: 'NIGHTYTIDY-REPORT_01_2026-01-01-0000.md' })),
+  buildReportPrompt: vi.fn(() => 'mock report prompt'),
+  verifyReportContent: vi.fn(() => true),
+  updateClaudeMd: vi.fn(),
 }));
 
 vi.mock('../src/setup.js', () => ({
@@ -141,7 +143,8 @@ import { initGit, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBr
 import { runPrompt } from '../src/claude.js';
 import { executeSteps } from '../src/executor.js';
 import { notify } from '../src/notifications.js';
-import { generateReport } from '../src/report.js';
+import { generateReport, verifyReportContent, updateClaudeMd } from '../src/report.js';
+import { existsSync } from 'fs';
 import { setupProject } from '../src/setup.js';
 import { startDashboard, updateDashboard, stopDashboard, scheduleShutdown } from '../src/dashboard.js';
 import { syncPrompts } from '../src/sync.js';
@@ -211,9 +214,14 @@ describe('cli.js run()', () => {
     ]);
 
     executeSteps.mockResolvedValue(makeExecutionResults({ completedCount: 1, failedCount: 0 }));
-    runPrompt.mockResolvedValue({ success: true, output: 'Changelog text', error: null });
+    runPrompt.mockResolvedValue({ success: true, output: 'Report text', error: null });
     runPreChecks.mockResolvedValue(undefined);
     mergeRunBranch.mockResolvedValue({ success: true });
+
+    // Reset report verification mocks to happy-path defaults
+    existsSync.mockImplementation((p) => typeof p === 'string' && p.includes('NIGHTYTIDY-REPORT'));
+    verifyReportContent.mockReturnValue(true);
+    updateClaudeMd.mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -237,7 +245,8 @@ describe('cli.js run()', () => {
     expect(createPreRunTag).toHaveBeenCalledTimes(1);
     expect(createRunBranch).toHaveBeenCalledTimes(1);
     expect(executeSteps).toHaveBeenCalledTimes(1);
-    expect(generateReport).toHaveBeenCalledTimes(1);
+    // AI report generation succeeds → generateReport fallback NOT called
+    expect(generateReport).not.toHaveBeenCalled();
     expect(mergeRunBranch).toHaveBeenCalledTimes(1);
 
     // Notification sent for start and completion
@@ -294,17 +303,19 @@ describe('cli.js run()', () => {
   // -------------------------------------------------------------------------
   // Changelog failure fallback
   // -------------------------------------------------------------------------
-  it('proceeds with null narration when changelog generation fails', async () => {
+  it('falls back to generateReport when AI report generation fails', async () => {
     runPrompt.mockResolvedValue({ success: false, output: '', error: 'timeout' });
+    existsSync.mockReturnValue(false);
+    verifyReportContent.mockReturnValue(false);
 
     await run();
 
-    // generateReport should be called with null narration
+    // generateReport should be called as fallback
     expect(generateReport).toHaveBeenCalledWith(
       expect.any(Object),
       null,
       expect.any(Object),
-      expect.any(Object),
+      expect.objectContaining({ skipClaudeMdUpdate: true }),
     );
   });
 
@@ -376,11 +387,11 @@ describe('cli.js run()', () => {
       expect.objectContaining({ timeout: 60 * 60 * 1000 }),
     );
 
-    // Changelog runPrompt should also receive timeout
-    const changelogCall = runPrompt.mock.calls.find(
-      (call) => call[2]?.label === 'Narrated changelog'
+    // Report runPrompt should also receive timeout
+    const reportCall = runPrompt.mock.calls.find(
+      (call) => call[2]?.label === 'Report generation'
     );
-    expect(changelogCall[2]).toHaveProperty('timeout', 60 * 60 * 1000);
+    expect(reportCall[2]).toHaveProperty('timeout', 60 * 60 * 1000);
   });
 
   it('does not pass timeout when --timeout is not specified', async () => {
@@ -454,7 +465,8 @@ describe('cli.js run()', () => {
     // produces correct output at least.
     await run();
 
-    expect(generateReport).toHaveBeenCalledTimes(1);
+    // On the non-abort happy path, AI report succeeds → generateReport fallback not called
+    expect(generateReport).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------

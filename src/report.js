@@ -11,6 +11,7 @@
 import { writeFileSync, readFileSync, existsSync, readdirSync } from 'fs';
 import path from 'path';
 import { info, warn } from './logger.js';
+import { REPORT_PROMPT } from './prompts/loader.js';
 
 const REPORT_PREFIX = 'NIGHTYTIDY-REPORT';
 
@@ -301,10 +302,145 @@ function buildUndoSection(metadata) {
   );
 }
 
+const OUTPUT_TRUNCATE_LIMIT = 6000;
+
+/**
+ * Truncate step output text to a manageable size.
+ *
+ * @param {string} text - Raw output text
+ * @param {number} [limit] - Max characters
+ * @returns {string} Truncated text
+ */
+function truncateOutput(text, limit = OUTPUT_TRUNCATE_LIMIT) {
+  if (!text || text.length <= limit) return text || '';
+  return text.slice(0, limit) + '\n\n[...truncated]';
+}
+
+/**
+ * Build the step outputs section for the report prompt.
+ * Each step's output is formatted and truncated for inclusion in the prompt.
+ *
+ * @param {ExecutionResults} results - Execution results
+ * @returns {string} Formatted step outputs section
+ */
+function buildStepOutputsForPrompt(results) {
+  const sections = [];
+  for (const r of results.results) {
+    const status = r.status === 'completed' ? 'completed' : 'failed';
+    const output = r.status === 'completed'
+      ? truncateOutput(r.output)
+      : 'No output (step failed)';
+    sections.push(
+      `### Step ${r.step.number}: ${r.step.name} (${status})\n${output}\n---`
+    );
+  }
+  return sections.join('\n\n');
+}
+
+/**
+ * Build the complete report generation prompt for a single Claude session.
+ *
+ * Combines pre-built deterministic sections with step outputs and the
+ * report prompt template. The resulting prompt tells Claude to:
+ * 1. Read git diffs to write a narration
+ * 2. Review step outputs to produce an action plan
+ * 3. Combine everything with the verbatim pre-built sections
+ * 4. Write the complete report to the specified file
+ *
+ * @param {ExecutionResults} results - Step execution results
+ * @param {ReportMetadata} metadata - Run metadata (dates, branches, costs)
+ * @param {Object} options
+ * @param {string} options.reportFile - Target report filename (basename)
+ * @returns {string} Complete prompt for Claude
+ */
+export function buildReportPrompt(results, metadata, { reportFile }) {
+  const date = formatDate(metadata.startTime);
+
+  const summarySection = buildSummarySection(results, metadata);
+  const stepTable = buildStepTable(results);
+  const failedSection = results.failedCount > 0 ? buildFailedSection(results) : '';
+  const undoSection = buildUndoSection(metadata);
+  const stepOutputs = buildStepOutputsForPrompt(results);
+
+  const parts = [
+    REPORT_PROMPT,
+    '',
+    '---',
+    '',
+    '## File to Write',
+    '',
+    `Write the complete report to: \`${reportFile}\``,
+    '',
+    `Report date for the title: ${date}`,
+    '',
+    '## Pre-Built Sections (include VERBATIM in the report)',
+    '',
+    '<!-- VERBATIM: summary -->',
+    summarySection,
+    '<!-- END VERBATIM -->',
+    '',
+    '<!-- VERBATIM: table -->',
+    stepTable,
+    '<!-- END VERBATIM -->',
+  ];
+
+  if (failedSection) {
+    parts.push(
+      '',
+      '<!-- VERBATIM: failed -->',
+      failedSection,
+      '<!-- END VERBATIM -->',
+    );
+  }
+
+  parts.push(
+    '',
+    '<!-- VERBATIM: undo -->',
+    undoSection,
+    '<!-- END VERBATIM -->',
+    '',
+    '## Step Outputs (for action plan generation)',
+    '',
+    stepOutputs,
+  );
+
+  return parts.join('\n');
+}
+
+/**
+ * Verify that AI-generated report content contains the expected sections.
+ * Checks for required structural elements and rejects junk output.
+ *
+ * @param {string} content - Report file content
+ * @param {ReportMetadata} metadata - Expected metadata for verification
+ * @returns {boolean} True if report appears valid
+ */
+export function verifyReportContent(content, metadata) {
+  if (!content || content.length < 200) return false;
+
+  const requiredMarkers = [
+    '# NightyTidy Report',
+    '## Run Summary',
+    '## Step Results',
+    '## How to Undo This Run',
+    metadata.tagName,
+  ];
+
+  for (const marker of requiredMarkers) {
+    if (!content.includes(marker)) return false;
+  }
+
+  const lower = content.toLowerCase();
+  if (JUNK_MARKERS.some(m => lower.includes(m))) return false;
+
+  return true;
+}
+
 /**
  * Generate the complete NIGHTYTIDY-REPORT.md file.
  *
  * Writes the report file and updates CLAUDE.md with run information.
+ * Used as the primary fallback when the AI-based report generation fails.
  * Error contract: Warns but NEVER throws.
  *
  * @param {ExecutionResults} results - Execution results
@@ -313,7 +449,7 @@ function buildUndoSection(metadata) {
  * @param {ReportOptions} [options] - Report options
  * @returns {string} The report filename (basename only, e.g. 'NIGHTYTIDY-REPORT_01_2026-03-10-1448.md')
  */
-export function generateReport(results, narration, metadata, { actionPlanText, reportFile } = {}) {
+export function generateReport(results, narration, metadata, { actionPlanText, reportFile, skipClaudeMdUpdate } = {}) {
   const date = formatDate(metadata.startTime);
 
   let report = `# NightyTidy Report \u2014 ${date}\n\n`;
@@ -343,8 +479,9 @@ export function generateReport(results, narration, metadata, { actionPlanText, r
   writeFileSync(reportPath, report, 'utf8');
   info(`Report written to ${reportPath}`);
 
-  // Update CLAUDE.md
-  updateClaudeMd(metadata);
+  if (!skipClaudeMdUpdate) {
+    updateClaudeMd(metadata);
+  }
 
   return filename;
 }
@@ -378,7 +515,7 @@ function updateOrAppendSection(content, marker, newSection) {
  * @param {ReportMetadata} metadata - Report metadata
  * @returns {void}
  */
-function updateClaudeMd(metadata) {
+export function updateClaudeMd(metadata) {
   const claudePath = path.join(metadata.projectDir, 'CLAUDE.md');
   const date = formatDate(metadata.startTime);
   const section =

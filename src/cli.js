@@ -6,12 +6,12 @@ import chalk from 'chalk';
 import { initLogger, info, error as logError, debug, warn } from './logger.js';
 import { runPreChecks } from './checks.js';
 import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from './git.js';
+import { existsSync, readFileSync } from 'fs';
 import { runPrompt } from './claude.js';
-import { STEPS, CHANGELOG_PROMPT, reloadSteps } from './prompts/loader.js';
+import { STEPS, reloadSteps } from './prompts/loader.js';
 import { executeSteps, SAFETY_PREAMBLE, copyPromptsToProject } from './executor.js';
-import { generateActionPlan } from './consolidation.js';
 import { notify } from './notifications.js';
-import { generateReport, formatDuration, getVersion, buildReportNames } from './report.js';
+import { generateReport, formatDuration, getVersion, buildReportNames, buildReportPrompt, verifyReportContent, updateClaudeMd } from './report.js';
 import { setupProject } from './setup.js';
 import { startDashboard, updateDashboard, stopDashboard, scheduleShutdown, broadcastOutput, clearOutputBuffer } from './dashboard.js';
 import { acquireLock } from './lock.js';
@@ -468,39 +468,14 @@ async function finalizeRun(executionResults, projectDir, ctx) {
     updateDashboard(ctx.dashState);
   }
 
-  // Narrated changelog
-  info('Generating narrated changelog...');
-  ctx.spinner = ora({ text: 'Generating changelog...', color: 'cyan' }).start();
-
-  const changelogResult = await runPrompt(SAFETY_PREAMBLE + CHANGELOG_PROMPT, projectDir, {
-    label: 'Narrated changelog',
-    timeout: ctx.timeoutMs,
-  });
-  const narration = changelogResult.success ? changelogResult.output : null;
-  if (!narration) warn('Narrated changelog generation failed \u2014 using fallback text');
-
-  ctx.spinner.stop();
-
   // Build unique report filename (numbered + timestamped)
   const startTime = Date.now() - executionResults.totalDuration;
   const { reportFile } = buildReportNames(projectDir, startTime);
 
-  // Consolidated action plan
-  ctx.spinner = ora({ text: 'Generating action plan...', color: 'cyan' }).start();
-  const { text: actionPlanText } = await generateActionPlan(executionResults, projectDir, {
-    timeout: ctx.timeoutMs,
-  });
-  ctx.spinner.stop();
-  if (actionPlanText) {
-    console.log(chalk.green('Action plan generated (included in report).'));
-  } else {
-    console.log(chalk.dim('Action plan skipped (no data or generation failed).'));
-  }
-
-  // Generate report (with inline action plan if available)
   const totalInputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.inputTokens || 0), 0) || null;
   const totalOutputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.outputTokens || 0), 0) || null;
-  generateReport(executionResults, narration, {
+
+  const metadata = {
     projectDir,
     branchName: ctx.runBranch,
     tagName: ctx.tagName,
@@ -509,9 +484,42 @@ async function finalizeRun(executionResults, projectDir, ctx) {
     endTime: Date.now(),
     totalInputTokens,
     totalOutputTokens,
-  }, { actionPlanText, reportFile });
+  };
 
-  // Commit report on run branch
+  // Single AI call for report generation (narration + action plan)
+  info('Generating report...');
+  ctx.spinner = ora({ text: 'Generating report...', color: 'cyan' }).start();
+
+  const reportPrompt = buildReportPrompt(executionResults, metadata, { reportFile });
+  const reportResult = await runPrompt(SAFETY_PREAMBLE + reportPrompt, projectDir, {
+    label: 'Report generation',
+    timeout: ctx.timeoutMs,
+  });
+
+  ctx.spinner.stop();
+
+  // Verify the report file was created correctly
+  const reportPath = path.join(projectDir, reportFile);
+  let reportOk = false;
+  try {
+    if (existsSync(reportPath)) {
+      const content = readFileSync(reportPath, 'utf8');
+      reportOk = verifyReportContent(content, metadata);
+    }
+  } catch { /* verification failed */ }
+
+  if (!reportOk) {
+    warn('AI report generation failed — using template fallback');
+    generateReport(executionResults, null, metadata, { reportFile, skipClaudeMdUpdate: true });
+    console.log(chalk.dim('Report generated with fallback template.'));
+  } else {
+    console.log(chalk.green('Report generated successfully.'));
+  }
+
+  // Always update CLAUDE.md via JS (not AI)
+  updateClaudeMd(metadata);
+
+  // Commit report + CLAUDE.md (if not already committed by Claude)
   const gitInstance = getGitInstance();
   try {
     const filesToCommit = [reportFile, 'CLAUDE.md'];
