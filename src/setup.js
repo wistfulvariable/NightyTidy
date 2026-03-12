@@ -1,15 +1,39 @@
+/**
+ * @fileoverview Setup command for adding NightyTidy integration to target projects.
+ *
+ * Generates a CLAUDE.md integration snippet that teaches Claude Code how to use
+ * NightyTidy in orchestrator mode.
+ *
+ * @module setup
+ */
+
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import path from 'path';
 import { STEPS } from './prompts/loader.js';
 import { info } from './logger.js';
 
+/**
+ * @typedef {'created' | 'appended' | 'updated'} SetupResult
+ */
+
+/** Start marker for NightyTidy section in CLAUDE.md */
 const MARKER_START = '## NightyTidy — Automated Codebase Improvement';
+
+/** End marker for NightyTidy section in CLAUDE.md */
 const MARKER_END = '<!-- /nightytidy -->';
 
+/**
+ * Generate a markdown list of all available steps.
+ * @returns {string} Numbered step list
+ */
 function generateStepList() {
   return STEPS.map(s => `${s.number}. **${s.name}**`).join('\n');
 }
 
+/**
+ * Generate the full CLAUDE.md integration snippet.
+ * @returns {string} Markdown snippet with usage instructions
+ */
 export function generateIntegrationSnippet() {
   return `${MARKER_START}
 
@@ -65,6 +89,16 @@ ${generateStepList()}
 ${MARKER_END}`;
 }
 
+/**
+ * Add or update NightyTidy integration in a project's CLAUDE.md.
+ *
+ * - If CLAUDE.md doesn't exist: creates it with the snippet
+ * - If it exists without NightyTidy section: appends the snippet
+ * - If it exists with NightyTidy section: updates the section in place
+ *
+ * @param {string} projectDir - Target project directory
+ * @returns {SetupResult} What action was taken
+ */
 export function setupProject(projectDir) {
   const claudeMdPath = path.join(projectDir, 'CLAUDE.md');
   const snippet = generateIntegrationSnippet();

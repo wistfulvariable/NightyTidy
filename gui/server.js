@@ -1,7 +1,17 @@
 /**
- * NightyTidy Desktop GUI — Node.js backend server.
+ * @fileoverview NightyTidy Desktop GUI — Node.js backend server.
+ *
  * Serves static files + API endpoints for the GUI.
  * Opens Chrome in --app mode for a native-feeling window.
+ *
+ * Security features:
+ * - Binds to localhost only (127.0.0.1)
+ * - Path traversal protection
+ * - Body size limits
+ * - Security headers on all responses
+ * - Singleton guard (prevents multiple instances)
+ *
+ * @module gui/server
  */
 
 import http from 'node:http';
@@ -17,6 +27,10 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const RESOURCES_DIR = join(__dirname, 'resources');
 const NIGHTYTIDY_BIN = join(__dirname, '..', 'bin', 'nightytidy.js');
 
+/**
+ * MIME type mappings for static file serving.
+ * @type {Record<string, string>}
+ */
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
@@ -26,8 +40,13 @@ const MIME_TYPES = {
   '.svg': 'image/svg+xml',
 };
 
-const MAX_BODY_BYTES = 1024 * 1024; // 1 MB — prevents memory exhaustion from oversized POST bodies
+/** Maximum POST body size (1 MB) - prevents memory exhaustion */
+const MAX_BODY_BYTES = 1024 * 1024;
 
+/**
+ * Security headers applied to all responses.
+ * @type {Record<string, string>}
+ */
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
@@ -86,6 +105,9 @@ interface IFileDialog {
 }
 
 public static class FolderPicker {
+    [DllImport("user32.dll")]
+    static extern IntPtr GetForegroundWindow();
+
     public static string Pick(string title) {
         var dlg = (IFileDialog)new FileOpenDialogRCW();
         uint opts;
@@ -93,7 +115,9 @@ public static class FolderPicker {
         // FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_DEFAULTNOMINIMODE
         dlg.SetOptions(opts | 0x20u | 0x40u | 0x800u | 0x20000000u);
         dlg.SetTitle(title);
-        if (dlg.Show(IntPtr.Zero) != 0) return "";
+        // Use foreground window (Chrome) as owner so dialog appears on top, not behind
+        IntPtr owner = GetForegroundWindow();
+        if (dlg.Show(owner) != 0) return "";
         IShellItem item;
         dlg.GetResult(out item);
         string path;
@@ -116,6 +140,10 @@ let serverInstance = null;
 // with a message if so — the user should use the existing window.
 const GUI_LOCK_FILE = join(tmpdir(), 'nightytidy-gui.lock');
 
+/**
+ * Check if another GUI server is already running.
+ * @returns {Promise<string|null>} URL of existing server or null if none
+ */
 function checkExistingInstance() {
   let existing;
   try {
@@ -150,10 +178,17 @@ function checkExistingInstance() {
   });
 }
 
+/**
+ * Write GUI singleton lock file.
+ * @param {number} port - Server port number
+ */
 function writeGuiLock(port) {
   writeFileSync(GUI_LOCK_FILE, JSON.stringify({ pid: process.pid, url: `http://127.0.0.1:${port}`, port }), 'utf8');
 }
 
+/**
+ * Remove GUI singleton lock file. Safe to call if lock doesn't exist.
+ */
 function removeGuiLock() {
   try { unlinkSync(GUI_LOCK_FILE); } catch { /* ignore */ }
 }
@@ -174,6 +209,13 @@ let guiLogFilePath = null;
 const guiLogBuffer = [];
 const MAX_BUFFER = 500;
 
+/**
+ * Log a message to the GUI log file.
+ * Buffers in memory until project directory is selected.
+ *
+ * @param {'error' | 'warn' | 'info' | 'debug'} level - Log level
+ * @param {string} message - Message to log
+ */
 function guiLog(level, message) {
   const timestamp = new Date().toISOString();
   const tag = level.toUpperCase().padEnd(5);
@@ -190,6 +232,10 @@ function guiLog(level, message) {
   }
 }
 
+/**
+ * Set the GUI log directory and flush buffered entries.
+ * @param {string} projectDir - Project directory
+ */
 function setGuiLogDir(projectDir) {
   guiLogFilePath = join(projectDir, GUI_LOG_FILE);
   try {
@@ -201,6 +247,9 @@ function setGuiLogDir(projectDir) {
   flushGuiLogBuffer();
 }
 
+/**
+ * Flush buffered log entries to file.
+ */
 function flushGuiLogBuffer() {
   if (!guiLogFilePath || guiLogBuffer.length === 0) return;
   try {
@@ -211,6 +260,10 @@ function flushGuiLogBuffer() {
   }
 }
 
+/**
+ * Kill a spawned process (platform-specific).
+ * @param {import('child_process').ChildProcess} proc - Process to kill
+ */
 function killProcess(proc) {
   if (process.platform === 'win32') {
     execSync(`taskkill /pid ${proc.pid} /T /F`, { windowsHide: true });
@@ -219,6 +272,9 @@ function killProcess(proc) {
   }
 }
 
+/**
+ * Kill all active spawned processes.
+ */
 function killAllProcesses() {
   for (const [, proc] of activeProcesses) {
     try { killProcess(proc); } catch { /* ignore */ }
@@ -228,6 +284,13 @@ function killAllProcesses() {
 
 // ── Static File Serving ────────────────────────────────────────────
 
+/**
+ * Serve a static file from the resources directory.
+ * Includes path traversal protection.
+ *
+ * @param {import('http').ServerResponse} res - HTTP response
+ * @param {string} urlPath - URL path requested
+ */
 async function serveStatic(res, urlPath) {
   const safePath = urlPath === '/' ? '/index.html' : urlPath;
   const filePath = join(RESOURCES_DIR, safePath);
@@ -259,12 +322,20 @@ async function serveStatic(res, urlPath) {
 
 // ── API: Config ─────────────────────────────────────────────────────
 
+/**
+ * Handle /api/config - return server configuration.
+ * @param {import('http').ServerResponse} res - HTTP response
+ */
 function handleConfig(res) {
   sendJson(res, { ok: true, bin: NIGHTYTIDY_BIN });
 }
 
 // ── API: Folder Dialog ─────────────────────────────────────────────
 
+/**
+ * Handle /api/select-folder - open native folder picker dialog.
+ * @param {import('http').ServerResponse} res - HTTP response
+ */
 async function handleSelectFolder(res) {
   const platform = process.platform;
 
@@ -327,8 +398,14 @@ async function handleSelectFolder(res) {
 
 // ── API: Run Command ───────────────────────────────────────────────
 
-const PROCESS_TIMEOUT_MS = 48 * 60_000; // 48 min — must exceed step timeout (45 min) + overhead
+/** Process safety timeout (48 min) - exceeds step timeout (45 min) + overhead */
+const PROCESS_TIMEOUT_MS = 48 * 60_000;
 
+/**
+ * Handle /api/run-command - spawn a shell command.
+ * @param {import('http').IncomingMessage} req - HTTP request
+ * @param {import('http').ServerResponse} res - HTTP response
+ */
 async function handleRunCommand(req, res) {
   const body = await readBody(req);
   const { command, id } = body;
@@ -404,6 +481,11 @@ async function handleRunCommand(req, res) {
 
 // ── API: Kill Process ──────────────────────────────────────────────
 
+/**
+ * Handle /api/kill-process - terminate a running process by ID.
+ * @param {import('http').IncomingMessage} req - HTTP request
+ * @param {import('http').ServerResponse} res - HTTP response
+ */
 async function handleKillProcess(req, res) {
   const body = await readBody(req);
   const { id } = body;
@@ -518,6 +600,11 @@ function handleExit(res) {
 
 // ── Helpers ────────────────────────────────────────────────────────
 
+/**
+ * Read and parse JSON request body with size limit protection.
+ * @param {import('http').IncomingMessage} req - HTTP request
+ * @returns {Promise<Object>} Parsed JSON body or empty object on error
+ */
 function readBody(req) {
   return new Promise((resolve) => {
     let data = '';
@@ -541,6 +628,12 @@ function readBody(req) {
   });
 }
 
+/**
+ * Send a JSON response with security headers.
+ * @param {import('http').ServerResponse} res - HTTP response
+ * @param {Object} data - Data to serialize
+ * @param {number} [status=200] - HTTP status code
+ */
 function sendJson(res, data, status = 200) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -551,6 +644,11 @@ function sendJson(res, data, status = 200) {
 
 // ── Router ─────────────────────────────────────────────────────────
 
+/**
+ * Main HTTP request router.
+ * @param {import('http').IncomingMessage} req - HTTP request
+ * @param {import('http').ServerResponse} res - HTTP response
+ */
 function handleRequest(req, res) {
   const url = new URL(req.url, `http://localhost`);
 
@@ -597,6 +695,10 @@ function handleRequest(req, res) {
 
 // ── Chrome Launcher ────────────────────────────────────────────────
 
+/**
+ * Find Chrome executable path (platform-specific).
+ * @returns {string|null} Path to Chrome or null if not found
+ */
 function findChrome() {
   const paths = process.platform === 'win32'
     ? [
@@ -623,6 +725,11 @@ function findChrome() {
   return null;
 }
 
+/**
+ * Launch Chrome in app mode pointing to the server URL.
+ * @param {string} url - URL to open
+ * @returns {import('child_process').ChildProcess|null} Chrome process or null
+ */
 function launchChrome(url) {
   if (process.env.NIGHTYTIDY_NO_CHROME) {
     console.log(`\n  NightyTidy GUI is running at: ${url}`);
@@ -660,6 +767,9 @@ function launchChrome(url) {
 
 // ── Cleanup ────────────────────────────────────────────────────────
 
+/**
+ * Clean up all resources on shutdown.
+ */
 function cleanup() {
   removeGuiLock();
   killAllProcesses();

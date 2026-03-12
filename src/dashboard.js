@@ -1,3 +1,12 @@
+/**
+ * @fileoverview Dashboard progress display with HTTP server, SSE, and TUI fallback.
+ *
+ * Error contract: All errors are swallowed silently. Dashboard failure must not
+ * crash a run. Fire-and-forget design.
+ *
+ * @module dashboard
+ */
+
 import { createServer } from 'http';
 import { randomBytes } from 'crypto';
 import { spawn } from 'child_process';
@@ -7,13 +16,43 @@ import path from 'path';
 import { info, warn, debug } from './logger.js';
 import { getHTML } from './dashboard-html.js';
 
-const SHUTDOWN_DELAY = 3000;
-const URL_FILENAME = 'nightytidy-dashboard.url';
-const PROGRESS_FILENAME = 'nightytidy-progress.json';
-const OUTPUT_BUFFER_SIZE = 100 * 1024; // 100KB rolling buffer per step
-const OUTPUT_WRITE_INTERVAL = 500; // ms — throttle disk writes for output
-const MAX_BODY_BYTES = 1024; // 1 KB — stop endpoint only needs a small JSON body
+/**
+ * @typedef {Object} DashboardState
+ * @property {string} status - Current status (e.g., 'running', 'completed')
+ * @property {number} currentStep - Current step number
+ * @property {number} totalSteps - Total number of steps
+ * @property {string} [currentStepName] - Name of current step
+ * @property {string} [currentStepOutput] - Output buffer for current step
+ */
 
+/**
+ * @typedef {Object} DashboardResult
+ * @property {string|null} url - Dashboard URL or null if server failed
+ * @property {number|null} port - Server port or null if server failed
+ */
+
+/** Delay before auto-shutdown after run completion (ms) */
+const SHUTDOWN_DELAY = 3000;
+
+/** Dashboard URL file name in project directory */
+const URL_FILENAME = 'nightytidy-dashboard.url';
+
+/** Progress JSON file name in project directory */
+const PROGRESS_FILENAME = 'nightytidy-progress.json';
+
+/** Rolling output buffer size (100KB) */
+const OUTPUT_BUFFER_SIZE = 100 * 1024;
+
+/** Throttle interval for disk writes of output buffer (ms) */
+const OUTPUT_WRITE_INTERVAL = 500;
+
+/** Maximum POST body size for stop endpoint (1KB) */
+const MAX_BODY_BYTES = 1024;
+
+/**
+ * Internal dashboard state object (singleton pattern).
+ * @type {Object}
+ */
 let ds = {
   server: null,
   sseClients: new Set(),
@@ -28,6 +67,9 @@ let ds = {
   outputWriteTimer: null,
 };
 
+/**
+ * Reset dashboard state to initial values. Used for testing.
+ */
 export function resetDashboardState() {
   ds = {
     server: null,
@@ -44,17 +86,29 @@ export function resetDashboardState() {
   };
 }
 
+/**
+ * Security headers applied to all responses.
+ * @type {Record<string, string>}
+ */
 const SECURITY_HEADERS = {
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Content-Security-Policy': "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'",
 };
 
+/**
+ * Serve the dashboard HTML page.
+ * @param {import('http').ServerResponse} res - HTTP response
+ */
 function serveHTML(res) {
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', ...SECURITY_HEADERS });
   res.end(getHTML(ds.csrfToken));
 }
 
+/**
+ * Handle Server-Sent Events connection.
+ * @param {import('http').ServerResponse} res - HTTP response
+ */
 function handleSSE(res) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -79,6 +133,12 @@ function handleSSE(res) {
   });
 }
 
+/**
+ * Handle stop request with CSRF validation.
+ * @param {import('http').IncomingMessage} req - HTTP request
+ * @param {import('http').ServerResponse} res - HTTP response
+ * @param {Function} onStop - Callback to invoke when stop is confirmed
+ */
 function handleStop(req, res, onStop) {
   let body = '';
   req.on('data', chunk => {
@@ -110,6 +170,12 @@ function handleStop(req, res, onStop) {
   });
 }
 
+/**
+ * Main HTTP request router.
+ * @param {import('http').IncomingMessage} req - HTTP request
+ * @param {import('http').ServerResponse} res - HTTP response
+ * @param {Function} onStop - Stop callback
+ */
 function handleRequest(req, res, onStop) {
   if (req.method === 'GET' && req.url === '/') {
     serveHTML(res);
@@ -123,6 +189,10 @@ function handleRequest(req, res, onStop) {
   }
 }
 
+/**
+ * Spawn a TUI progress window in a terminal emulator.
+ * Platform-specific: Windows uses 'start', macOS uses 'open', Linux uses x-terminal-emulator.
+ */
 function spawnTuiWindow() {
   if (!ds.progressFilePath) return;
   try {
@@ -160,6 +230,15 @@ function spawnTuiWindow() {
   }
 }
 
+/**
+ * Start the dashboard HTTP server and TUI window.
+ *
+ * @param {DashboardState} initialState - Initial progress state
+ * @param {Object} options - Options
+ * @param {Function} options.onStop - Callback when user requests stop
+ * @param {string} options.projectDir - Project directory for progress files
+ * @returns {Promise<DashboardResult|null>} Dashboard info or null on failure
+ */
 export async function startDashboard(initialState, { onStop, projectDir }) {
   try {
     ds.csrfToken = randomBytes(16).toString('hex');
@@ -210,6 +289,10 @@ export async function startDashboard(initialState, { onStop, projectDir }) {
   }
 }
 
+/**
+ * Update dashboard with new state. Broadcasts to SSE clients and writes progress file.
+ * @param {DashboardState} state - New state to broadcast
+ */
 export function updateDashboard(state) {
   ds.currentState = state;
 
@@ -233,6 +316,10 @@ export function updateDashboard(state) {
   }
 }
 
+/**
+ * Stop the dashboard server and clean up all resources.
+ * Safe to call even if server isn't running.
+ */
 export function stopDashboard() {
   clearOutputBuffer();
 
@@ -281,6 +368,11 @@ export function stopDashboard() {
   ds.currentState = null;
 }
 
+/**
+ * Broadcast output chunk to SSE clients and rolling buffer.
+ * Throttles disk writes to avoid excessive I/O.
+ * @param {string} chunk - Output chunk to broadcast
+ */
 export function broadcastOutput(chunk) {
   // Append to rolling buffer, trim from front if over limit
   ds.outputBuffer += chunk;
@@ -316,6 +408,9 @@ export function broadcastOutput(chunk) {
   }
 }
 
+/**
+ * Clear the output buffer and remove from current state.
+ */
 export function clearOutputBuffer() {
   ds.outputBuffer = '';
   if (ds.currentState) {
@@ -323,6 +418,10 @@ export function clearOutputBuffer() {
   }
 }
 
+/**
+ * Schedule automatic dashboard shutdown after a delay.
+ * Used when run completes to allow user to see final state.
+ */
 export function scheduleShutdown() {
   ds.shutdownTimer = setTimeout(() => stopDashboard(), SHUTDOWN_DELAY);
 }

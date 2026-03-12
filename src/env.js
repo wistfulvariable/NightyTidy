@@ -1,10 +1,22 @@
+/**
+ * @fileoverview Shared environment helpers for safe subprocess spawning.
+ *
+ * Uses an explicit allowlist to filter environment variables before passing
+ * them to Claude Code subprocesses. This prevents secret leakage and
+ * interference from unknown environment variables.
+ *
+ * @module env
+ */
+
 import { debug } from './logger.js';
 
-// Allowlist of env vars safe to pass to Claude Code subprocess.
-// Blocks CLAUDECODE (prevents subprocess refusing to start when invoked
-// from within a Claude Code session) and any unknown vars that could
-// leak secrets or interfere with subprocess behavior.
-
+/**
+ * Allowlist of env vars safe to pass to Claude Code subprocess.
+ * Blocks CLAUDECODE (prevents subprocess refusing to start when invoked
+ * from within a Claude Code session) and any unknown vars that could
+ * leak secrets or interfere with subprocess behavior.
+ * @type {Set<string>}
+ */
 const ALLOWED_ENV_VARS = new Set([
   // System paths
   'PATH', 'PATHEXT',
@@ -31,6 +43,10 @@ const ALLOWED_ENV_VARS = new Set([
   'NIGHTYTIDY_LOG_LEVEL',
 ]);
 
+/**
+ * Prefixes that are allowed for environment variables.
+ * @type {string[]}
+ */
 const ALLOWED_ENV_PREFIXES = [
   'ANTHROPIC_',  // API keys, config
   'CLAUDE_',     // Claude Code config (CLAUDECODE blocked separately below)
@@ -39,11 +55,22 @@ const ALLOWED_ENV_PREFIXES = [
   'GIT_',        // Git configuration
 ];
 
-// Explicitly blocked even if they match a prefix
+/**
+ * Explicitly blocked even if they match a prefix.
+ * @type {Set<string>}
+ */
 const BLOCKED_ENV_VARS = new Set([
   'CLAUDECODE',
 ]);
 
+/**
+ * Create a filtered copy of process.env safe for subprocess spawning.
+ *
+ * Includes only allowlisted variables and prefixes, logs filtered vars via debug().
+ * Safe to call before logger initialization (silently skips logging).
+ *
+ * @returns {Record<string, string>} Filtered environment variables
+ */
 export function cleanEnv() {
   const env = {};
   const filtered = [];
