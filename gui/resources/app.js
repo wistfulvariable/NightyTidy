@@ -595,8 +595,8 @@ function renderRunningStepList() {
     const step = state.steps.find(s => s.number === num);
     const name = step ? step.name : `Step ${num}`;
     return `
-      <div class="step-item step-pending" id="run-step-${num}">
-        <span class="step-icon">&#9675;</span>
+      <div class="step-item step-pending" id="run-step-${num}" role="listitem">
+        <span class="step-icon"><span aria-hidden="true">&#9675;</span><span class="sr-only">Pending</span></span>
         <span class="step-num">${num}.</span>
         <span class="step-name">${NtLogic.escapeHtml(name)}</span>
         <span class="step-cost"></span>
@@ -608,8 +608,8 @@ function renderRunningStepList() {
 
   // Virtual "Final Report" step — always visible at the bottom
   const finishHtml = `
-    <div class="step-item step-pending step-finish" id="run-step-${FINISH_STEP_NUM}">
-      <span class="step-icon">&#9675;</span>
+    <div class="step-item step-pending step-finish" id="run-step-${FINISH_STEP_NUM}" role="listitem">
+      <span class="step-icon"><span aria-hidden="true">&#9675;</span><span class="sr-only">Pending</span></span>
       <span class="step-num"></span>
       <span class="step-name">Final Report</span>
       <span class="step-cost"></span>
@@ -632,11 +632,13 @@ function updateStepItemStatus(stepNum, status, duration) {
 
   switch (status) {
     case 'running':
-      iconEl.innerHTML = '<span class="spinner"></span>';
+      iconEl.innerHTML = '<span class="spinner" role="img" aria-label="Running"></span>';
       break;
     case 'completed':
     case 'failed': {
-      iconEl.textContent = status === 'completed' ? '\u2713' : '\u2717';
+      iconEl.innerHTML = status === 'completed'
+        ? '<span aria-hidden="true">\u2713</span><span class="sr-only">Completed</span>'
+        : '<span aria-hidden="true">\u2717</span><span class="sr-only">Failed</span>';
       if (duration) durEl.textContent = NtLogic.formatMs(duration);
       const r = state.stepResults.find(r => r.step === stepNum);
       if (costEl) {
@@ -656,7 +658,7 @@ function updateStepItemStatus(stepNum, status, duration) {
       break;
     }
     case 'skipped':
-      iconEl.textContent = '\u27A0';
+      iconEl.innerHTML = '<span aria-hidden="true">\u27A0</span><span class="sr-only">Skipped</span>';
       if (duration) durEl.textContent = NtLogic.formatMs(duration);
       el.classList.add('step-clickable');
       el.setAttribute('role', 'button');
@@ -665,7 +667,7 @@ function updateStepItemStatus(stepNum, status, duration) {
       el.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); viewStepOutput(stepNum); } };
       break;
     default:
-      iconEl.innerHTML = '&#9675;';
+      iconEl.innerHTML = '<span aria-hidden="true">&#9675;</span><span class="sr-only">Pending</span>';
   }
 }
 
@@ -1717,6 +1719,7 @@ function renderSummary(finishData) {
   const listEl = document.getElementById('summary-step-list');
   listEl.innerHTML = state.stepResults.map(r => {
     const status = r.status || 'pending';
+    const statusLabel = status === 'completed' ? 'Completed' : status === 'failed' ? 'Failed' : status === 'skipped' ? 'Skipped' : 'Pending';
     const icon = status === 'completed' ? '\u2713' : status === 'failed' ? '\u2717' : status === 'skipped' ? '\u27A0' : '&#9675;';
     const isFinishStep = r.step === FINISH_STEP_NUM;
     const name = isFinishStep ? 'Final Report' : (r.name || `Step ${r.step}`);
@@ -1728,8 +1731,8 @@ function renderSummary(finishData) {
     const tokensStr = tokens ? tokens + ' tokens' : '';
     const finishClass = isFinishStep ? ' step-finish' : '';
     return `
-      <div class="step-item step-${status}${finishClass} step-clickable" data-step="${r.step}" role="button" tabindex="0">
-        <span class="step-icon">${icon}</span>
+      <div class="step-item step-${status}${finishClass} step-clickable" data-step="${r.step}" role="listitem button" tabindex="0" aria-label="${name}: ${statusLabel}">
+        <span class="step-icon" aria-hidden="true">${icon}</span>
         <span class="step-num">${stepNumDisplay}</span>
         <span class="step-name">${NtLogic.escapeHtml(name)}</span>
         <span class="step-cost">${cost}</span>
