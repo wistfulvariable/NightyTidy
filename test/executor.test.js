@@ -707,7 +707,12 @@ describe('executeSteps rate-limit handling', () => {
     });
 
     expect(onRateLimitPause).toHaveBeenCalledTimes(1);
-    expect(onRateLimitPause).toHaveBeenCalledWith(120000);
+    expect(onRateLimitPause).toHaveBeenCalledWith(120000, expect.objectContaining({
+      results: expect.any(Array),
+      completedCount: expect.any(Number),
+      failedCount: expect.any(Number),
+      currentStepIndex: expect.any(Number),
+    }));
   });
 
   it('retries the step after rate-limit pause resolves with retryAfterMs', async () => {
@@ -879,8 +884,8 @@ describe('executeSteps rate-limit handling', () => {
         errorType: 'rate_limit',
       },
     ];
-    // 6 probe attempts all fail with rate_limit
-    for (let i = 0; i < 6; i++) {
+    // 9 probe attempts all fail with rate_limit (extended backoff schedule)
+    for (let i = 0; i < 9; i++) {
       calls.push({
         success: false, output: '', error: 'still rate limited', exitCode: -1, attempts: 1,
         errorType: 'rate_limit',
@@ -933,6 +938,47 @@ describe('executeSteps rate-limit handling', () => {
     expect(onRateLimitResume).not.toHaveBeenCalled();
     expect(result.failedCount).toBe(1);
     expect(result.completedCount).toBe(1);
+  });
+
+  it('includes snapshot with results data in onRateLimitPause callback', async () => {
+    const steps = [makeStep(1, 'Lint'), makeStep(2, 'Format')];
+    const onRateLimitPause = vi.fn();
+
+    runPrompt
+      // Step 1 improvement: success
+      .mockResolvedValueOnce({
+        success: true, output: 'lint done', error: null, exitCode: 0, attempts: 1, duration: 300_000,
+      })
+      // Step 1 doc update
+      .mockResolvedValueOnce({
+        success: true, output: 'docs1', error: null, exitCode: 0, attempts: 1,
+      })
+      // Step 2 improvement: rate-limit failure
+      .mockResolvedValueOnce({
+        success: false, output: '', error: 'rate limited', exitCode: -1, attempts: 4,
+        errorType: 'rate_limit', retryAfterMs: 60000,
+      })
+      // waitForRateLimit sleeps (retryAfterMs provided) — no probe call needed
+      // Step 2 retry improvement: success
+      .mockResolvedValueOnce({
+        success: true, output: 'format done', error: null, exitCode: 0, attempts: 1, duration: 300_000,
+      })
+      // Step 2 retry doc update
+      .mockResolvedValueOnce({
+        success: true, output: 'docs2', error: null, exitCode: 0, attempts: 1,
+      });
+
+    await executeSteps(steps, '/fake/project', { onRateLimitPause });
+
+    const snapshot = onRateLimitPause.mock.calls[0][1];
+    expect(snapshot).toBeDefined();
+    expect(snapshot.completedCount).toBe(1);
+    expect(snapshot.failedCount).toBe(0);
+    expect(snapshot.currentStepIndex).toBe(1);
+    expect(snapshot.results).toHaveLength(2); // completed Step 1 + failed Step 2
+    expect(snapshot.results[0].status).toBe('completed');
+    expect(snapshot.results[1].status).toBe('failed');
+    expect(snapshot.results[1].errorType).toBe('rate_limit');
   });
 
   it('continues with remaining steps after rate-limit recovery', async () => {

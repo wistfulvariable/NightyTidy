@@ -804,10 +804,13 @@ function cleanup() {
   server.listen(0, '127.0.0.1', () => {
     const { port } = server.address();
     const url = `http://127.0.0.1:${port}`;
+    const chromeUrl = process.env.NIGHTYTIDY_TEST_RATE_LIMIT
+      ? `${url}?test-rate-limit=${process.env.NIGHTYTIDY_TEST_RATE_LIMIT}`
+      : url;
     writeGuiLock(port);
     guiLog('info', `GUI server started on ${url}`);
     console.log(`NightyTidy GUI server running on ${url}`);
-    launchChrome(url);
+    launchChrome(chromeUrl);
 
     // Watchdog: self-terminate if no heartbeat from the browser.
     // Catches cases where Chrome crashes or is force-killed (unload never fires).

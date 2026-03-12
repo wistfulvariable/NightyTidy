@@ -328,7 +328,10 @@ const BACKOFF_SCHEDULE_MS = [
   15 * 60_000,    // 15 min
   30 * 60_000,    // 30 min
   60 * 60_000,    // 1 hr
-  120 * 60_000,   // 2 hr (cap)
+  120 * 60_000,   // 2 hr
+  120 * 60_000,   // 2 hr (repeat — covers 5hr+ usage caps)
+  120 * 60_000,   // 2 hr (repeat)
+  120 * 60_000,   // 2 hr (repeat — ~9.9hr total coverage)
 ];
 
 /**
@@ -434,7 +437,12 @@ export async function executeSteps(selectedSteps, projectDir, { signal, timeout,
     // Rate-limit: pause and wait, then retry the same step
     if (stepResult.errorType === ERROR_TYPE.RATE_LIMIT) {
       info('Rate limit detected — pausing run');
-      onRateLimitPause?.(stepResult.retryAfterMs);
+      onRateLimitPause?.(stepResult.retryAfterMs, {
+        results: [...results],
+        completedCount,
+        failedCount,
+        currentStepIndex: i,
+      });
 
       const resumed = await waitForRateLimit(stepResult.retryAfterMs, signal, projectDir);
       if (!resumed) {

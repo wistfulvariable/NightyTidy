@@ -64,7 +64,7 @@ test/
   checks.test.js           # 4 tests — mock subprocess, mock git
   checks-extended.test.js  # 23 tests — auth paths, disk space characterization, branch warnings, empty repo, dirty working tree
   claude.test.js           # 73 tests — fake child process, fake timers, abort signal, Windows shell mode, stream-json NDJSON parsing, classifyError, rate-limit retry skip, stderr capture, inactivity timeout
-  executor.test.js         # 50 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection, continueSession/promptOverride, rate-limit pause/resume, copyPromptsToProject
+  executor.test.js         # 51 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection, continueSession/promptOverride, rate-limit pause/resume, copyPromptsToProject
   executor-extended.test.js # 13 tests — fallbackCommit error path, waitForRateLimit probe errors, empty steps, hash mismatch
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 11 tests — getGitInstance, getHeadHash, tag/branch collision, ensureOnBranch recovery
@@ -77,12 +77,13 @@ test/
   setup.test.js            # 7 tests — integration snippet generation, idempotent setup
   dashboard-tui.test.js    # 29 tests — formatMs, progressBar, render with chalk proxy mock
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
+  cli-resume.test.js       # 23 tests — --resume flag, state save/restore, validation, SIGINT
   cli-sync.test.js         # 6 tests — --sync and --sync-dry-run command flow
   dashboard-extended.test.js # 3 tests — scheduleShutdown timer behavior
   dashboard-extended2.test.js # 4 tests — platform-specific TUI spawn, server failure handling
   integration-extended.test.js # 6 tests — setup + executor + git cross-module integration
-  orchestrator.test.js     # 61 tests — initRun, runStep, finishRun (changelog + action plan + token passthrough), dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync, 3-tier step recovery, inter-tier branch guard, init phase progress
-  contracts.test.js        # 39 tests — module API contract verification against CLAUDE.md
+  orchestrator.test.js     # 63 tests — initRun, runStep, finishRun (changelog + action plan + token passthrough), dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync, 3-tier step recovery, inter-tier branch guard, init phase progress, failed-step retry + dedup
+  contracts.test.js        # 40 tests — module API contract verification against CLAUDE.md
   gui-logic.test.js        # 145 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, formatTime, detectGitError, detectStaleState, detectRateLimit, formatCountdown, preprocessClaudeOutput, INIT_PHASES, getInitPhaseIndex, etc.)
   gui-server.test.js       # 47 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, log-error, log-path, security headers, traversal, singleton guard
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
@@ -91,6 +92,11 @@ test/
   dashboard-broadcastoutput.test.js # 5 tests — buffer overflow, throttled writes, clearOutputBuffer with state
   env.test.js              # 15 tests — allowlist filtering, prefix matching, CLAUDECODE blocking, debug logging
   sync.test.js             # 67 tests — Google Doc fetch, HTML parsing, section filtering, manifest matching, hash computation, sync orchestration
+  checks-timeout.test.js   # 1 test — checks.js timeout handling
+  dashboard-error-paths.test.js # 7 tests — dashboard error recovery paths
+  lock-edge-cases.test.js  # 6 tests — lock file edge cases (EEXIST, stale, invalid)
+  mutation-testing.test.js  # 16 tests — mutation testing across multiple modules
+  report-edge-cases.test.js # 10 tests — report generation edge cases
   fixtures/
     google-doc-sample.html # Representative Google Doc HTML for deterministic sync testing
   helpers/
@@ -122,7 +128,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `bin/nightytidy.js` | Entry point — calls `run()` | cli |
 | `src/cli.js` | Commander + Inquirer + full lifecycle | all modules |
 | `src/executor.js` | Core step loop + single-step execution, prompt integrity check, fast-completion detection, rate-limit pause/resume with exponential backoff, `copyPromptsToProject()` syncs all prompts to target repo | crypto, fs, claude, git, notifications, prompts |
-| `src/orchestrator.js` | Claude Code orchestrator mode (JSON API for step-by-step runs) + dashboard | logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone |
+| `src/orchestrator.js` | Claude Code orchestrator mode (JSON API for step-by-step runs) + dashboard; exports `readState`/`writeState`/`deleteState`/`STATE_VERSION` for resume support | logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone |
 | `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue, error classification via `classifyError`/`ERROR_TYPE`, exported `sleep`) | logger, env |
 | `src/git.js` | Git operations via simple-git + `ensureOnBranch()` branch guard | logger |
 | `src/checks.js` | Pre-run validation (8 checks) | logger, env |
@@ -160,6 +166,7 @@ npx nightytidy --list --json    # List steps as JSON (for Claude Code orchestrat
 npx nightytidy --init-run --steps 1,5,12  # Initialize orchestrated run (pre-checks, git, state file)
 npx nightytidy --run-step 1     # Run a single step in orchestrated mode
 npx nightytidy --finish-run     # Finish orchestrated run (report, merge, cleanup)
+npx nightytidy --resume      # Resume a previously paused run (usage limit / manual restart)
 npx nightytidy --sync           # Sync prompts from the published Google Doc
 npx nightytidy --sync-dry-run   # Preview what --sync would change without writing files
 npx nightytidy --sync --sync-url <url>  # Sync from a custom Google Doc URL
@@ -227,7 +234,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | `CLAUDE.md` (appended section) | "NightyTidy — Last Run" with undo tag | Yes (on run branch) |
 | `nightytidy.lock` | Prevents concurrent runs (PID + timestamp) | No (auto-removed on exit; persistent in orchestrator mode) |
 | `nightytidy-gui.log` | GUI session log (startup, API requests, errors, shutdown) | No |
-| `nightytidy-run-state.json` | Orchestrator run state (steps, results, branch info) | No (deleted by --finish-run) |
+| `nightytidy-run-state.json` | Orchestrator run state (steps, results, branch info); also created during rate-limit pause in interactive mode for `--resume` | No (deleted by --finish-run / --resume completion) |
 | `nightytidy-before-*` git tag | Safety snapshot before run | Yes (tag) |
 | `nightytidy/run-*` git branch | All changes from this run | Yes (branch) |
 | `audit-reports/refactor-prompts/*.md` | All 33 step prompts synced for audit trail — stale files from renames auto-removed | Yes (on run branch) |
@@ -255,6 +262,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **Lock file is atomic**: `acquireLock()` uses `fs.openSync(path, 'wx')` (O_EXCL) to prevent TOCTOU races between concurrent processes.
 - **Inactivity timeout**: `waitForChild()` in `claude.js` kills the subprocess after 3 minutes of no stdout/stderr activity (`INACTIVITY_TIMEOUT_MS`). Prevents hung Claude Code processes from blocking runs. Configurable via `inactivityTimeout` option (0 disables). The retry loop in `runPrompt()` automatically retries after an inactivity kill.
 - **3-tier step recovery**: `runStep()` in `orchestrator.js` uses 3 recovery tiers for failed steps. Tier 1: normal `executeSingleStep` (fresh session, up to 4 retries). Tier 2 (prod): `executeSingleStep` with `continueSession: true` + `PROD_PREAMBLE` — resumes the killed session via `--continue` to recover partial work. Tier 3 (fresh retry): `executeSingleStep` with a clean slate. Rate-limit failures skip all recovery (handled by GUI pause/resume). Progress JSON gets `prodding: true` or `retrying: true` flags for GUI banners. Each step can use up to 12 Claude invocations before being marked failed.
+- **Usage-limit resume**: When a rate limit is detected during an interactive CLI run, state is saved to `nightytidy-run-state.json` (same format as orchestrator mode). The user can close the terminal and resume later with `--resume`. The backoff schedule covers ~9.9 hours total (2min → 5min → 15min → 30min → 1hr → 2hr × 4). GUI's pause overlay includes a "Save & Close" button that exits cleanly for later resume.
 - **Prompt integrity check**: `executor.js` computes SHA-256 of all step prompts and compares against `STEPS_HASH`. After editing any markdown file in `src/prompts/steps/` or `src/prompts/specials/`, recompute and update the hash in `executor.js`. Warns but does not block (user may have legitimate prompt changes).
 - **`--dangerously-skip-permissions`**: Required for non-interactive Claude Code subprocess calls. NightyTidy is the permission layer — it controls what prompts are sent and operates on a safety branch.
 - **Prompt delivery threshold**: Prompts longer than 8000 chars (`STDIN_THRESHOLD` in `claude.js`) are piped via stdin instead of passed as a `-p` argument. This avoids OS command-line length limits. If prompts fail with argument-too-long errors, check this threshold.
@@ -343,13 +351,13 @@ Each command is a separate process invocation. State persists via `nightytidy-ru
 ## Testing
 
 - **Framework**: Vitest v3, `vitest.config.js` for coverage thresholds + strip-shebang plugin
-- **Tests** across 34 files — `npm test` to run, `npm run test:ci` for coverage enforcement
+- **Tests** across 40 files — `npm test` to run, `npm run test:ci` for coverage enforcement
 - **Coverage thresholds**: 90% statements, 80% branches, 80% functions — enforced by `test:ci`
 - **Philosophy**: Mock Claude Code subprocess, use real git against temp directories. Test failure paths harder than success paths
 - **Universal mock**: All test files mock `../src/logger.js` to prevent file I/O during tests (exception: `logger.test.js` tests the real logger)
 - **Integration tests**: `git.test.js`, `git-extended.test.js`, `integration.test.js` use real temp git repos — run slower but catch real issues
 - **Smoke tests**: `smoke.test.js` — 6 fast structural checks for deploy verification (< 3s)
-- **Contract tests**: `contracts.test.js` — 39 tests verifying each module's error handling contract matches this document
+- **Contract tests**: `contracts.test.js` — 40 tests verifying each module's error handling contract matches this document
 - **Temp dir cleanup**: Always use `robustCleanup()` from `test/helpers/cleanup.js` instead of raw `rm()` — Windows EBUSY from git file handles causes flaky failures otherwise
 - **Shared test factories**: Use `test/helpers/mocks.js` for mock process/git factories and `test/helpers/testdata.js` for report test data — don't duplicate these in individual test files
 - See `.claude/memory/testing.md` for detailed mock patterns and pitfalls

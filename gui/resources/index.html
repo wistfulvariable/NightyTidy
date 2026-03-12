@@ -38,6 +38,14 @@
       <span class="subtitle">Select Steps</span>
     </header>
 
+    <div class="resume-banner hidden" id="resume-banner" role="alert">
+      <p id="resume-banner-text"></p>
+      <div class="btn-group">
+        <button class="btn btn-primary btn-sm" id="btn-resume-run" type="button">Resume Run</button>
+        <button class="btn btn-secondary btn-sm" id="btn-start-fresh" type="button">Start Fresh</button>
+      </div>
+    </div>
+
     <div class="steps-header">
       <span class="project-path" id="steps-project-path"></span>
       <div class="btn-group">
@@ -203,8 +211,10 @@
       <div class="modal-actions">
         <button class="btn btn-primary" id="btn-resume-now" type="button">Resume Now</button>
         <button class="btn btn-secondary" id="btn-finish-now" type="button">Finish with Partial Results</button>
+        <button class="btn btn-secondary" id="btn-save-close" type="button">Save & Close</button>
       </div>
-      <p class="pause-hint">If you've added credits or upgraded your plan, click <strong>Resume Now</strong>.</p>
+      <p class="pause-hint">If you've added credits or upgraded your plan, click <strong>Resume Now</strong>.<br>
+        <strong>Save & Close</strong> saves progress so you can resume later.</p>
     </div>
   </div>
 

@@ -1012,6 +1012,15 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
     expect(mod.runStep).toBeTypeOf('function');
     expect(mod.finishRun).toBeTypeOf('function');
   });
+
+  it('exports readState, writeState, deleteState, and STATE_VERSION for resume support', async () => {
+    const mod = await import('../src/orchestrator.js');
+
+    expect(mod.readState).toBeTypeOf('function');
+    expect(mod.writeState).toBeTypeOf('function');
+    expect(mod.deleteState).toBeTypeOf('function');
+    expect(mod.STATE_VERSION).toBe(1);
+  });
 });
 
 // ---------------------------------------------------------------------------

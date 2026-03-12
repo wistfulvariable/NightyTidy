@@ -374,17 +374,62 @@ describe('runStep', () => {
     expect(result.error).toContain('already been completed');
   });
 
-  it('fails when step has already been attempted and failed', async () => {
+  it('allows retrying a previously-failed step and removes old entry on success', async () => {
     const stateWithFailed = {
       ...validState,
-      failedSteps: [{ number: 1, name: 'Documentation', status: 'failed', duration: 30000, attempts: 4 }],
+      failedSteps: [{ number: 1, name: 'Documentation', status: 'failed', duration: 30000, attempts: 4, errorType: 'rate_limit' }],
     };
     readFileSync.mockReturnValue(JSON.stringify(stateWithFailed));
 
+    executeSingleStep.mockResolvedValue({
+      step: { number: 1, name: 'Documentation' },
+      status: 'completed',
+      output: 'done on retry',
+      duration: 90000,
+      attempts: 1,
+      error: null,
+    });
+
     const result = await runStep('/fake/project', 1);
 
-    expect(result.success).toBe(false);
-    expect(result.error).toContain('already been attempted');
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('completed');
+
+    // State should have step in completedSteps, NOT in failedSteps (no duplicate)
+    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
+    const savedState = JSON.parse(stateCall[1]);
+    expect(savedState.completedSteps).toHaveLength(1);
+    expect(savedState.completedSteps[0].number).toBe(1);
+    expect(savedState.failedSteps).toHaveLength(0);
+  });
+
+  it('removes old failed entry when step fails again on retry (no duplicates)', async () => {
+    const stateWithFailed = {
+      ...validState,
+      failedSteps: [{ number: 1, name: 'Documentation', status: 'failed', duration: 30000, attempts: 4, errorType: 'rate_limit' }],
+    };
+    readFileSync.mockReturnValue(JSON.stringify(stateWithFailed));
+
+    executeSingleStep.mockResolvedValue({
+      step: { number: 1, name: 'Documentation' },
+      status: 'failed',
+      output: 'failed again',
+      duration: 60000,
+      attempts: 2,
+      error: 'Step failed again',
+    });
+
+    const result = await runStep('/fake/project', 1);
+
+    expect(result.success).toBe(true);
+    expect(result.status).toBe('failed');
+
+    // State should have exactly ONE entry in failedSteps (the new one, not the old)
+    const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
+    const savedState = JSON.parse(stateCall[1]);
+    expect(savedState.failedSteps).toHaveLength(1);
+    expect(savedState.failedSteps[0].output).toBe('failed again');
+    expect(savedState.completedSteps).toHaveLength(0);
   });
 
   it('computes remaining steps correctly after completion', async () => {

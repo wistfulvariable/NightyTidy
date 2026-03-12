@@ -68,7 +68,7 @@ const PROGRESS_FILENAME = 'nightytidy-progress.json';
 const URL_FILENAME = 'nightytidy-dashboard.url';
 
 const STATE_FILENAME = 'nightytidy-run-state.json';
-const STATE_VERSION = 1;
+export const STATE_VERSION = 1;
 const DASHBOARD_STARTUP_TIMEOUT = 5000; // ms — max wait for dashboard server to respond
 const SSE_FLUSH_DELAY = 500; // ms — brief delay to let last SSE event reach clients
 
@@ -88,7 +88,7 @@ function statePath(projectDir) {
  * @param {string} projectDir - Project directory
  * @returns {OrchestratorState|null} State object, or null if not found/invalid
  */
-function readState(projectDir) {
+export function readState(projectDir) {
   const fp = statePath(projectDir);
   if (!existsSync(fp)) return null;
   try {
@@ -108,7 +108,7 @@ function readState(projectDir) {
  * @param {OrchestratorState} state - State to write
  * @returns {void}
  */
-function writeState(projectDir, state) {
+export function writeState(projectDir, state) {
   // Write to temp file then rename for atomic replacement.
   // Prevents truncated JSON on crash (FINDING-06, audit #21).
   const target = statePath(projectDir);
@@ -123,7 +123,7 @@ function writeState(projectDir, state) {
  * @param {string} projectDir - Project directory
  * @returns {void}
  */
-function deleteState(projectDir) {
+export function deleteState(projectDir) {
   try {
     unlinkSync(statePath(projectDir));
   } catch (err) {
@@ -183,9 +183,8 @@ function validateStepCanRun(stepNumber, state) {
   if (state.completedSteps.some(s => s.number === stepNumber)) {
     return `Step ${stepNumber} has already been completed in this run.`;
   }
-  if (state.failedSteps.some(s => s.number === stepNumber)) {
-    return `Step ${stepNumber} has already been attempted and failed in this run.`;
-  }
+  // Failed steps can be retried (e.g., after rate-limit pause/resume).
+  // The old entry is removed before recording the new result in runStep().
   return null;
 }
 
@@ -671,7 +670,13 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
     // Branch guard: final check before writing state
     await ensureOnBranch(state.runBranch);
 
-    // Update state
+    // Update state — remove any previous failed entry for this step (retry scenario)
+    const prevFailIdx = state.failedSteps.findIndex(s => s.number === step.number);
+    if (prevFailIdx !== -1) {
+      info(`Orchestrator: step ${stepNumber} previously failed — recording retry result`);
+      state.failedSteps.splice(prevFailIdx, 1);
+    }
+
     const output = (result.output || '').slice(0, 6000);
     const stepError = result.status === 'failed' ? (result.error || 'Step failed during orchestrated run') : null;
     const entry = { number: step.number, name: step.name, status: result.status, duration: result.duration, attempts: result.attempts, output, error: stepError, cost: result.cost || null, suspiciousFast: result.suspiciousFast || false, errorType: result.errorType || null, retryAfterMs: result.retryAfterMs || null };

@@ -5,7 +5,7 @@ import chalk from 'chalk';
 
 import { initLogger, info, error as logError, debug, warn } from './logger.js';
 import { runPreChecks } from './checks.js';
-import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from './git.js';
+import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance, ensureOnBranch } from './git.js';
 import { existsSync, readFileSync } from 'fs';
 import { runPrompt } from './claude.js';
 import { STEPS, reloadSteps } from './prompts/loader.js';
@@ -15,7 +15,7 @@ import { generateReport, formatDuration, getVersion, buildReportNames, buildRepo
 import { setupProject } from './setup.js';
 import { startDashboard, updateDashboard, stopDashboard, scheduleShutdown, broadcastOutput, clearOutputBuffer } from './dashboard.js';
 import { acquireLock } from './lock.js';
-import { initRun, runStep, finishRun } from './orchestrator.js';
+import { initRun, runStep, finishRun, readState, writeState, deleteState, STATE_VERSION } from './orchestrator.js';
 
 const PROGRESS_SUMMARY_INTERVAL = 5; // Print a summary every N completed steps
 const DESC_MAX_LENGTH = 72;
@@ -31,7 +31,7 @@ function extractStepDescription(prompt) {
   return desc;
 }
 
-function buildStepCallbacks(spinner, selected, dashState) {
+function buildStepCallbacks(spinner, selected, dashState, { ctx, projectDir } = {}) {
   const stepStartTimes = new Map();
   let runStartTime = null;
   let doneCount = 0;
@@ -102,7 +102,7 @@ function buildStepCallbacks(spinner, selected, dashState) {
       startNextSpinner(idx, total);
       updateStepDash(idx, 'failed');
     },
-    onRateLimitPause: (retryAfterMs) => {
+    onRateLimitPause: (retryAfterMs, snapshot) => {
       if (spinner.isSpinning) spinner.stop();
       const waitStr = retryAfterMs
         ? formatDuration(retryAfterMs)
@@ -116,6 +116,18 @@ function buildStepCallbacks(spinner, selected, dashState) {
         dashState.status = 'paused';
         updateDashboard(dashState);
       }
+      // Save state for --resume (lets user close terminal safely)
+      if (snapshot && ctx?.runStarted && projectDir) {
+        try {
+          saveRunState(projectDir, ctx, snapshot);
+          console.log(chalk.dim(
+            `   State saved \u2014 you can safely close this terminal.\n` +
+            `   To resume later: npx nightytidy --resume\n`
+          ));
+        } catch (err) {
+          debug(`Failed to save run state: ${err.message}`);
+        }
+      }
     },
     onRateLimitResume: () => {
       console.log(chalk.green('\n\u2713 Rate limit cleared \u2014 resuming run.\n'));
@@ -125,6 +137,60 @@ function buildStepCallbacks(spinner, selected, dashState) {
       }
     },
   };
+}
+
+/**
+ * Save run state to disk for later resumption via --resume.
+ * Uses the same state format as orchestrator mode.
+ */
+function saveRunState(projectDir, ctx, snapshot) {
+  const completed = snapshot.results
+    .filter(r => r.status === 'completed')
+    .map(r => ({
+      number: r.step.number,
+      name: r.step.name,
+      status: 'completed',
+      duration: r.duration,
+      attempts: r.attempts,
+      output: (r.output || '').slice(0, 6000),
+      error: null,
+      cost: r.cost || null,
+      suspiciousFast: r.suspiciousFast || false,
+      errorType: null,
+      retryAfterMs: null,
+    }));
+
+  const failed = snapshot.results
+    .filter(r => r.status === 'failed')
+    .map(r => ({
+      number: r.step.number,
+      name: r.step.name,
+      status: 'failed',
+      duration: r.duration,
+      attempts: r.attempts,
+      output: (r.output || '').slice(0, 6000),
+      error: r.error || 'Step failed',
+      cost: r.cost || null,
+      suspiciousFast: false,
+      errorType: r.errorType || null,
+      retryAfterMs: r.retryAfterMs || null,
+    }));
+
+  writeState(projectDir, {
+    version: STATE_VERSION,
+    originalBranch: ctx.originalBranch,
+    runBranch: ctx.runBranch,
+    tagName: ctx.tagName,
+    selectedSteps: ctx.selectedStepNumbers,
+    completedSteps: completed,
+    failedSteps: failed,
+    startTime: ctx.runStartTime || Date.now(),
+    timeout: ctx.timeoutMs || null,
+    dashboardPid: null,
+    dashboardUrl: null,
+    pausedAt: Date.now(),
+    pauseReason: 'usage_limit',
+  });
 }
 
 async function handleAbortedRun(executionResults, { projectDir, runBranch, tagName, originalBranch }) {
@@ -157,6 +223,183 @@ async function handleAbortedRun(executionResults, { projectDir, runBranch, tagNa
     `   To merge what was done: git checkout ${originalBranch} && git merge ${runBranch}\n`
   ));
   process.exit(0);
+}
+
+/**
+ * Validate that a saved run state is safe to resume.
+ * Checks git branch existence and step availability.
+ */
+async function validateResumeState(state) {
+  if (!state || state.version !== STATE_VERSION) {
+    return { ok: false, error: 'State file is missing or has an incompatible version.' };
+  }
+  if (!state.runBranch || !state.originalBranch || !state.selectedSteps?.length) {
+    return { ok: false, error: 'State file is incomplete (missing branch or step data).' };
+  }
+
+  // Check run branch exists
+  const git = getGitInstance();
+  try {
+    const branches = await git.branch();
+    if (!branches.all.includes(state.runBranch)) {
+      return { ok: false, error: `Run branch "${state.runBranch}" no longer exists. Cannot resume.` };
+    }
+  } catch (err) {
+    return { ok: false, error: `Git check failed: ${err.message}` };
+  }
+
+  // Check selected steps are still available
+  const loadedNums = new Set(STEPS.map(s => s.number));
+  const missing = state.selectedSteps.filter(n => !loadedNums.has(n));
+  if (missing.length > 0) {
+    return { ok: false, error: `Steps ${missing.join(', ')} from saved state are no longer available.` };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Resume a previously paused run from saved state.
+ * Reads nightytidy-run-state.json, validates, skips completed steps, and resumes.
+ */
+async function handleResume(projectDir, timeoutMs) {
+  initLogger(projectDir);
+  info('NightyTidy --resume: checking for saved state');
+
+  const state = readState(projectDir);
+  if (!state) {
+    console.error(chalk.red('No saved run state found. Nothing to resume.'));
+    console.log(chalk.dim('Start a new run with: npx nightytidy'));
+    process.exit(1);
+  }
+
+  await acquireLock(projectDir);
+  initGit(projectDir);
+  excludeEphemeralFiles();
+
+  const validation = await validateResumeState(state);
+  if (!validation.ok) {
+    console.error(chalk.red(`Cannot resume: ${validation.error}`));
+    process.exit(1);
+  }
+
+  // Calculate remaining steps
+  const doneNums = new Set([
+    ...state.completedSteps.map(s => s.number),
+    ...state.failedSteps.map(s => s.number),
+  ]);
+  const remainingNums = state.selectedSteps.filter(n => !doneNums.has(n));
+  const remainingSteps = STEPS.filter(s => remainingNums.includes(s.number));
+
+  if (remainingSteps.length === 0) {
+    console.log(chalk.yellow('All selected steps already completed or failed.'));
+    console.log(chalk.dim('Running finish phase (report + merge)...'));
+    const result = await finishRun(projectDir);
+    if (!result.success) {
+      console.error(chalk.red(`Finish failed: ${result.error}`));
+    }
+    deleteState(projectDir);
+    process.exit(result.success ? 0 : 1);
+  }
+
+  // Ensure we're on the run branch
+  await ensureOnBranch(state.runBranch);
+
+  // Show resume info
+  const pausedStr = state.pausedAt
+    ? new Date(state.pausedAt).toLocaleString()
+    : 'unknown';
+  console.log(chalk.cyan(
+    `\nResuming NightyTidy run (paused ${pausedStr})\n` +
+    `  Branch: ${state.runBranch}\n` +
+    `  Completed: ${state.completedSteps.length}/${state.selectedSteps.length}\n` +
+    `  Failed: ${state.failedSteps.length}\n` +
+    `  Remaining: ${remainingSteps.length} step(s)\n`
+  ));
+
+  // Build context for the resumed run
+  const ctx = {
+    spinner: null,
+    runStarted: true,
+    tagName: state.tagName,
+    runBranch: state.runBranch,
+    originalBranch: state.originalBranch,
+    dashState: null,
+    abortController: new AbortController(),
+    timeoutMs: timeoutMs || state.timeout,
+    runStartTime: state.startTime,
+    selectedStepNumbers: state.selectedSteps,
+  };
+
+  // Ctrl+C handling
+  let interrupted = false;
+  process.on('SIGINT', () => {
+    if (interrupted) {
+      console.log('\nForce stopping.');
+      process.exit(1);
+    }
+    interrupted = true;
+    console.log(chalk.yellow('\n\u26a0\ufe0f  Stopping NightyTidy... finishing current step.'));
+    ctx.abortController.abort();
+  });
+
+  ctx.spinner = ora({
+    text: `\u23f3 Resuming: Step ${remainingSteps[0].number} \u2014 ${remainingSteps[0].name}...`,
+    color: 'cyan',
+  }).start();
+
+  const executionResults = await executeSteps(remainingSteps, projectDir, {
+    signal: ctx.abortController.signal,
+    timeout: ctx.timeoutMs,
+    ...buildStepCallbacks(ctx.spinner, remainingSteps, ctx.dashState, { ctx, projectDir }),
+  });
+
+  ctx.spinner.stop();
+
+  // Merge prior results with new results
+  const priorResults = [
+    ...state.completedSteps.map(s => ({
+      step: { number: s.number, name: s.name },
+      status: s.status,
+      output: s.output || '',
+      duration: s.duration,
+      attempts: s.attempts,
+      error: s.error,
+      cost: s.cost || null,
+    })),
+    ...state.failedSteps.map(s => ({
+      step: { number: s.number, name: s.name },
+      status: s.status,
+      output: s.output || '',
+      duration: s.duration,
+      attempts: s.attempts,
+      error: s.error,
+      cost: s.cost || null,
+    })),
+  ];
+
+  const mergedResults = {
+    results: [...priorResults, ...executionResults.results],
+    totalDuration: Date.now() - state.startTime,
+    completedCount: priorResults.filter(r => r.status === 'completed').length + executionResults.completedCount,
+    failedCount: priorResults.filter(r => r.status === 'failed').length + executionResults.failedCount,
+  };
+
+  // Clean up state file
+  deleteState(projectDir);
+
+  // Handle interrupted resumed run
+  if (ctx.abortController.signal.aborted) {
+    await handleAbortedRun(mergedResults, {
+      projectDir,
+      runBranch: ctx.runBranch,
+      tagName: ctx.tagName,
+      originalBranch: ctx.originalBranch,
+    });
+  }
+
+  // Finalize (report + merge)
+  await finalizeRun(mergedResults, projectDir, ctx);
 }
 
 function printCompletionSummary(executionResults, mergeResult, { runBranch, tagName, reportFile }) {
@@ -415,6 +658,8 @@ async function executeRunFlow(selected, projectDir, ctx) {
   ctx.tagName = await createPreRunTag();
   ctx.runBranch = await createRunBranch(ctx.originalBranch);
   ctx.runStarted = true;
+  ctx.runStartTime = Date.now();
+  ctx.selectedStepNumbers = selected.map(s => s.number);
 
   // Sync all prompts into the target project for audit trail
   copyPromptsToProject(projectDir);
@@ -436,7 +681,7 @@ async function executeRunFlow(selected, projectDir, ctx) {
   const executionResults = await executeSteps(selected, projectDir, {
     signal: ctx.abortController.signal,
     timeout: ctx.timeoutMs,
-    ...buildStepCallbacks(ctx.spinner, selected, ctx.dashState),
+    ...buildStepCallbacks(ctx.spinner, selected, ctx.dashState, { ctx, projectDir }),
   });
 
   ctx.spinner.stop();
@@ -460,6 +705,9 @@ async function executeRunFlow(selected, projectDir, ctx) {
 }
 
 async function finalizeRun(executionResults, projectDir, ctx) {
+  // Clean up any pause state file (run completed, no longer resumable)
+  deleteState(projectDir);
+
   // Update dashboard to finishing state
   if (ctx.dashState) {
     ctx.dashState.status = 'finishing';
@@ -563,7 +811,8 @@ export async function run() {
     .option('--sync-dry-run', 'Preview what --sync would change without writing files')
     .option('--sync-url <url>', 'Override the Google Doc URL for sync')
     .option('--skip-sync', 'Skip automatic prompt sync from Google Doc before running')
-    .option('--skip-dashboard', 'Skip launching the standalone dashboard server (used by GUI)');
+    .option('--skip-dashboard', 'Skip launching the standalone dashboard server (used by GUI)')
+    .option('--resume', 'Resume a previously paused run (usage limit / manual restart)');
 
   program.parse();
   const opts = program.opts();
@@ -622,6 +871,11 @@ export async function run() {
       console.error(chalk.red(`\nSync failed: ${result.error}`));
     }
     process.exit(result.success ? 0 : 1);
+  }
+
+  // Resume a previously paused run
+  if (opts.resume) {
+    return await handleResume(projectDir, timeoutMs);
   }
 
   const ctx = {

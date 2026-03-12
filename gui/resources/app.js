@@ -132,6 +132,8 @@ const state = {
   _pauseTimer: null,       // setTimeout ID for auto-resume (clearable on manual resume)
   retrying: false,         // step is being auto-retried after failure
   prodding: false,         // step is being prodded (session resume after failure)
+  simulateRateLimitStep: null, // step number to fake rate-limit on (debug: ?test-rate-limit)
+  simulationMode: false,       // when true, ALL CLI calls are faked (debug: ?test-rate-limit)
 };
 
 // ── Init Overlay (shown during --init-run) ────────────────────────
@@ -456,6 +458,123 @@ function showFolderPath(path) {
   document.getElementById('folder-path').textContent = path;
 }
 
+/**
+ * Check for a paused run state file and show the resume banner if found.
+ */
+async function checkForPausedRun() {
+  if (!state.projectDir) return;
+
+  const statePath = state.projectDir + '\\nightytidy-run-state.json';
+  const result = await api('read-file', { path: statePath }, 5000);
+  if (!result.ok || !result.content) return;
+
+  let runState;
+  try { runState = JSON.parse(result.content); } catch { return; }
+
+  // Show resume banner if there are incomplete steps (any selectedSteps not in completedSteps).
+  // Failed steps count as "remaining" because they will be retried on resume.
+  if (!runState.selectedSteps?.length) return;
+
+  const completedNums = new Set((runState.completedSteps || []).map(s => s.number));
+  const remaining = runState.selectedSteps.filter(n => !completedNums.has(n));
+  if (remaining.length === 0) return;
+
+  const completed = completedNums.size;
+  const total = runState.selectedSteps.length;
+
+  const banner = document.getElementById('resume-banner');
+  const text = document.getElementById('resume-banner-text');
+  text.textContent = `Previous run found: ${completed} of ${total} steps completed, ${remaining.length} remaining.`;
+  banner.classList.remove('hidden');
+}
+
+async function handleResumeRun() {
+  const banner = document.getElementById('resume-banner');
+  banner.classList.add('hidden');
+  logToServer('info', 'User clicked Resume Run — loading saved state');
+
+  // Read the saved state file
+  const statePath = state.projectDir + '\\nightytidy-run-state.json';
+  const result = await api('read-file', { path: statePath }, 5000);
+  if (!result.ok || !result.content) {
+    showError('steps', 'Could not read saved run state. Start a fresh run instead.');
+    return;
+  }
+
+  let runState;
+  try { runState = JSON.parse(result.content); } catch {
+    showError('steps', 'Saved run state is corrupted. Start a fresh run instead.');
+    return;
+  }
+
+  // Populate GUI state from saved run state.
+  // Rate-limited failures are treated as "pending" — they'll be retried.
+  // Genuinely failed steps stay failed (skipped by getNextStep).
+  const genuinelyFailed = (runState.failedSteps || []).filter(s => s.errorType !== 'rate_limit');
+  const rateLimited = (runState.failedSteps || []).filter(s => s.errorType === 'rate_limit');
+
+  state.selectedSteps = runState.selectedSteps || [];
+  state.timeout = runState.timeout ? Math.round(runState.timeout / 60000) : 45;
+  state.completedSteps = (runState.completedSteps || []).map(s => s.number);
+  state.failedSteps = genuinelyFailed.map(s => s.number);
+  state.stepResults = [
+    ...(runState.completedSteps || []).map(s => ({
+      step: s.number, name: s.name, status: 'completed',
+      duration: s.duration, output: s.output || '', error: null,
+      costUSD: s.cost?.costUSD || null,
+      inputTokens: s.cost?.inputTokens || null,
+      outputTokens: s.cost?.outputTokens || null,
+    })),
+    ...genuinelyFailed.map(s => ({
+      step: s.number, name: s.name, status: 'failed',
+      duration: s.duration, output: s.output || '', error: s.error,
+      costUSD: s.cost?.costUSD || null,
+      inputTokens: s.cost?.inputTokens || null,
+      outputTokens: s.cost?.outputTokens || null,
+    })),
+  ];
+  state.runInfo = runState;
+  state.runStartTime = runState.startTime || Date.now();
+  state.stopping = false;
+  state.skippedSteps = [];
+  state.backoffAttempt = 0;
+  resetCachedTotals();
+  for (const r of state.stepResults) updateCachedTotals(r);
+
+  const retrying = rateLimited.length;
+  const remaining = state.selectedSteps.length - state.completedSteps.length - state.failedSteps.length;
+  logToServer('info', `Resume: ${state.completedSteps.length} completed, ${state.failedSteps.length} failed, ${retrying} rate-limited (will retry), ${remaining} remaining`);
+
+  showScreen(SCREENS.RUNNING);
+
+  // Show "Resuming" subtitle
+  const subtitle = document.getElementById('running-subtitle');
+  subtitle.textContent = 'Resuming';
+  subtitle.className = 'subtitle subtitle-resuming';
+  document.title = 'Resuming \u2014 NightyTidy';
+
+  renderRunningStepList();
+
+  // Mark already-completed and genuinely-failed steps in the UI
+  for (const num of state.completedSteps) updateStepItemStatus(num, 'completed');
+  for (const num of state.failedSteps) updateStepItemStatus(num, 'failed');
+
+  updateProgressBar();
+  startProgressPolling();
+  startElapsedTimer();
+  runNextStep();
+}
+
+function handleStartFresh() {
+  const banner = document.getElementById('resume-banner');
+  banner.classList.add('hidden');
+  logToServer('info', 'User clicked Start Fresh — cleaning up old run state');
+  const base = state.projectDir + '\\';
+  api('delete-file', { path: base + 'nightytidy-run-state.json' }).catch(() => {});
+  api('delete-file', { path: base + 'nightytidy.lock' }).catch(() => {});
+  api('delete-file', { path: base + 'nightytidy-progress.json' }).catch(() => {});
+}
+
 async function loadSteps() {
   const loadingEl = document.getElementById('setup-loading');
   loadingEl.style.display = 'block';
@@ -490,6 +609,9 @@ async function loadSteps() {
 
   state.steps = result.data.steps;
   renderStepChecklist();
+
+  // Check for a paused run that can be resumed
+  await checkForPausedRun();
 }
 
 /**
@@ -582,7 +704,19 @@ async function startRun() {
   const args = `--init-run ${stepArgs}${timeoutArg} --skip-dashboard`;
 
   showInitOverlay();
-  const result = await runCli(args);
+
+  let result;
+  if (state.simulationMode) {
+    // Simulation: animate init phases quickly, skip real CLI
+    for (let i = 0; i < NtLogic.INIT_PHASES.length; i++) {
+      const el = document.getElementById(`init-phase-${NtLogic.INIT_PHASES[i].key}`);
+      if (el) { el.classList.remove('init-phase-pending'); el.classList.add('init-phase-done'); }
+      await new Promise(r => setTimeout(r, 200));
+    }
+    result = { ok: true, data: { success: true, runBranch: 'nightytidy/sim-test', tagName: 'nightytidy-sim-test', selectedSteps: state.selectedSteps } };
+  } else {
+    result = await runCli(args);
+  }
 
   // On failure, briefly show which phase failed before hiding overlay
   const initFailed = !result.ok || (result.data && !result.data.success);
@@ -624,8 +758,14 @@ async function startRun() {
   showScreen(SCREENS.RUNNING);
   renderRunningStepList();
   updateProgressBar();
-  startProgressPolling();
+  if (!state.simulationMode) startProgressPolling(); // no progress file in simulation
   startElapsedTimer();
+  if (state.simulationMode) {
+    const subtitle = document.getElementById('running-subtitle');
+    subtitle.textContent = 'SIMULATION MODE';
+    subtitle.className = 'subtitle subtitle-resuming';
+    document.title = 'Simulation \u2014 NightyTidy';
+  }
   runNextStep();
 }
 
@@ -822,8 +962,33 @@ async function runNextStep() {
   state.stepStartTime = Date.now();
   lastOutputChangeTime = Date.now(); // Reset for new step
 
-  const timeoutArg = state.timeout !== 45 ? ` --timeout ${state.timeout}` : '';
-  const result = await runCli(`--run-step ${next}${timeoutArg}`);
+  // Debug simulation: fake a rate-limit response for the targeted step
+  const simTarget = state.simulateRateLimitStep;
+  if (simTarget != null && (simTarget === next || simTarget === -1)) {
+    state.simulateRateLimitStep = null; // one-shot
+    const step = state.steps.find(s => s.number === next);
+    logToServer('warn', `SIMULATING rate limit on step ${next}`);
+    const fakeResult = { ok: true, data: { step: next, name: step?.name || `Step ${next}`, status: 'failed', errorType: 'rate_limit', retryAfterMs: 120000, error: 'Simulated rate limit for testing', duration: 0, attempts: 1, output: '' } };
+    // Fall through to the same code path that handles real results
+    const rl = NtLogic.detectRateLimit(fakeResult.data);
+    if (rl.detected) {
+      updateStepItemStatus(next, 'pending');
+      await enterPauseMode(next, rl.retryAfterMs);
+      if (!state.stopping) runNextStep();
+      return;
+    }
+  }
+
+  let result;
+  if (state.simulationMode) {
+    // Simulation: fake a 3-second "run", then return success
+    const step = state.steps.find(s => s.number === next);
+    await new Promise(r => setTimeout(r, 3000));
+    result = { ok: true, data: { step: next, name: step?.name || `Step ${next}`, status: 'completed', duration: 3000, attempts: 1, output: '[Simulated] Step completed successfully.', costUSD: 0.01, inputTokens: 500, outputTokens: 200 } };
+  } else {
+    const timeoutArg = state.timeout !== 45 ? ` --timeout ${state.timeout}` : '';
+    result = await runCli(`--run-step ${next}${timeoutArg}`);
+  }
 
   // Skip detection: user clicked "Skip Step" while this step was running
   if (state.skippingStep) {
@@ -1262,7 +1427,10 @@ const BACKOFF_SCHEDULE_MS = [
   15 * 60_000,    // 15 min
   30 * 60_000,    // 30 min
   60 * 60_000,    // 1 hr
-  120 * 60_000,   // 2 hr (cap)
+  120 * 60_000,   // 2 hr
+  120 * 60_000,   // 2 hr (repeat — covers 5hr+ usage caps)
+  120 * 60_000,   // 2 hr (repeat)
+  120 * 60_000,   // 2 hr (repeat — ~9.9hr total coverage)
 ];
 
 function enterPauseMode(stepNum, retryAfterMs) {
@@ -1319,6 +1487,43 @@ function finishNow() {
   stopCountdownTimer();
   state.paused = false;
   finishRun();
+}
+
+/**
+ * Save & Close: kills process, saves state for --resume, and exits.
+ * The CLI backend writes nightytidy-run-state.json during rate-limit pause,
+ * so the state file already exists by the time this button is clicked.
+ */
+function saveAndClose() {
+  if (!state.paused) return;
+  logToServer('info', 'User clicked Save & Close — exiting for later resume');
+
+  if (state._pauseTimer) clearTimeout(state._pauseTimer);
+  hidePauseOverlay();
+  stopCountdownTimer();
+  state.paused = false;
+
+  // Kill any running CLI process (may already be waiting on rate limit)
+  if (state.currentProcessId) {
+    api('kill-process', { id: state.currentProcessId }).catch(() => {});
+  }
+  clearSavedRunState();
+
+  // Show a confirmation message before exiting
+  const running = document.getElementById('screen-running');
+  if (running) {
+    running.innerHTML = `
+      <div style="text-align:center;padding:48px 24px;">
+        <h2 style="color:var(--green);margin-bottom:16px;">Progress Saved</h2>
+        <p style="max-width:420px;margin:0 auto 16px;">Your progress has been saved. Just relaunch NightyTidy and select this same project folder &mdash; you'll see a <strong>Resume Run</strong> option.</p>
+        <p style="color:var(--text-dim);font-size:0.85rem;">This window will close in a moment.</p>
+      </div>`;
+  }
+
+  // Give user a moment to read, then exit
+  setTimeout(() => {
+    navigator.sendBeacon('/api/exit');
+  }, 4000);
 }
 
 function showPauseOverlay(stepNum, waitMs, hasRetryAfter) {
@@ -1521,13 +1726,18 @@ async function finishRun() {
   }, FINISH_TIMEOUT_MS);
 
   let result;
-  try {
-    result = await runCli('--finish-run');
-  } catch (err) {
-    clearTimeout(finishTimeoutId);
-    logToServer('error', `finishRun exception: ${err.message || err}`);
-    completeFinish(null, true);
-    return;
+  if (state.simulationMode) {
+    await new Promise(r => setTimeout(r, 2000));
+    result = { ok: true, data: { success: true, reportPath: '(simulated)', mergeResult: { success: true } } };
+  } else {
+    try {
+      result = await runCli('--finish-run');
+    } catch (err) {
+      clearTimeout(finishTimeoutId);
+      logToServer('error', `finishRun exception: ${err.message || err}`);
+      completeFinish(null, true);
+      return;
+    }
   }
 
   clearTimeout(finishTimeoutId);
@@ -1896,6 +2106,8 @@ function bindEvents() {
   document.getElementById('btn-select-none').addEventListener('click', () => selectAllSteps(false));
   document.getElementById('btn-back-setup').addEventListener('click', () => showScreen(SCREENS.SETUP));
   document.getElementById('btn-start-run').addEventListener('click', startRun);
+  document.getElementById('btn-resume-run').addEventListener('click', handleResumeRun);
+  document.getElementById('btn-start-fresh').addEventListener('click', handleStartFresh);
   document.getElementById('btn-skip-step').addEventListener('click', skipStep);
   document.getElementById('btn-stop-run').addEventListener('click', confirmStopRun);
   document.getElementById('btn-confirm-stop-yes').addEventListener('click', stopRun);
@@ -1903,6 +2115,7 @@ function bindEvents() {
   document.getElementById('btn-confirm-stop-close').addEventListener('click', cancelStopRun);
   document.getElementById('btn-resume-now').addEventListener('click', manualResume);
   document.getElementById('btn-finish-now').addEventListener('click', finishNow);
+  document.getElementById('btn-save-close').addEventListener('click', saveAndClose);
   document.getElementById('btn-close-drawer').addEventListener('click', closeDrawer);
   document.getElementById('btn-copy-drawer').addEventListener('click', async () => {
     if (!drawerRawMarkdown) return;
@@ -2124,6 +2337,16 @@ function waitForStepCompletion(stepNum) {
 // ── Init ───────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Debug: ?test-rate-limit or ?test-rate-limit=N simulates a rate limit on step N (or first selected step)
+  const params = new URLSearchParams(location.search);
+  if (params.has('test-rate-limit')) {
+    const val = parseInt(params.get('test-rate-limit'), 10);
+    // val > 1 means a specific step number; val <= 1 or NaN means "first selected step"
+    state.simulateRateLimitStep = val > 1 ? val : -1; // -1 = "first step" sentinel
+    state.simulationMode = true; // all CLI calls faked — no real subprocess spawned
+    logToServer('info', `Rate-limit simulation enabled for step ${state.simulateRateLimitStep === -1 ? '(first selected)' : state.simulateRateLimitStep}`);
+  }
+
   // Show the UI immediately for instant perceived startup
   bindEvents();
   showScreen(SCREENS.SETUP);

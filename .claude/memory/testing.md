@@ -1,6 +1,6 @@
 # Testing — Tier 2 Reference
 
-Assumes CLAUDE.md loaded. 886 tests, 39 files, Vitest v3.
+Assumes CLAUDE.md loaded. 913 tests, 40 files, Vitest v3.
 
 ## Test File -> Module Coverage
 
@@ -9,19 +9,20 @@ Assumes CLAUDE.md loaded. 886 tests, 39 files, Vitest v3.
 | `smoke.test.js` | All (structural) | 6 |
 | `cli.test.js` | `cli.js` | 33 |
 | `cli-extended.test.js` | `cli.js` | 31 |
+| `cli-resume.test.js` | `cli.js` (--resume) | 23 |
 | `cli-sync.test.js` | `cli.js` (sync paths) | 6 |
 | `checks.test.js` | `checks.js` | 4 |
 | `checks-extended.test.js` | `checks.js` | 23 |
 | `claude.test.js` | `claude.js` | 73 |
 | `consolidation.test.js` | `consolidation.js` | 15 |
-| `contracts.test.js` | All modules | 39 |
+| `contracts.test.js` | All modules | 40 |
 | `dashboard.test.js` | `dashboard.js` | 20 |
 | `dashboard-broadcastoutput.test.js` | `dashboard.js` | 5 |
 | `dashboard-extended.test.js` | `dashboard.js` | 3 |
 | `dashboard-extended2.test.js` | `dashboard.js` | 4 |
 | `dashboard-tui.test.js` | `dashboard-tui.js` | 29 |
 | `env.test.js` | `env.js` | 15 |
-| `executor.test.js` | `executor.js` | 50 |
+| `executor.test.js` | `executor.js` | 51 |
 | `executor-extended.test.js` | `executor.js` | 13 |
 | `git.test.js` | `git.js` | 16 |
 | `git-extended.test.js` | `git.js` | 11 |
@@ -33,7 +34,7 @@ Assumes CLAUDE.md loaded. 886 tests, 39 files, Vitest v3.
 | `lock-extended.test.js` | `lock.js` | 6 |
 | `logger.test.js` | `logger.js` | 10 |
 | `notifications.test.js` | `notifications.js` | 2 |
-| `orchestrator.test.js` | `orchestrator.js` | 61 |
+| `orchestrator.test.js` | `orchestrator.js` | 63 |
 | `orchestrator-extended.test.js` | `orchestrator.js` | 11 |
 | `report.test.js` | `report.js` | 43 |
 | `report-extended.test.js` | `report.js` | 19 |
