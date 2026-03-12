@@ -1,4 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, mkdirSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'fs';
+import path from 'path';
+import os from 'os';
+import { robustCleanup } from './helpers/cleanup.js';
 
 vi.mock('../src/claude.js', () => ({
   runPrompt: vi.fn(),
@@ -26,11 +30,12 @@ vi.mock('../src/prompts/loader.js', () => ({
   reloadSteps: vi.fn(),
 }));
 
-import { executeSteps, executeSingleStep, FAST_COMPLETION_THRESHOLD_MS } from '../src/executor.js';
+import { executeSteps, executeSingleStep, FAST_COMPLETION_THRESHOLD_MS, copyPromptsToProject } from '../src/executor.js';
 import { runPrompt, sleep } from '../src/claude.js';
 import { getHeadHash, hasNewCommit, fallbackCommit } from '../src/git.js';
 import { notify } from '../src/notifications.js';
 import { warn, info } from '../src/logger.js';
+import * as loader from '../src/prompts/loader.js';
 
 function makeStep(number, name = `Step ${number}`) {
   return { number, name, prompt: `prompt for ${name}` };
@@ -969,5 +974,119 @@ describe('executeSteps rate-limit handling', () => {
     expect(result.results).toHaveLength(2);
     expect(result.results[0].output).toBe('step1 done');
     expect(result.results[1].output).toBe('step2 done');
+  });
+});
+
+describe('copyPromptsToProject', () => {
+  let tmpDir;
+  const savedSteps = [];
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(path.join(os.tmpdir(), 'nt-test-prompts-'));
+    // Save original (empty) STEPS so we can restore after each test
+    savedSteps.length = 0;
+    savedSteps.push(...loader.STEPS);
+  });
+
+  afterEach(async () => {
+    // Restore original STEPS
+    loader.STEPS.length = 0;
+    loader.STEPS.push(...savedSteps);
+    if (tmpDir) await robustCleanup(tmpDir);
+  });
+
+  function setSteps(...steps) {
+    loader.STEPS.length = 0;
+    loader.STEPS.push(...steps);
+  }
+
+  it('creates audit-reports/refactor-prompts directory and writes all prompt files', () => {
+    setSteps(makeStep(1, 'Documentation'), makeStep(5, 'Test Consolidation'));
+
+    copyPromptsToProject(tmpDir);
+
+    const promptsDir = path.join(tmpDir, 'audit-reports', 'refactor-prompts');
+    expect(existsSync(promptsDir)).toBe(true);
+
+    const files = readdirSync(promptsDir).sort();
+    expect(files).toEqual(['01-documentation.md', '05-test-consolidation.md']);
+
+    expect(readFileSync(path.join(promptsDir, '01-documentation.md'), 'utf8')).toBe('prompt for Documentation');
+    expect(readFileSync(path.join(promptsDir, '05-test-consolidation.md'), 'utf8')).toBe('prompt for Test Consolidation');
+  });
+
+  it('handles step names with special characters', () => {
+    setSteps(makeStep(7, 'API Design'), makeStep(24, 'UI/UX Audit'));
+
+    copyPromptsToProject(tmpDir);
+
+    const files = readdirSync(path.join(tmpDir, 'audit-reports', 'refactor-prompts')).sort();
+    expect(files).toEqual(['07-api-design.md', '24-ui-ux-audit.md']);
+  });
+
+  it('creates nested directories even if audit-reports does not exist', () => {
+    setSteps(makeStep(1, 'Docs'));
+
+    copyPromptsToProject(tmpDir);
+
+    expect(existsSync(path.join(tmpDir, 'audit-reports', 'refactor-prompts', '01-docs.md'))).toBe(true);
+  });
+
+  it('overwrites existing prompt files when content changes', () => {
+    setSteps({ number: 1, name: 'Documentation', prompt: 'version 1' });
+    copyPromptsToProject(tmpDir);
+
+    setSteps({ number: 1, name: 'Documentation', prompt: 'version 2' });
+    copyPromptsToProject(tmpDir);
+
+    const content = readFileSync(path.join(tmpDir, 'audit-reports', 'refactor-prompts', '01-documentation.md'), 'utf8');
+    expect(content).toBe('version 2');
+  });
+
+  it('removes stale files from renamed prompts', () => {
+    const promptsDir = path.join(tmpDir, 'audit-reports', 'refactor-prompts');
+
+    // First run with old name
+    setSteps({ number: 3, name: 'Old Name', prompt: 'content' });
+    copyPromptsToProject(tmpDir);
+    expect(readdirSync(promptsDir)).toEqual(['03-old-name.md']);
+
+    // Second run with renamed prompt
+    setSteps({ number: 3, name: 'New Name', prompt: 'content' });
+    copyPromptsToProject(tmpDir);
+
+    const files = readdirSync(promptsDir);
+    expect(files).toEqual(['03-new-name.md']);
+    expect(existsSync(path.join(promptsDir, '03-old-name.md'))).toBe(false);
+  });
+
+  it('preserves non-markdown files in the directory', () => {
+    const promptsDir = path.join(tmpDir, 'audit-reports', 'refactor-prompts');
+    mkdirSync(promptsDir, { recursive: true });
+    writeFileSync(path.join(promptsDir, 'notes.txt'), 'keep me', 'utf8');
+
+    setSteps(makeStep(1, 'Docs'));
+    copyPromptsToProject(tmpDir);
+
+    const files = readdirSync(promptsDir).sort();
+    expect(files).toContain('notes.txt');
+    expect(files).toContain('01-docs.md');
+  });
+
+  it('warns but does not throw on write failure', () => {
+    setSteps(makeStep(1, 'Test'));
+    copyPromptsToProject(path.join(tmpDir, '\0invalid'));
+
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('creates empty directory when STEPS is empty', () => {
+    setSteps(); // no steps
+
+    copyPromptsToProject(tmpDir);
+
+    const promptsDir = path.join(tmpDir, 'audit-reports', 'refactor-prompts');
+    expect(existsSync(promptsDir)).toBe(true);
+    expect(readdirSync(promptsDir)).toEqual([]);
   });
 });

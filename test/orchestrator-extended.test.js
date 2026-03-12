@@ -62,7 +62,15 @@ vi.mock('../src/claude.js', () => ({
 
 vi.mock('../src/executor.js', () => ({
   executeSingleStep: vi.fn(),
+  copyPromptsToProject: vi.fn(),
   SAFETY_PREAMBLE: 'MOCK_PREAMBLE\n',
+  PROD_PREAMBLE: 'MOCK_PROD\n',
+  sumCosts: (a, b) => {
+    if (!a && !b) return null;
+    if (!a) return b;
+    if (!b) return a;
+    return { costUSD: (a.costUSD || 0) + (b.costUSD || 0), inputTokens: (a.inputTokens || 0) + (b.inputTokens || 0), outputTokens: (a.outputTokens || 0) + (b.outputTokens || 0) };
+  },
 }));
 
 vi.mock('../src/notifications.js', () => ({
@@ -82,7 +90,7 @@ vi.mock('../src/lock.js', () => ({
 }));
 
 vi.mock('../src/consolidation.js', () => ({
-  generateActionPlan: vi.fn().mockResolvedValue(null),
+  generateActionPlan: vi.fn().mockResolvedValue({ text: null, cost: null }),
 }));
 
 vi.mock('../src/prompts/loader.js', () => ({

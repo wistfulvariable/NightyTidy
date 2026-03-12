@@ -96,6 +96,8 @@ const SCREENS = {
   SUMMARY: 'summary',
 };
 
+const FINISH_STEP_NUM = 0;  // Virtual step number for the finish phase
+
 const state = {
   screen: SCREENS.SETUP,
   projectDir: null,
@@ -542,7 +544,7 @@ async function startRun() {
 function renderRunningStepList() {
   document.getElementById('running-project-path').textContent = state.projectDir || '';
   const container = document.getElementById('running-step-list');
-  container.innerHTML = state.selectedSteps.map(num => {
+  const stepsHtml = state.selectedSteps.map(num => {
     const step = state.steps.find(s => s.number === num);
     const name = step ? step.name : `Step ${num}`;
     return `
@@ -556,6 +558,19 @@ function renderRunningStepList() {
       </div>
     `;
   }).join('');
+
+  // Virtual "Finalizing Report" step — always visible at the bottom
+  const finishHtml = `
+    <div class="step-item step-pending step-finish" id="run-step-${FINISH_STEP_NUM}">
+      <span class="step-icon">&#9675;</span>
+      <span class="step-num"></span>
+      <span class="step-name">Finalizing Report</span>
+      <span class="step-cost"></span>
+      <span class="step-tokens"></span>
+      <span class="step-duration"></span>
+    </div>
+  `;
+  container.innerHTML = stepsHtml + finishHtml;
 }
 
 function updateStepItemStatus(stepNum, status, duration) {
@@ -608,7 +623,8 @@ function updateStepItemStatus(stepNum, status, duration) {
 }
 
 function updateProgressBar() {
-  const total = state.selectedSteps.length;
+  // +1 for the virtual "Finalizing Report" step (always in the list)
+  const total = state.selectedSteps.length + 1;
   const done = state.completedSteps.length + state.failedSteps.length + state.skippedSteps.length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
@@ -1037,10 +1053,16 @@ function clearOutput() {
 
 // ── Side Drawer (step output & report viewer) ──────────────────
 
-function openDrawer(title, htmlContent) {
+let drawerRawMarkdown = '';
+
+function openDrawer(title, htmlContent, rawMarkdown) {
   const drawer = document.getElementById('step-drawer');
   document.getElementById('drawer-title').textContent = title;
   document.getElementById('drawer-content').innerHTML = htmlContent;
+  drawerRawMarkdown = rawMarkdown || '';
+  // Reset copy button state
+  const copyBtn = document.getElementById('btn-copy-drawer');
+  if (copyBtn) { copyBtn.textContent = '\u2398 Copy'; copyBtn.classList.remove('copied'); }
   drawer.classList.add('open');
   document.body.classList.add('drawer-open');
 }
@@ -1075,7 +1097,7 @@ function viewStepOutput(stepNum) {
   state.drawerReportPath = null;
   const name = result.name || `Step ${stepNum}`;
   const raw = result.output || (result.error ? `Error: ${result.error}` : '(No output recorded)');
-  openDrawer(`Step ${stepNum}: ${name}`, renderMarkdown(raw));
+  openDrawer(`Step ${stepNum}: ${name}`, renderMarkdown(raw), raw);
 
   // Highlight active step in whichever list is visible
   document.querySelectorAll('.step-item').forEach(el => el.classList.remove('step-active'));
@@ -1112,6 +1134,7 @@ async function viewReport(reportPath, title) {
   // Prefer embedded content from finishRun response (no file read needed)
   const finishData = state.finishResult;
   if (finishData?.reportContent && reportPath === finishData.reportPath) {
+    drawerRawMarkdown = finishData.reportContent;
     document.getElementById('drawer-content').innerHTML = renderMarkdown(finishData.reportContent);
     return;
   }
@@ -1126,6 +1149,7 @@ async function viewReport(reportPath, title) {
 
   const result = await api('read-file', { path: fullPath });
   if (result.ok && result.content) {
+    drawerRawMarkdown = result.content;
     document.getElementById('drawer-content').innerHTML = renderMarkdown(result.content);
   } else {
     logToServer('warn', `viewReport failed: error="${result.error}", path="${result.path || fullPath}"`);
@@ -1261,7 +1285,7 @@ function stopCountdownTimer() {
 // ── Skip Step ─────────────────────────────────────────────────────
 
 async function skipStep() {
-  if (!state.currentStepNum || state.skippingStep || state.stopping) return;
+  if (state.currentStepNum === null || state.skippingStep || state.stopping) return;
   state.skippingStep = state.currentStepNum;
 
   const btn = document.getElementById('btn-skip-step');
@@ -1358,90 +1382,138 @@ async function stopRun() {
   await finishRun();
 }
 
-// ── Finish Run ─────────────────────────────────────────────────────
+// ── Finish Run (runs as a visual step on the RUNNING screen) ──────
 
-const FINISH_SKIP_DELAY_MS = 10_000;  // Show skip button after 10s
-const FINISH_TIMEOUT_MS = 900_000;    // Auto-skip after 15 minutes (finish-run makes 2 AI calls)
+const FINISH_TIMEOUT_MS = 900_000;  // Auto-skip after 15 minutes (finish-run makes 2 AI calls)
 
 async function finishRun() {
-  logToServer('info', 'finishRun: starting');
+  logToServer('info', 'finishRun: starting (inline as step)');
+
+  // Scroll the step list so the finish step is visible
+  const finishEl = document.getElementById(`run-step-${FINISH_STEP_NUM}`);
+  if (finishEl) finishEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  updateStepItemStatus(FINISH_STEP_NUM, 'running');
+  state.currentStepNum = FINISH_STEP_NUM;
+  state.stepStartTime = Date.now();
+  lastOutputChangeTime = Date.now();
+
+  // Show subtitle
+  const subtitle = document.getElementById('running-subtitle');
+  subtitle.textContent = 'Finalizing \u2014 Generating report';
+  subtitle.className = 'subtitle subtitle-running';
+  document.title = 'Finalizing... \u2014 NightyTidy';
+
+  // Keep progress polling + elapsed timer active for live output
+  if (!state.pollTimer) startProgressPolling();
+  if (!state.elapsedTimer) startElapsedTimer();
+  backToLive();
+  updateProgressBar();
+
+  // Configure skip button as escape hatch
+  const skipBtn = document.getElementById('btn-skip-step');
+  skipBtn.textContent = 'Skip Finishing';
+  skipBtn.disabled = false;
+
+  // Safety timeout (15 min auto-skip)
+  const finishTimeoutId = setTimeout(() => {
+    logToServer('warn', 'Finishing timed out after 15 minutes');
+    if (state.currentProcessId) {
+      api('kill-process', { id: state.currentProcessId }).catch(() => {});
+    }
+    completeFinish(null, true);
+  }, FINISH_TIMEOUT_MS);
+
+  let result;
+  try {
+    result = await runCli('--finish-run');
+  } catch (err) {
+    clearTimeout(finishTimeoutId);
+    logToServer('error', `finishRun exception: ${err.message || err}`);
+    completeFinish(null, true);
+    return;
+  }
+
+  clearTimeout(finishTimeoutId);
+
+  // User clicked "Skip Finishing" while it was running
+  if (state.skippingStep === FINISH_STEP_NUM) {
+    state.skippingStep = null;
+    completeFinish(null, false, true);
+    return;
+  }
+
+  if (state.stopping) {
+    completeFinish(null, false, true);
+    return;
+  }
+
+  if (!result.ok) {
+    logToServer('error', `Finish run failed: ${result.error}`);
+    completeFinish(null, true);
+    return;
+  }
+
+  completeFinish(result.data, false);
+}
+
+function completeFinish(data, failed, skipped) {
   stopProgressPolling();
   stopElapsedTimer();
 
-  document.title = 'Finishing... — NightyTidy';
-  showScreen(SCREENS.FINISHING);
+  const finishDuration = state.stepStartTime ? Date.now() - state.stepStartTime : null;
+  state.currentStepNum = null;
+  state.stepStartTime = null;
 
-  // Reset finishing screen state
-  document.getElementById('finishing-status').textContent = 'Generating report and merging changes...';
-  const skipBtn = document.getElementById('btn-skip-finishing');
-  skipBtn.style.display = 'none';
-  clearError('finishing');
+  // Reset skip button text for future runs
+  const skipBtn = document.getElementById('btn-skip-step');
+  skipBtn.textContent = 'Skip Step';
+  skipBtn.disabled = true;
 
-  // Show skip button after a delay as an escape hatch
-  const skipTimer = setTimeout(() => {
-    skipBtn.style.display = '';
-  }, FINISH_SKIP_DELAY_MS);
+  if (data && data.success !== false) {
+    state.finishResult = data;
+    state.finishFailed = false;
+    state.completedSteps.push(FINISH_STEP_NUM);
 
-  // Race the CLI call against a user skip and a hard timeout
-  let skipResolve;
-  const skipPromise = new Promise(resolve => { skipResolve = resolve; });
+    state.stepResults.push({
+      step: FINISH_STEP_NUM,
+      name: 'Finalizing Report',
+      status: 'completed',
+      duration: data.finishDuration || finishDuration,
+      output: lastRenderedOutput || '',
+      costUSD: data.finishCostUSD ?? null,
+      inputTokens: data.finishInputTokens ?? null,
+      outputTokens: data.finishOutputTokens ?? null,
+    });
+    updateStepItemStatus(FINISH_STEP_NUM, 'completed', data.finishDuration || finishDuration);
 
-  const onSkip = () => {
-    logToServer('warn', 'User skipped finishing');
-    skipResolve({ skipped: true });
-  };
-  skipBtn.addEventListener('click', onSkip, { once: true });
-
-  const timeoutId = setTimeout(() => {
-    logToServer('warn', 'Finishing timed out after 15 minutes');
-    skipResolve({ skipped: true, timedOut: true });
-  }, FINISH_TIMEOUT_MS);
-
-  let outcome;
-  try {
-    const cliPromise = runCli('--finish-run').then(r => ({ skipped: false, result: r }));
-    outcome = await Promise.race([cliPromise, skipPromise]);
-  } catch (err) {
-    // fetch failure, server crash, or other unexpected error
-    clearTimeout(skipTimer);
-    clearTimeout(timeoutId);
-    skipBtn.removeEventListener('click', onSkip);
-    skipBtn.style.display = 'none';
-    logToServer('error', `finishRun exception: ${err.message || err}`);
+    renderSummary(data);
+  } else {
     state.finishFailed = true;
-    renderSummary(null);
-    showScreen(SCREENS.SUMMARY);
-    return;
-  }
 
-  // Cleanup
-  clearTimeout(skipTimer);
-  clearTimeout(timeoutId);
-  skipBtn.removeEventListener('click', onSkip);
-  skipBtn.style.display = 'none';
-
-  if (outcome.skipped) {
-    // Kill the finish process if it's still running
-    if (state.currentProcessId) {
-      try { await api('kill-process', { id: state.currentProcessId }); } catch { /* ignore */ }
+    const status = skipped ? 'skipped' : 'failed';
+    if (skipped) {
+      state.skippedSteps.push(FINISH_STEP_NUM);
+    } else {
+      state.failedSteps.push(FINISH_STEP_NUM);
     }
-    state.finishFailed = true;
+
+    state.stepResults.push({
+      step: FINISH_STEP_NUM,
+      name: 'Finalizing Report',
+      status,
+      duration: finishDuration,
+      output: lastRenderedOutput || '',
+      costUSD: null,
+      inputTokens: null,
+      outputTokens: null,
+    });
+    updateStepItemStatus(FINISH_STEP_NUM, status, finishDuration);
+
     renderSummary(null);
-    showScreen(SCREENS.SUMMARY);
-    return;
   }
 
-  const result = outcome.result;
-  if (!result.ok) {
-    logToServer('error', `Finish run failed: ${result.error}`);
-    state.finishFailed = true;
-    renderSummary(null);
-    showScreen(SCREENS.SUMMARY);
-    return;
-  }
-
-  state.finishResult = result.data;
-  renderSummary(result.data);
+  updateProgressBar();
   showScreen(SCREENS.SUMMARY);
 }
 
@@ -1599,16 +1671,19 @@ function renderSummary(finishData) {
   listEl.innerHTML = state.stepResults.map(r => {
     const status = r.status || 'pending';
     const icon = status === 'completed' ? '\u2713' : status === 'failed' ? '\u2717' : status === 'skipped' ? '\u27A0' : '&#9675;';
-    const name = r.name || `Step ${r.step}`;
+    const isFinishStep = r.step === FINISH_STEP_NUM;
+    const name = isFinishStep ? 'Finalizing Report' : (r.name || `Step ${r.step}`);
+    const stepNumDisplay = isFinishStep ? '' : `${r.step}.`;
     const dur = r.duration ? NtLogic.formatMs(r.duration) : '';
     const cost = NtLogic.formatCost(r.costUSD) || '';
     const stepTotalTokens = (r.inputTokens || 0) + (r.outputTokens || 0);
     const tokens = NtLogic.formatTokens(stepTotalTokens);
     const tokensStr = tokens ? tokens + ' tokens' : '';
+    const finishClass = isFinishStep ? ' step-finish' : '';
     return `
-      <div class="step-item step-${status} step-clickable" data-step="${r.step}" role="button" tabindex="0">
+      <div class="step-item step-${status}${finishClass} step-clickable" data-step="${r.step}" role="button" tabindex="0">
         <span class="step-icon">${icon}</span>
-        <span class="step-num">${r.step}.</span>
+        <span class="step-num">${stepNumDisplay}</span>
         <span class="step-name">${NtLogic.escapeHtml(name)}</span>
         <span class="step-cost">${cost}</span>
         <span class="step-tokens">${tokensStr}</span>
@@ -1689,7 +1764,7 @@ function resetApp() {
 // ── Window Close Protection ────────────────────────────────────────
 
 function isRunInProgress() {
-  return state.screen === SCREENS.RUNNING || state.screen === SCREENS.FINISHING || state.paused;
+  return state.screen === SCREENS.RUNNING || state.currentStepNum === FINISH_STEP_NUM || state.paused;
 }
 
 // Native browser dialog when user tries to close window during a run
@@ -1723,6 +1798,18 @@ function bindEvents() {
   document.getElementById('btn-resume-now').addEventListener('click', manualResume);
   document.getElementById('btn-finish-now').addEventListener('click', finishNow);
   document.getElementById('btn-close-drawer').addEventListener('click', closeDrawer);
+  document.getElementById('btn-copy-drawer').addEventListener('click', async () => {
+    if (!drawerRawMarkdown) return;
+    try {
+      await navigator.clipboard.writeText(drawerRawMarkdown);
+      const btn = document.getElementById('btn-copy-drawer');
+      btn.textContent = '\u2714 Copied';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '\u2398 Copy'; btn.classList.remove('copied'); }, 2000);
+    } catch (err) {
+      logToServer('warn', `Clipboard copy failed: ${err.message}`);
+    }
+  });
   document.getElementById('btn-new-run').addEventListener('click', resetApp);
   document.getElementById('btn-close-app').addEventListener('click', () => {
     api('exit').catch(() => {});

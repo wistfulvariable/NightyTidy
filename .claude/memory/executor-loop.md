@@ -6,6 +6,7 @@ Assumes CLAUDE.md loaded. Core loop in `src/executor.js`.
 
 - `executeSteps(selectedSteps, projectDir, options)` — main loop
 - `executeSingleStep(step, projectDir, options)` — single step with fast-completion detection
+- `copyPromptsToProject(projectDir)` — syncs all 33 STEPS to `audit-reports/refactor-prompts/`, removes stale files from renames
 - `SAFETY_PREAMBLE` — constraint string prepended to every prompt
 - `FAST_COMPLETION_THRESHOLD_MS` — 120,000ms (2 min); steps completing faster trigger auto-retry
 

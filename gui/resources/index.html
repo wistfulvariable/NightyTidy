@@ -167,7 +167,10 @@
   <aside id="step-drawer" class="step-drawer" aria-labelledby="drawer-title">
     <div class="step-drawer-header">
       <h2 id="drawer-title">Step Output</h2>
-      <button class="link-btn" id="btn-close-drawer" aria-label="Close panel">&times; Close</button>
+      <div class="drawer-actions">
+        <button class="drawer-copy-btn" id="btn-copy-drawer" aria-label="Copy markdown to clipboard" title="Copy markdown">&#x2398; Copy</button>
+        <button class="link-btn" id="btn-close-drawer" aria-label="Close panel">&times; Close</button>
+      </div>
     </div>
     <div class="step-drawer-body output-content" id="drawer-content"></div>
   </aside>

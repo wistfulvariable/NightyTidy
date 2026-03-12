@@ -64,7 +64,7 @@ test/
   checks.test.js           # 4 tests — mock subprocess, mock git
   checks-extended.test.js  # 23 tests — auth paths, disk space characterization, branch warnings, empty repo, dirty working tree
   claude.test.js           # 73 tests — fake child process, fake timers, abort signal, Windows shell mode, stream-json NDJSON parsing, classifyError, rate-limit retry skip, stderr capture, inactivity timeout
-  executor.test.js         # 42 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection, continueSession/promptOverride, rate-limit pause/resume
+  executor.test.js         # 50 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection, continueSession/promptOverride, rate-limit pause/resume, copyPromptsToProject
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 11 tests — getGitInstance, getHeadHash, tag/branch collision, ensureOnBranch recovery
   notifications.test.js    # 2 tests — mock node-notifier
@@ -117,7 +117,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 |------|---------------|-------------|
 | `bin/nightytidy.js` | Entry point — calls `run()` | cli |
 | `src/cli.js` | Commander + Inquirer + full lifecycle | all modules |
-| `src/executor.js` | Core step loop + single-step execution, prompt integrity check, fast-completion detection, rate-limit pause/resume with exponential backoff | crypto, claude, git, notifications, prompts |
+| `src/executor.js` | Core step loop + single-step execution, prompt integrity check, fast-completion detection, rate-limit pause/resume with exponential backoff, `copyPromptsToProject()` syncs all prompts to target repo | crypto, fs, claude, git, notifications, prompts |
 | `src/orchestrator.js` | Claude Code orchestrator mode (JSON API for step-by-step runs) + dashboard | logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone |
 | `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue, error classification via `classifyError`/`ERROR_TYPE`, exported `sleep`) | logger, env |
 | `src/git.js` | Git operations via simple-git + `ensureOnBranch()` branch guard | logger |
@@ -202,8 +202,9 @@ No secrets or API keys — Claude Code handles its own authentication.
 6. autoSyncPrompts(opts)        ← Sync prompts from Google Doc + reloadSteps() (non-blocking)
 7. Interactive step selection    ← After checks pass (uses fresh STEPS data)
 8. Git setup (tag + branch)     ← After user confirms steps
-9. executeSteps(...)            ← Main work
-10. generateReport(...)          ← After execution completes
+9. copyPromptsToProject()      ← Sync all prompts to audit-reports/refactor-prompts/ + commit
+10. executeSteps(...)            ← Main work
+11. generateReport(...)          ← After execution completes
 ```
 
 Calling any module before `initLogger()` throws. Calling git operations before `initGit()` gives null reference errors.
@@ -224,6 +225,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | `nightytidy-run-state.json` | Orchestrator run state (steps, results, branch info) | No (deleted by --finish-run) |
 | `nightytidy-before-*` git tag | Safety snapshot before run | Yes (tag) |
 | `nightytidy/run-*` git branch | All changes from this run | Yes (branch) |
+| `audit-reports/refactor-prompts/*.md` | All 33 step prompts synced for audit trail — stale files from renames auto-removed | Yes (on run branch) |
 
 ## What NOT to Do
 

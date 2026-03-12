@@ -96,11 +96,12 @@ vi.mock('../src/sync.js', () => ({
 }));
 
 vi.mock('../src/consolidation.js', () => ({
-  generateActionPlan: vi.fn().mockResolvedValue(null),
+  generateActionPlan: vi.fn().mockResolvedValue({ text: null, cost: null }),
 }));
 
 vi.mock('../src/executor.js', () => ({
   executeSteps: vi.fn(),
+  copyPromptsToProject: vi.fn(),
   SAFETY_PREAMBLE: '',
 }));
 

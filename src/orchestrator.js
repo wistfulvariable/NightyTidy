@@ -18,7 +18,7 @@ import { runPreChecks } from './checks.js';
 import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance, ensureOnBranch } from './git.js';
 import { runPrompt, ERROR_TYPE } from './claude.js';
 import { STEPS, CHANGELOG_PROMPT, reloadSteps } from './prompts/loader.js';
-import { executeSingleStep, sumCosts, SAFETY_PREAMBLE, PROD_PREAMBLE } from './executor.js';
+import { executeSingleStep, sumCosts, SAFETY_PREAMBLE, PROD_PREAMBLE, copyPromptsToProject } from './executor.js';
 import { generateActionPlan } from './consolidation.js';
 import { notify } from './notifications.js';
 import { generateReport, formatDuration, getVersion, buildReportNames } from './report.js';
@@ -470,6 +470,16 @@ export async function initRun(projectDir, { steps, timeout } = {}) {
     const tagName = await createPreRunTag();
     const runBranch = await createRunBranch(originalBranch);
 
+    // Sync all prompts into the target project for audit trail
+    copyPromptsToProject(projectDir);
+    try {
+      const git = getGitInstance();
+      await git.add([path.join('audit-reports', 'refactor-prompts')]);
+      await git.commit('NightyTidy: Sync refactor prompts');
+    } catch (err) {
+      warn(`Failed to commit refactor prompts: ${err.message}`);
+    }
+
     const state = {
       version: STATE_VERSION,
       originalBranch,
@@ -703,6 +713,10 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
  * @property {number|null} [totalCostUSD]
  * @property {number|null} [totalInputTokens]
  * @property {number|null} [totalOutputTokens]
+ * @property {number|null} [finishCostUSD]
+ * @property {number|null} [finishInputTokens]
+ * @property {number|null} [finishOutputTokens]
+ * @property {number} [finishDuration]
  * @property {boolean} [merged]
  * @property {boolean} [mergeConflict]
  * @property {string} [reportPath]
@@ -713,8 +727,9 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
 /**
  * Finish an orchestrated run.
  *
- * Generates report, commits, merges back to original branch, and cleans up
- * state. All operations are local — no AI calls — so this completes in seconds.
+ * Generates narrated changelog and action plan (2 AI calls with output
+ * streaming to progress JSON), then generates report, commits, merges back
+ * to original branch, and cleans up state.
  *
  * @param {string} projectDir - Target project directory
  * @returns {Promise<FinishRunResult>} Result object (never throws)
@@ -737,27 +752,56 @@ export async function finishRun(projectDir) {
 
     // Sum step costs
     const stepsCostUSD = executionResults.results.reduce((sum, r) => sum + (r.cost?.costUSD || 0), 0);
-    const totalCostUSD = stepsCostUSD;
-    const totalInputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.inputTokens || 0), 0) || null;
-    const totalOutputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.outputTokens || 0), 0) || null;
+    const stepsInputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.inputTokens || 0), 0) || null;
+    const stepsOutputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.outputTokens || 0), 0) || null;
 
-    // Narrated changelog
+    // ── Finish-phase AI calls with output streaming ──
+    const finishStart = Date.now();
+
+    // Build progress state with virtual "Finalizing Report" step
+    const progress = buildProgressState(state);
+    progress.steps.push({ number: 0, name: 'Finalizing Report', status: 'running', duration: null });
+    progress.currentStepIndex = state.selectedSteps.length;
+    progress.currentStepName = 'Finalizing Report';
+    writeProgress(projectDir, progress);
+
+    const onOutput = createOutputHandler(progress, projectDir);
+
+    // Narrated changelog (AI call 1)
     info('Generating narrated changelog...');
     const changelogResult = await runPrompt(SAFETY_PREAMBLE + CHANGELOG_PROMPT, projectDir, {
       label: 'Narrated changelog',
       timeout: state.timeout || undefined,
+      onOutput,
     });
     const narration = changelogResult.success ? changelogResult.output : null;
     if (!narration) warn('Narrated changelog generation failed — using fallback text');
+    let finishCost = changelogResult.cost || null;
 
     // Build unique report filename (numbered + timestamped)
     const { reportFile } = buildReportNames(projectDir, state.startTime);
 
-    // Consolidated action plan
+    // Consolidated action plan (AI call 2)
     info('Generating consolidated action plan...');
-    const actionPlanText = await generateActionPlan(executionResults, projectDir, {
+    const { text: actionPlanText, cost: actionCost } = await generateActionPlan(executionResults, projectDir, {
       timeout: state.timeout || undefined,
+      onOutput,
     });
+    finishCost = sumCosts(finishCost, actionCost);
+
+    const finishDuration = Date.now() - finishStart;
+
+    // Update progress: mark finish step as completed
+    const lastStep = progress.steps[progress.steps.length - 1];
+    lastStep.status = 'completed';
+    lastStep.duration = finishDuration;
+    delete progress.currentStepOutput;
+    writeProgress(projectDir, progress);
+
+    // Include finish-phase costs in totals
+    const totalCostUSD = stepsCostUSD + (finishCost?.costUSD || 0) || null;
+    const totalInputTokens = (stepsInputTokens || 0) + (finishCost?.inputTokens || 0) || null;
+    const totalOutputTokens = (stepsOutputTokens || 0) + (finishCost?.outputTokens || 0) || null;
 
     // Generate report (with inline action plan if available)
     generateReport(executionResults, narration, {
@@ -767,7 +811,7 @@ export async function finishRun(projectDir) {
       originalBranch: state.originalBranch,
       startTime: state.startTime,
       endTime: Date.now(),
-      totalCostUSD: totalCostUSD || null,
+      totalCostUSD,
       totalInputTokens,
       totalOutputTokens,
     }, { actionPlanText, reportFile });
@@ -812,9 +856,13 @@ export async function finishRun(projectDir) {
       completed: executionResults.completedCount,
       failed: executionResults.failedCount,
       totalDurationFormatted: formatDuration(totalDuration),
-      totalCostUSD: totalCostUSD || null,
+      totalCostUSD,
       totalInputTokens,
       totalOutputTokens,
+      finishCostUSD: finishCost?.costUSD ?? null,
+      finishInputTokens: finishCost?.inputTokens ?? null,
+      finishOutputTokens: finishCost?.outputTokens ?? null,
+      finishDuration,
       merged: mergeResult.success,
       mergeConflict: mergeResult.conflict || false,
       reportPath: reportFile,

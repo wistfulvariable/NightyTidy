@@ -1,4 +1,6 @@
 import { createHash } from 'crypto';
+import { writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
+import path from 'path';
 import { runPrompt, ERROR_TYPE, sleep } from './claude.js';
 import { getHeadHash, hasNewCommit, fallbackCommit } from './git.js';
 import { STEPS, DOC_UPDATE_PROMPT } from './prompts/loader.js';
@@ -455,4 +457,49 @@ export async function executeSteps(selectedSteps, projectDir, { signal, timeout,
     completedCount,
     failedCount,
   };
+}
+
+/**
+ * Build the filename for a step prompt.
+ * @param {Step} step
+ * @returns {string}
+ */
+function promptFilename(step) {
+  return `${String(step.number).padStart(2, '0')}-${step.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-$/, '')}.md`;
+}
+
+/**
+ * Copy ALL step prompts into the target project's audit-reports/refactor-prompts/ folder.
+ *
+ * Writes every prompt from STEPS, removes stale files left over from renames,
+ * and overwrites existing files so updates are always reflected.
+ * Synchronous — never throws (warns on failure).
+ *
+ * @param {string} projectDir - Target project root directory
+ */
+export function copyPromptsToProject(projectDir) {
+  try {
+    const promptsDir = path.join(projectDir, 'audit-reports', 'refactor-prompts');
+    mkdirSync(promptsDir, { recursive: true });
+
+    // Build set of current filenames so we can detect stale leftovers
+    const currentFiles = new Set(STEPS.map(promptFilename));
+
+    // Remove stale files (e.g. from renamed prompts)
+    for (const existing of readdirSync(promptsDir)) {
+      if (existing.endsWith('.md') && !currentFiles.has(existing)) {
+        unlinkSync(path.join(promptsDir, existing));
+        info(`Removed stale prompt file: ${existing}`);
+      }
+    }
+
+    // Write all current prompts (creates new + overwrites updated)
+    for (const step of STEPS) {
+      writeFileSync(path.join(promptsDir, promptFilename(step)), step.prompt, 'utf8');
+    }
+
+    info(`Synced ${STEPS.length} prompts to audit-reports/refactor-prompts/`);
+  } catch (err) {
+    warn(`Failed to copy prompts to project: ${err.message}`);
+  }
 }

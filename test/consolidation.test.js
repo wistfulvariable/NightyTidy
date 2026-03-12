@@ -107,89 +107,98 @@ describe('buildConsolidationPrompt', () => {
 
 describe('generateActionPlan', () => {
   it('returns action plan content on successful Claude response', async () => {
+    const mockCost = { costUSD: 0.05, inputTokens: 1000, outputTokens: 500 };
     runPrompt.mockResolvedValue({
       success: true,
       output: '# NightyTidy Action Plan\n\n## Critical\n\nNo items.',
+      cost: mockCost,
     });
 
     const results = makeResults({ completedCount: 2, failedCount: 0 });
-    const content = await generateActionPlan(results, '/fake/project', {});
+    const { text, cost } = await generateActionPlan(results, '/fake/project', {});
 
-    expect(content).toContain('## NightyTidy Action Plan');
-    expect(content).toContain('### Critical');
-    expect(content).toContain('No items.');
+    expect(text).toContain('## NightyTidy Action Plan');
+    expect(text).toContain('### Critical');
+    expect(text).toContain('No items.');
+    expect(cost).toEqual(mockCost);
   });
 
   it('downgrades heading levels in returned text', async () => {
     runPrompt.mockResolvedValue({
       success: true,
       output: '# NightyTidy Action Plan\n\n## Critical\n\n### 1. Some item',
+      cost: null,
     });
 
     const results = makeResults({ completedCount: 1, failedCount: 0 });
-    const content = await generateActionPlan(results, '/fake/project', {});
+    const { text } = await generateActionPlan(results, '/fake/project', {});
 
-    expect(content).toBe('## NightyTidy Action Plan\n\n### Critical\n\n#### 1. Some item');
+    expect(text).toBe('## NightyTidy Action Plan\n\n### Critical\n\n#### 1. Some item');
   });
 
-  it('returns null when Claude returns failure', async () => {
-    runPrompt.mockResolvedValue({ success: false, output: '', error: 'timeout' });
+  it('returns null text when Claude returns failure', async () => {
+    const mockCost = { costUSD: 0.01, inputTokens: 200, outputTokens: 0 };
+    runPrompt.mockResolvedValue({ success: false, output: '', error: 'timeout', cost: mockCost });
 
     const results = makeResults({ completedCount: 1, failedCount: 0 });
-    const content = await generateActionPlan(results, '/fake/project', {});
+    const { text, cost } = await generateActionPlan(results, '/fake/project', {});
 
-    expect(content).toBeNull();
+    expect(text).toBeNull();
+    expect(cost).toEqual(mockCost);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('failed'));
   });
 
-  it('returns null when Claude returns empty output', async () => {
-    runPrompt.mockResolvedValue({ success: true, output: '   ' });
+  it('returns null text when Claude returns empty output', async () => {
+    runPrompt.mockResolvedValue({ success: true, output: '   ', cost: null });
 
     const results = makeResults({ completedCount: 1, failedCount: 0 });
-    const content = await generateActionPlan(results, '/fake/project', {});
+    const { text } = await generateActionPlan(results, '/fake/project', {});
 
-    expect(content).toBeNull();
+    expect(text).toBeNull();
   });
 
-  it('skips Claude call when completedCount is 0', async () => {
+  it('returns null text and cost when completedCount is 0', async () => {
     const results = makeResults({ completedCount: 0, failedCount: 3 });
-    const content = await generateActionPlan(results, '/fake/project', {});
+    const { text, cost } = await generateActionPlan(results, '/fake/project', {});
 
-    expect(content).toBeNull();
+    expect(text).toBeNull();
+    expect(cost).toBeNull();
     expect(runPrompt).not.toHaveBeenCalled();
     expect(info).toHaveBeenCalledWith(expect.stringContaining('no steps completed'));
   });
 
-  it('passes timeout option through to runPrompt', async () => {
-    runPrompt.mockResolvedValue({ success: true, output: '# Plan' });
+  it('passes timeout and onOutput options through to runPrompt', async () => {
+    runPrompt.mockResolvedValue({ success: true, output: '# Plan', cost: null });
 
     const results = makeResults({ completedCount: 1, failedCount: 0 });
-    await generateActionPlan(results, '/fake/project', { timeout: 3600000 });
+    const onOutput = vi.fn();
+    await generateActionPlan(results, '/fake/project', { timeout: 3600000, onOutput });
 
     expect(runPrompt).toHaveBeenCalledWith(
       expect.any(String),
       '/fake/project',
-      expect.objectContaining({ timeout: 3600000 })
+      expect.objectContaining({ timeout: 3600000, onOutput })
     );
   });
 
-  it('returns null and warns on thrown error (never throws)', async () => {
+  it('returns null text/cost and warns on thrown error (never throws)', async () => {
     runPrompt.mockRejectedValue(new Error('network failure'));
 
     const results = makeResults({ completedCount: 1, failedCount: 0 });
-    const content = await generateActionPlan(results, '/fake/project', {});
+    const { text, cost } = await generateActionPlan(results, '/fake/project', {});
 
-    expect(content).toBeNull();
+    expect(text).toBeNull();
+    expect(cost).toBeNull();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('network failure'));
   });
 
   it('returns processed text without version footer', async () => {
-    runPrompt.mockResolvedValue({ success: true, output: '# Plan content\n\nDetails here.' });
+    runPrompt.mockResolvedValue({ success: true, output: '# Plan content\n\nDetails here.', cost: null });
 
     const results = makeResults({ completedCount: 1, failedCount: 0 });
-    const content = await generateActionPlan(results, '/fake/project', {});
+    const { text } = await generateActionPlan(results, '/fake/project', {});
 
-    expect(content).toBe('## Plan content\n\nDetails here.');
-    expect(content).not.toContain('Generated by NightyTidy');
+    expect(text).toBe('## Plan content\n\nDetails here.');
+    expect(text).not.toContain('Generated by NightyTidy');
   });
 });

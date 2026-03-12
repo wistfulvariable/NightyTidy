@@ -50,7 +50,7 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
 6. **`setupGitAndPreChecks()`**: `initGit()` → `excludeEphemeralFiles()` → spinner + `runPreChecks()`
 7. **Auto-sync prompts**: `autoSyncPrompts(opts)` — syncs from Google Doc, calls `reloadSteps()` if changes. Non-blocking on failure. Skipped with `--skip-sync`.
 8. **Step selection**: `@inquirer/checkbox` or `--all`/`--steps` parsing
-9. **`executeRunFlow()`**: dashboard → git branching → notify → spinner + `executeSteps()` → abort handling
+9. **`executeRunFlow()`**: dashboard → git branching → `copyPromptsToProject()` + commit → notify → spinner + `executeSteps()` → abort handling
 10. **`finalizeRun()`**: changelog → action plan → report (with inline action plan) → commit → merge → summary → dashboard shutdown
 
 ## Abort Handling (SIGINT)

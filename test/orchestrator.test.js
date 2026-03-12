@@ -51,10 +51,12 @@ vi.mock('../src/claude.js', () => ({
 
 vi.mock('../src/executor.js', () => ({
   executeSingleStep: vi.fn(),
+  copyPromptsToProject: vi.fn(),
   sumCosts: vi.fn((a, b) => {
     if (!a && !b) return null;
-    const sa = a || {}; const sb = b || {};
-    return { input: (sa.input || 0) + (sb.input || 0), output: (sa.output || 0) + (sb.output || 0), cacheRead: (sa.cacheRead || 0) + (sb.cacheRead || 0), cacheCreate: (sa.cacheCreate || 0) + (sb.cacheCreate || 0), total: (sa.total || 0) + (sb.total || 0) };
+    if (!a) return b;
+    if (!b) return a;
+    return { costUSD: (a.costUSD || 0) + (b.costUSD || 0), inputTokens: (a.inputTokens || 0) + (b.inputTokens || 0), outputTokens: (a.outputTokens || 0) + (b.outputTokens || 0) };
   }),
   SAFETY_PREAMBLE: 'MOCK_PREAMBLE\n',
   PROD_PREAMBLE: 'MOCK_PROD\n',
@@ -77,7 +79,7 @@ vi.mock('../src/lock.js', () => ({
 }));
 
 vi.mock('../src/consolidation.js', () => ({
-  generateActionPlan: vi.fn().mockResolvedValue(null),
+  generateActionPlan: vi.fn().mockResolvedValue({ text: null, cost: null }),
 }));
 
 vi.mock('../src/prompts/loader.js', () => ({
@@ -524,7 +526,7 @@ describe('finishRun', () => {
     mergeRunBranch.mockResolvedValue({ success: true });
     getGitInstance.mockReturnValue({ add: vi.fn(), commit: vi.fn() });
     runPrompt.mockResolvedValue({ success: true, output: 'Mock changelog narration' });
-    generateActionPlan.mockResolvedValue('Mock action plan content');
+    generateActionPlan.mockResolvedValue({ text: 'Mock action plan content', cost: { costUSD: 0.02, inputTokens: 500, outputTokens: 200 } });
   });
 
   it('generates report and merges successfully', async () => {
@@ -551,7 +553,7 @@ describe('finishRun', () => {
     expect(options.actionPlanText).toBe('Mock action plan content');
   });
 
-  it('passes totalInputTokens and totalOutputTokens to generateReport', async () => {
+  it('passes totalInputTokens and totalOutputTokens to generateReport (including finish-phase costs)', async () => {
     const stateWithCost = {
       ...validState,
       completedSteps: [
@@ -562,12 +564,16 @@ describe('finishRun', () => {
       ],
     };
     readFileSync.mockReturnValue(JSON.stringify(stateWithCost));
+    // Changelog AI call returns cost
+    runPrompt.mockResolvedValue({ success: true, output: 'Mock changelog narration', cost: { costUSD: 0.01, inputTokens: 400, outputTokens: 100 } });
 
     await finishRun('/fake/project');
 
     const [, , metadata] = generateReport.mock.calls[0];
-    expect(metadata.totalInputTokens).toBe(13000);
-    expect(metadata.totalOutputTokens).toBe(3000);
+    // Steps: 8000+5000=13000 input, 2000+1000=3000 output
+    // Finish: changelog 400+100, action plan 500+200 (from beforeEach mock)
+    expect(metadata.totalInputTokens).toBe(13900);
+    expect(metadata.totalOutputTokens).toBe(3300);
   });
 
   it('releases lock and deletes state file', async () => {
@@ -624,7 +630,7 @@ describe('finishRun', () => {
   });
 
   it('generates action plan via generateActionPlan', async () => {
-    generateActionPlan.mockResolvedValue('Action plan content');
+    generateActionPlan.mockResolvedValue({ text: 'Action plan content', cost: { costUSD: 0.03, inputTokens: 600, outputTokens: 300 } });
 
     const result = await finishRun('/fake/project');
 
@@ -636,7 +642,7 @@ describe('finishRun', () => {
   });
 
   it('commits only report and CLAUDE.md when action plan succeeds', async () => {
-    generateActionPlan.mockResolvedValue('Action plan content');
+    generateActionPlan.mockResolvedValue({ text: 'Action plan content', cost: { costUSD: 0.03, inputTokens: 600, outputTokens: 300 } });
     const mockGit = { add: vi.fn(), commit: vi.fn() };
     getGitInstance.mockReturnValue(mockGit);
 
@@ -657,7 +663,7 @@ describe('finishRun', () => {
   });
 
   it('handles action plan failure gracefully', async () => {
-    generateActionPlan.mockResolvedValue(null);
+    generateActionPlan.mockResolvedValue({ text: null, cost: null });
 
     const result = await finishRun('/fake/project');
 
@@ -668,7 +674,7 @@ describe('finishRun', () => {
   });
 
   it('commits only report and CLAUDE.md when action plan fails', async () => {
-    generateActionPlan.mockResolvedValue(null);
+    generateActionPlan.mockResolvedValue({ text: null, cost: null });
     const mockGit = { add: vi.fn(), commit: vi.fn() };
     getGitInstance.mockReturnValue(mockGit);
 

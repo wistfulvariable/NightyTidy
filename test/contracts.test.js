@@ -922,6 +922,7 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
 
     vi.doMock('../src/executor.js', () => ({
       executeSingleStep: vi.fn(),
+      copyPromptsToProject: vi.fn(),
       SAFETY_PREAMBLE: 'MOCK\n',
       PROD_PREAMBLE: 'MOCK_PROD\n',
     }));
@@ -942,7 +943,7 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
     }));
 
     vi.doMock('../src/consolidation.js', () => ({
-      generateActionPlan: vi.fn().mockResolvedValue(null),
+      generateActionPlan: vi.fn().mockResolvedValue({ text: null, cost: null }),
     }));
 
     vi.doMock('../src/prompts/loader.js', () => ({

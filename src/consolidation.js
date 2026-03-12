@@ -30,23 +30,27 @@ export function buildConsolidationPrompt(executionResults) {
 }
 
 /**
+ * @typedef {{ text: string|null, cost: import('./claude.js').CostData|null }} ActionPlanResult
+ */
+
+/**
  * Generate a consolidated action plan from step outputs via Claude.
  *
- * Returns the action plan text (with headings downgraded for embedding in the
- * report), or null on failure. Does NOT write any file — the caller embeds
- * the text into the report via generateReport().
+ * Returns `{ text, cost }` where text is the action plan (with headings
+ * downgraded for embedding in the report), or null on failure. Does NOT write
+ * any file — the caller embeds the text into the report via generateReport().
  *
- * Error contract: Warns but NEVER throws — returns null on failure.
+ * Error contract: Warns but NEVER throws — returns { text: null, cost: null } on failure.
  *
  * @param {import('./executor.js').ExecutionResults} executionResults
  * @param {string} projectDir
- * @param {{ timeout?: number }} [options]
- * @returns {Promise<string|null>}
+ * @param {{ timeout?: number, onOutput?: (chunk: string) => void }} [options]
+ * @returns {Promise<ActionPlanResult>}
  */
-export async function generateActionPlan(executionResults, projectDir, { timeout } = {}) {
+export async function generateActionPlan(executionResults, projectDir, { timeout, onOutput } = {}) {
   if (executionResults.completedCount === 0) {
     info('Skipping action plan — no steps completed');
-    return null;
+    return { text: null, cost: null };
   }
 
   try {
@@ -56,18 +60,20 @@ export async function generateActionPlan(executionResults, projectDir, { timeout
     const result = await runPrompt(prompt, projectDir, {
       label: 'Consolidation action plan',
       timeout,
+      onOutput,
     });
 
     if (!result.success || !result.output?.trim()) {
       warn('Action plan generation failed — report will not include action plan section.');
-      return null;
+      return { text: null, cost: result.cost || null };
     }
 
     // Downgrade headings by one level (H1→H2, H2→H3, etc.) so the action plan
     // can be embedded inside the report which already has its own H1.
-    return result.output.trim().replace(/^(#+)/gm, '$1#');
+    const text = result.output.trim().replace(/^(#+)/gm, '$1#');
+    return { text, cost: result.cost || null };
   } catch (err) {
     warn(`Action plan generation error (${err.message}) — report will not include action plan section.`);
-    return null;
+    return { text: null, cost: null };
   }
 }

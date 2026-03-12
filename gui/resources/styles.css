@@ -406,6 +406,8 @@ body {
   100% { transform: scale(1); }
 }
 .step-skipped .step-name  { opacity: 0.5; text-decoration: line-through; }
+.step-finish { border-top: 1px solid rgba(255,255,255,0.08); margin-top: 4px; padding-top: 10px; }
+.step-finish .step-name { font-style: italic; }
 .step-item .step-num {
   color: var(--text-dim);
   font-size: 0.8rem;
@@ -846,6 +848,32 @@ body {
   text-overflow: ellipsis;
   white-space: nowrap;
   margin-right: 12px;
+}
+.drawer-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.drawer-copy-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 3px 10px;
+  border-radius: 4px;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.drawer-copy-btn:hover {
+  color: var(--cyan);
+  border-color: var(--cyan);
+}
+.drawer-copy-btn.copied {
+  color: var(--green);
+  border-color: var(--green);
 }
 .step-drawer-body {
   flex: 1;

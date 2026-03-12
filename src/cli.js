@@ -1,3 +1,4 @@
+import path from 'path';
 import { Command } from 'commander';
 import ora from 'ora';
 import chalk from 'chalk';
@@ -7,7 +8,7 @@ import { runPreChecks } from './checks.js';
 import { initGit, excludeEphemeralFiles, getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance } from './git.js';
 import { runPrompt } from './claude.js';
 import { STEPS, CHANGELOG_PROMPT, reloadSteps } from './prompts/loader.js';
-import { executeSteps, SAFETY_PREAMBLE } from './executor.js';
+import { executeSteps, SAFETY_PREAMBLE, copyPromptsToProject } from './executor.js';
 import { generateActionPlan } from './consolidation.js';
 import { notify } from './notifications.js';
 import { generateReport, formatDuration, getVersion, buildReportNames } from './report.js';
@@ -415,6 +416,16 @@ async function executeRunFlow(selected, projectDir, ctx) {
   ctx.runBranch = await createRunBranch(ctx.originalBranch);
   ctx.runStarted = true;
 
+  // Sync all prompts into the target project for audit trail
+  copyPromptsToProject(projectDir);
+  try {
+    const gitInstance = getGitInstance();
+    await gitInstance.add([path.join('audit-reports', 'refactor-prompts')]);
+    await gitInstance.commit('NightyTidy: Sync refactor prompts');
+  } catch (err) {
+    warn(`Failed to commit refactor prompts: ${err.message}`);
+  }
+
   notify('NightyTidy Started', `Running ${selected.length} steps. Check nightytidy-run.log for progress.`);
 
   ctx.spinner = ora({
@@ -476,7 +487,7 @@ async function finalizeRun(executionResults, projectDir, ctx) {
 
   // Consolidated action plan
   ctx.spinner = ora({ text: 'Generating action plan...', color: 'cyan' }).start();
-  const actionPlanText = await generateActionPlan(executionResults, projectDir, {
+  const { text: actionPlanText } = await generateActionPlan(executionResults, projectDir, {
     timeout: ctx.timeoutMs,
   });
   ctx.spinner.stop();
