@@ -269,30 +269,7 @@ describe('updateClaudeMd — direct', () => {
 });
 
 // ---------------------------------------------------------------------------
-// skipClaudeMdUpdate option
+// NOTE: skipClaudeMdUpdate option tests are in report.test.js (lines 370-397)
+// to avoid duplication. This file focuses on CLAUDE.md update behavior via
+// generateReport and the direct updateClaudeMd function.
 // ---------------------------------------------------------------------------
-
-describe('generateReport — skipClaudeMdUpdate', () => {
-  it('skips CLAUDE.md update when skipClaudeMdUpdate is true', () => {
-    const results = makeResults({ completedCount: 1, failedCount: 0 });
-
-    generateReport(results, 'narration', makeMetadata(), { skipClaudeMdUpdate: true });
-
-    const claudeWriteCall = writeFileSync.mock.calls.find(
-      (call) => call[0].endsWith('CLAUDE.md')
-    );
-    expect(claudeWriteCall).toBeUndefined();
-  });
-
-  it('updates CLAUDE.md by default when skipClaudeMdUpdate is not set', () => {
-    existsSync.mockReturnValue(false);
-    const results = makeResults({ completedCount: 1, failedCount: 0 });
-
-    generateReport(results, 'narration', makeMetadata());
-
-    const claudeWriteCall = writeFileSync.mock.calls.find(
-      (call) => call[0].endsWith('CLAUDE.md')
-    );
-    expect(claudeWriteCall).toBeDefined();
-  });
-});
