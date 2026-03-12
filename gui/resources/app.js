@@ -120,7 +120,7 @@ const state = {
   skippedSteps: [],       // step numbers that were skipped
   viewingStepOutput: null, // step number whose output is shown in drawer (null = none)
   drawerReportPath: null,  // report file path shown in drawer (null = none)
-  initMsgTimer: null,      // setInterval ID for init overlay rotating messages
+  initPollTimer: null,     // setInterval ID for init overlay progress polling
   currentStepNum: null,    // step number currently running (for live elapsed timer)
   stepStartTime: null,     // timestamp ms when current step started
   paused: false,           // run is paused due to rate limit
@@ -136,14 +136,7 @@ const state = {
 
 // ── Init Overlay (shown during --init-run) ────────────────────────
 
-const INIT_MESSAGES = [
-  'Preparing your run\u2026',
-  'Validating git repository\u2026',
-  'Checking Claude Code CLI\u2026',
-  'Creating safety branch\u2026',
-  'Setting up progress tracking\u2026',
-  'Almost ready\u2026',
-];
+const INIT_POLL_INTERVAL = 400; // ms — slightly faster than step polling
 
 function showInitOverlay() {
   // Hide step selection UI immediately
@@ -151,39 +144,86 @@ function showInitOverlay() {
     const el = document.querySelector(`.${id}`) || document.getElementById(id);
     if (el) el.style.display = 'none';
   }
-  const overlay = document.getElementById('init-overlay');
-  const statusEl = document.getElementById('init-status');
-  statusEl.textContent = INIT_MESSAGES[0];
-  statusEl.style.opacity = '1';
-  overlay.style.display = 'block';
 
-  let idx = 0;
-  // Use shorter interval (1.5s) for snappier feel during init
-  state.initMsgTimer = setInterval(() => {
-    if (idx >= INIT_MESSAGES.length - 1) {
-      clearInterval(state.initMsgTimer);
-      state.initMsgTimer = null;
-      return;
-    }
-    idx++;
-    statusEl.style.opacity = '0';
-    setTimeout(() => {
-      statusEl.textContent = INIT_MESSAGES[idx];
-      statusEl.style.opacity = '1';
-    }, 150); // Faster fade-in (150ms instead of 200ms)
-  }, 1500); // Shorter interval (1.5s instead of 2s)
+  // Build checklist from INIT_PHASES
+  const container = document.getElementById('init-checklist');
+  container.innerHTML = NtLogic.INIT_PHASES.map(phase => `
+    <div class="init-phase init-phase-pending" id="init-phase-${phase.key}">
+      <span class="init-phase-icon">&#9675;</span>
+      <span class="init-phase-label">${NtLogic.escapeHtml(phase.label)}</span>
+    </div>
+  `).join('');
+
+  document.getElementById('init-overlay').style.display = 'block';
+  startInitPolling();
 }
 
 function hideInitOverlay() {
-  if (state.initMsgTimer) {
-    clearInterval(state.initMsgTimer);
-    state.initMsgTimer = null;
-  }
+  stopInitPolling();
   document.getElementById('init-overlay').style.display = 'none';
   // Restore step selection UI
   for (const id of ['step-checklist', 'options-bar', 'start-bar', 'steps-header']) {
     const el = document.querySelector(`.${id}`) || document.getElementById(id);
     if (el) el.style.display = '';
+  }
+}
+
+function startInitPolling() {
+  stopInitPolling();
+  state.initPollTimer = setInterval(pollInitProgress, INIT_POLL_INTERVAL);
+}
+
+function stopInitPolling() {
+  if (state.initPollTimer) {
+    clearInterval(state.initPollTimer);
+    state.initPollTimer = null;
+  }
+}
+
+async function pollInitProgress() {
+  if (!state.projectDir) return;
+  const progressPath = `${state.projectDir}\\nightytidy-progress.json`;
+  try {
+    const result = await api('read-file', { path: progressPath }, 3000);
+    if (result.ok && result.content) {
+      renderInitChecklist(JSON.parse(result.content));
+    }
+  } catch {
+    // Swallow — init polling is best-effort
+  }
+}
+
+function renderInitChecklist(progress) {
+  if (!progress || progress.status !== 'initializing') return;
+
+  const currentIdx = NtLogic.getInitPhaseIndex(progress.initPhase);
+
+  for (let i = 0; i < NtLogic.INIT_PHASES.length; i++) {
+    const phase = NtLogic.INIT_PHASES[i];
+    const el = document.getElementById(`init-phase-${phase.key}`);
+    if (!el) continue;
+    const iconEl = el.querySelector('.init-phase-icon');
+
+    if (i < currentIdx) {
+      el.className = 'init-phase init-phase-done';
+      iconEl.textContent = '\u2713';
+    } else if (i === currentIdx) {
+      el.className = 'init-phase init-phase-active';
+      iconEl.innerHTML = '<span class="spinner"></span>';
+    } else {
+      el.className = 'init-phase init-phase-pending';
+      iconEl.innerHTML = '&#9675;';
+    }
+  }
+}
+
+function markInitPhaseFailed() {
+  stopInitPolling();
+  const activeEl = document.querySelector('.init-phase-active');
+  if (activeEl) {
+    activeEl.className = 'init-phase init-phase-failed';
+    const iconEl = activeEl.querySelector('.init-phase-icon');
+    if (iconEl) iconEl.textContent = '\u2717';
   }
 }
 
@@ -501,6 +541,13 @@ async function startRun() {
 
   showInitOverlay();
   const result = await runCli(args);
+
+  // On failure, briefly show which phase failed before hiding overlay
+  const initFailed = !result.ok || (result.data && !result.data.success);
+  if (initFailed) {
+    markInitPhaseFailed();
+    await new Promise(r => setTimeout(r, 1200));
+  }
   hideInitOverlay();
 
   // Restore button state (in case of error return to steps screen)
@@ -559,12 +606,12 @@ function renderRunningStepList() {
     `;
   }).join('');
 
-  // Virtual "Finalizing Report" step — always visible at the bottom
+  // Virtual "Final Report" step — always visible at the bottom
   const finishHtml = `
     <div class="step-item step-pending step-finish" id="run-step-${FINISH_STEP_NUM}">
       <span class="step-icon">&#9675;</span>
       <span class="step-num"></span>
-      <span class="step-name">Finalizing Report</span>
+      <span class="step-name">Final Report</span>
       <span class="step-cost"></span>
       <span class="step-tokens"></span>
       <span class="step-duration"></span>
@@ -623,7 +670,7 @@ function updateStepItemStatus(stepNum, status, duration) {
 }
 
 function updateProgressBar() {
-  // +1 for the virtual "Finalizing Report" step (always in the list)
+  // +1 for the virtual "Final Report" step (always in the list)
   const total = state.selectedSteps.length + 1;
   const done = state.completedSteps.length + state.failedSteps.length + state.skippedSteps.length;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -1477,7 +1524,7 @@ function completeFinish(data, failed, skipped) {
 
     state.stepResults.push({
       step: FINISH_STEP_NUM,
-      name: 'Finalizing Report',
+      name: 'Final Report',
       status: 'completed',
       duration: data.finishDuration || finishDuration,
       output: lastRenderedOutput || '',
@@ -1500,7 +1547,7 @@ function completeFinish(data, failed, skipped) {
 
     state.stepResults.push({
       step: FINISH_STEP_NUM,
-      name: 'Finalizing Report',
+      name: 'Final Report',
       status,
       duration: finishDuration,
       output: lastRenderedOutput || '',
@@ -1672,7 +1719,7 @@ function renderSummary(finishData) {
     const status = r.status || 'pending';
     const icon = status === 'completed' ? '\u2713' : status === 'failed' ? '\u2717' : status === 'skipped' ? '\u27A0' : '&#9675;';
     const isFinishStep = r.step === FINISH_STEP_NUM;
-    const name = isFinishStep ? 'Finalizing Report' : (r.name || `Step ${r.step}`);
+    const name = isFinishStep ? 'Final Report' : (r.name || `Step ${r.step}`);
     const stepNumDisplay = isFinishStep ? '' : `${r.step}.`;
     const dur = r.duration ? NtLogic.formatMs(r.duration) : '';
     const cost = NtLogic.formatCost(r.costUSD) || '';
@@ -1708,6 +1755,7 @@ function renderSummary(finishData) {
 // ── Reset ──────────────────────────────────────────────────────────
 
 function resetApp() {
+  stopInitPolling();
   stopProgressPolling();
   stopElapsedTimer();
 

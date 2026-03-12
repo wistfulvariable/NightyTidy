@@ -502,3 +502,48 @@ describe('formatCountdown', () => {
     expect(NtLogic.formatCountdown(ms)).toBe(expected);
   });
 });
+
+describe('INIT_PHASES', () => {
+  it('exports a non-empty array of phases', () => {
+    expect(NtLogic.INIT_PHASES).toBeDefined();
+    expect(Array.isArray(NtLogic.INIT_PHASES)).toBe(true);
+    expect(NtLogic.INIT_PHASES.length).toBeGreaterThan(0);
+  });
+
+  it('each phase has key and label strings', () => {
+    for (const phase of NtLogic.INIT_PHASES) {
+      expect(typeof phase.key).toBe('string');
+      expect(phase.key.length).toBeGreaterThan(0);
+      expect(typeof phase.label).toBe('string');
+      expect(phase.label.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('phase keys are unique', () => {
+    const keys = NtLogic.INIT_PHASES.map(p => p.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('getInitPhaseIndex', () => {
+  it('returns correct index for first and last phases', () => {
+    expect(NtLogic.getInitPhaseIndex('lock')).toBe(0);
+    expect(NtLogic.getInitPhaseIndex('dashboard')).toBe(NtLogic.INIT_PHASES.length - 1);
+  });
+
+  it('returns correct index for a middle phase', () => {
+    const idx = NtLogic.getInitPhaseIndex('pre_checks');
+    expect(idx).toBeGreaterThan(0);
+    expect(idx).toBeLessThan(NtLogic.INIT_PHASES.length - 1);
+    expect(NtLogic.INIT_PHASES[idx].key).toBe('pre_checks');
+  });
+
+  it('returns -1 for unknown phase key', () => {
+    expect(NtLogic.getInitPhaseIndex('nonexistent')).toBe(-1);
+  });
+
+  it('returns -1 for null/undefined', () => {
+    expect(NtLogic.getInitPhaseIndex(null)).toBe(-1);
+    expect(NtLogic.getInitPhaseIndex(undefined)).toBe(-1);
+  });
+});

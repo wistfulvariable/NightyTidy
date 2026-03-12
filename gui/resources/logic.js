@@ -259,6 +259,32 @@ function formatCountdown(ms) {
   return formatMs(ms);
 }
 
+/**
+ * Ordered list of init phases for the --init-run overlay.
+ * The backend writes { status: 'initializing', initPhase: '<key>' }
+ * to nightytidy-progress.json as it progresses through each phase.
+ */
+const INIT_PHASES = [
+  { key: 'lock',           label: 'Acquiring run lock' },
+  { key: 'git_init',       label: 'Initializing git' },
+  { key: 'pre_checks',     label: 'Running pre-flight checks' },
+  { key: 'sync_prompts',   label: 'Syncing prompts from Google Doc' },
+  { key: 'validate_steps', label: 'Validating steps' },
+  { key: 'git_branch',     label: 'Creating safety branch' },
+  { key: 'copy_prompts',   label: 'Copying prompts for audit trail' },
+  { key: 'dashboard',      label: 'Launching dashboard' },
+];
+
+/**
+ * Get the index of a phase key in INIT_PHASES.
+ * @param {string|null|undefined} phaseKey
+ * @returns {number} Index, or -1 if not found
+ */
+function getInitPhaseIndex(phaseKey) {
+  if (!phaseKey) return -1;
+  return INIT_PHASES.findIndex(p => p.key === phaseKey);
+}
+
 // Export for browser (app.js) and for Node.js tests
 const NtLogic = {
   buildCommand,
@@ -275,6 +301,8 @@ const NtLogic = {
   detectRateLimit,
   formatCountdown,
   preprocessClaudeOutput,
+  INIT_PHASES,
+  getInitPhaseIndex,
 };
 
 // Browser: attach to window. Node.js: attach to globalThis.

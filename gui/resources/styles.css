@@ -380,6 +380,7 @@ body {
 .step-item { transition: background 0.1s ease-out; }
 .step-item:hover { background: rgba(255,255,255,0.03); }
 .step-item.step-clickable { cursor: pointer; }
+.step-item.step-clickable .step-name { text-decoration: underline; text-underline-offset: 2px; }
 .step-item.step-clickable:hover { background: rgba(255,255,255,0.06); }
 .step-item.step-active {
   background: rgba(0, 212, 255, 0.08);
@@ -625,8 +626,7 @@ body {
   text-align: center;
   padding: 80px 0;
 }
-.finishing-content .big-spinner,
-.init-overlay .big-spinner {
+.finishing-content .big-spinner {
   display: inline-block;
   width: 40px;
   height: 40px;
@@ -648,15 +648,44 @@ body {
 
 /* Init overlay (Steps screen — shown during --init-run) */
 .init-overlay {
+  padding: 40px 0;
+}
+.init-title {
+  color: var(--cyan);
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-bottom: 20px;
   text-align: center;
-  padding: 60px 0;
 }
-.init-status {
-  color: var(--text-dim);
-  font-size: 1rem;
-  transition: opacity 0.2s ease-out;
-  will-change: opacity;
+.init-checklist {
+  max-width: 420px;
+  margin: 0 auto;
 }
+.init-phase {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  font-size: 0.9rem;
+  border-radius: 4px;
+}
+.init-phase-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+}
+.init-phase-pending .init-phase-icon  { color: var(--text-dim); }
+.init-phase-active  .init-phase-icon  { color: var(--blue); }
+.init-phase-done    .init-phase-icon  { color: var(--green); animation: step-complete 0.3s ease-out; }
+.init-phase-failed  .init-phase-icon  { color: var(--red); }
+.init-phase-pending .init-phase-label { color: var(--text-dim); }
+.init-phase-active  .init-phase-label { color: var(--text); }
+.init-phase-done    .init-phase-label { color: var(--text); }
+.init-phase-failed  .init-phase-label { color: var(--red); }
 
 /* ═══════════════════════════════════════
    Screen 5: Summary
