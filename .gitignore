@@ -26,3 +26,6 @@ secrets.*
 # Claude Code — ignore all except memory files
 .claude/*
 !.claude/memory/
+
+# Git worktrees
+.worktrees/
