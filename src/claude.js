@@ -79,9 +79,62 @@ const RATE_LIMIT_PATTERNS = [
   /throttl/i,
   /billing/i,
   /plan.?limit/i,
+  /hit your limit/i,
 ];
 
 const RETRY_AFTER_PATTERN = /retry.?after[:\s]+(\d+)/i;
+
+// Matches "resets 2pm (America/New_York)" or "resets 2:30pm (America/New_York)"
+const RESET_TIME_PATTERN = /resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(([^)]+)\)/i;
+
+/**
+ * Parse a "resets Xpm (Timezone)" message into milliseconds from now.
+ * Returns null if the text doesn't contain a parseable reset time.
+ *
+ * @param {string} text - Text that may contain a reset time message
+ * @returns {number|null} Milliseconds until the reset time, or null
+ */
+export function parseResetTime(text) {
+  if (!text) return null;
+  const match = text.match(RESET_TIME_PATTERN);
+  if (!match) return null;
+
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2] ? parseInt(match[2], 10) : 0;
+  const ampm = match[3].toLowerCase();
+  const timezone = match[4].trim();
+
+  // Convert to 24-hour format
+  if (ampm === 'pm' && hours !== 12) hours += 12;
+  if (ampm === 'am' && hours === 12) hours = 0;
+
+  try {
+    // Get current time in the specified timezone
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(now);
+    const currentHour = parseInt(parts.find(p => p.type === 'hour').value, 10);
+    const currentMinute = parseInt(parts.find(p => p.type === 'minute').value, 10);
+
+    const resetTotalMinutes = hours * 60 + minutes;
+    const currentTotalMinutes = currentHour * 60 + currentMinute;
+    let diffMinutes = resetTotalMinutes - currentTotalMinutes;
+
+    // If the reset time appears to be in the past, assume it's tomorrow
+    if (diffMinutes <= 0) diffMinutes += 24 * 60;
+
+    // Add 60-second buffer so we don't resume right at the boundary
+    return (diffMinutes * 60 + 60) * 1000;
+  } catch {
+    // Invalid timezone or Intl failure — fall back to null
+    return null;
+  }
+}
 
 /**
  * @typedef {Object} ErrorClassification
@@ -100,8 +153,9 @@ export function classifyError(stderr, exitCode) {
   if (!stderr) return { type: ERROR_TYPE.UNKNOWN, retryAfterMs: null };
   const isRateLimit = RATE_LIMIT_PATTERNS.some(p => p.test(stderr));
   if (isRateLimit) {
+    // Prefer explicit Retry-After header, then parsed reset time
     const match = stderr.match(RETRY_AFTER_PATTERN);
-    const retryAfterMs = match ? parseInt(match[1], 10) * 1000 : null;
+    const retryAfterMs = match ? parseInt(match[1], 10) * 1000 : parseResetTime(stderr);
     return { type: ERROR_TYPE.RATE_LIMIT, retryAfterMs };
   }
   return { type: ERROR_TYPE.UNKNOWN, retryAfterMs: null };
@@ -558,7 +612,10 @@ async function runOnce(prompt, cwd, timeoutMs, signal, continueSession = false, 
 
   delete result._errorCode;
   const parsed = parseJsonOutput(result);
-  const classification = classifyError(result.stderr || '', result.exitCode);
+  // Check both stderr and stdout for rate-limit signals — Claude Code may
+  // output "You've hit your limit · resets 2pm (America/New_York)" on stdout
+  const combinedText = ((result.stderr || '') + '\n' + (parsed.output || '')).trim();
+  const classification = classifyError(combinedText, result.exitCode);
   return { ...parsed, errorType: classification.type, retryAfterMs: classification.retryAfterMs };
 }
 

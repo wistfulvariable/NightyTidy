@@ -485,6 +485,52 @@ describe('detectRateLimit', () => {
   ])('returns %j for %j (%s)', (input, expected, _desc) => {
     expect(NtLogic.detectRateLimit(input)).toEqual(expected);
   });
+
+  it('detects "hit your limit" in error string', () => {
+    const result = NtLogic.detectRateLimit({ error: "You've hit your limit" });
+    expect(result.detected).toBe(true);
+  });
+
+  it('detects rate limit from output field (not just error)', () => {
+    const result = NtLogic.detectRateLimit({ output: "You've hit your limit · resets 2pm (America/New_York)" });
+    expect(result.detected).toBe(true);
+    expect(result.retryAfterMs).toBeGreaterThan(0);
+  });
+
+  it('parses reset time from error string with timezone', () => {
+    const result = NtLogic.detectRateLimit({ error: "You've hit your limit · resets 3:30pm (America/Los_Angeles)" });
+    expect(result.detected).toBe(true);
+    expect(result.retryAfterMs).toBeGreaterThan(0);
+  });
+});
+
+// ── parseResetTime ──────────────────────────────────────────────────
+
+describe('parseResetTime', () => {
+  it('returns null for null/empty/undefined', () => {
+    expect(NtLogic.parseResetTime(null)).toBeNull();
+    expect(NtLogic.parseResetTime('')).toBeNull();
+    expect(NtLogic.parseResetTime(undefined)).toBeNull();
+  });
+
+  it('returns null for text without reset time', () => {
+    expect(NtLogic.parseResetTime('Rate limit exceeded')).toBeNull();
+  });
+
+  it('parses "resets 2pm (America/New_York)" to positive ms', () => {
+    const ms = NtLogic.parseResetTime("You've hit your limit · resets 2pm (America/New_York)");
+    expect(ms).toBeGreaterThan(0);
+    expect(ms).toBeLessThanOrEqual(24 * 60 * 60 * 1000 + 60000);
+  });
+
+  it('parses time with minutes "resets 2:30pm (UTC)"', () => {
+    const ms = NtLogic.parseResetTime('resets 2:30pm (UTC)');
+    expect(ms).toBeGreaterThan(0);
+  });
+
+  it('returns null for invalid timezone', () => {
+    expect(NtLogic.parseResetTime('resets 2pm (Not/A/Zone)')).toBeNull();
+  });
 });
 
 // ── formatCountdown ──────────────────────────────────────────────────

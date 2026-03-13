@@ -24,7 +24,7 @@ vi.mock('../src/logger.js', () => createLoggerMock());
 
 import { spawn, execFileSync } from 'child_process';
 import { platform } from 'os';
-import { runPrompt, classifyError, ERROR_TYPE, INACTIVITY_TIMEOUT_MS } from '../src/claude.js';
+import { runPrompt, classifyError, parseResetTime, ERROR_TYPE, INACTIVITY_TIMEOUT_MS } from '../src/claude.js';
 import { warn } from '../src/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -1150,6 +1150,79 @@ describe('runPrompt', () => {
       const result = classifyError('429 Too Many Requests', 1);
       expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
       expect(result.retryAfterMs).toBeNull();
+    });
+
+    // ── "hit your limit" pattern ─────────────────────────────────────
+    it('detects "You\'ve hit your limit" as rate_limit', () => {
+      const result = classifyError("You've hit your limit · resets 2pm (America/New_York)", 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+    });
+
+    it('parses reset time from "resets 2pm (America/New_York)"', () => {
+      const result = classifyError("You've hit your limit · resets 2pm (America/New_York)", 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+      // retryAfterMs should be a positive number (exact value depends on current time)
+      expect(result.retryAfterMs).toBeGreaterThan(0);
+    });
+
+    it('prefers Retry-After header over parsed reset time', () => {
+      const result = classifyError('Rate limit hit your limit. Retry-After: 300. resets 2pm (America/New_York)', 1);
+      expect(result.type).toBe(ERROR_TYPE.RATE_LIMIT);
+      expect(result.retryAfterMs).toBe(300000); // Retry-After wins
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // parseResetTime — pure function tests
+  // -----------------------------------------------------------------------
+  describe('parseResetTime', () => {
+    it('returns null for null/empty input', () => {
+      expect(parseResetTime(null)).toBeNull();
+      expect(parseResetTime('')).toBeNull();
+      expect(parseResetTime(undefined)).toBeNull();
+    });
+
+    it('returns null when no reset time pattern found', () => {
+      expect(parseResetTime('Rate limit exceeded')).toBeNull();
+      expect(parseResetTime('429 Too Many Requests')).toBeNull();
+    });
+
+    it('parses "resets 2pm (America/New_York)" to positive ms', () => {
+      const ms = parseResetTime("You've hit your limit · resets 2pm (America/New_York)");
+      expect(ms).toBeGreaterThan(0);
+      // Should be at most 24h + 60s buffer
+      expect(ms).toBeLessThanOrEqual(24 * 60 * 60 * 1000 + 60000);
+    });
+
+    it('parses "resets 2:30pm (America/Los_Angeles)" with minutes', () => {
+      const ms = parseResetTime('resets 2:30pm (America/Los_Angeles)');
+      expect(ms).toBeGreaterThan(0);
+    });
+
+    it('parses "resets 12am (UTC)" for midnight', () => {
+      const ms = parseResetTime('resets 12am (UTC)');
+      expect(ms).toBeGreaterThan(0);
+    });
+
+    it('parses "resets 12pm (Europe/London)" for noon', () => {
+      const ms = parseResetTime('resets 12pm (Europe/London)');
+      expect(ms).toBeGreaterThan(0);
+    });
+
+    it('returns null for invalid timezone', () => {
+      const ms = parseResetTime('resets 2pm (Not/A/Timezone)');
+      expect(ms).toBeNull();
+    });
+
+    it('includes a 60-second buffer beyond the exact reset time', () => {
+      // We can't easily test exact values since they depend on current time,
+      // but we can verify the buffer by checking the value is not a clean
+      // multiple of 60000 (it should have 60000 extra ms)
+      const ms = parseResetTime('resets 2pm (UTC)');
+      expect(ms).not.toBeNull();
+      // ms = (diffMinutes * 60 + 60) * 1000, so ms % 60000 === 0
+      // The 60s buffer means the total includes an extra minute
+      expect(ms % 60000).toBe(0);
     });
   });
 

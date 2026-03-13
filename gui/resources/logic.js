@@ -227,6 +227,51 @@ function formatTime(timestamp) {
 }
 
 /**
+ * Parse a "resets Xpm (Timezone)" message into milliseconds from now.
+ * Returns null if the text doesn't contain a parseable reset time.
+ *
+ * @param {string} text - Text that may contain a reset time message
+ * @returns {number|null} Milliseconds until the reset time, or null
+ */
+function parseResetTime(text) {
+  if (!text) return null;
+  const match = text.match(/resets\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*\(([^)]+)\)/i);
+  if (!match) return null;
+
+  let hours = parseInt(match[1], 10);
+  const minutes = match[2] ? parseInt(match[2], 10) : 0;
+  const ampm = match[3].toLowerCase();
+  const timezone = match[4].trim();
+
+  if (ampm === 'pm' && hours !== 12) hours += 12;
+  if (ampm === 'am' && hours === 12) hours = 0;
+
+  try {
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(now);
+    const currentHour = parseInt(parts.find(p => p.type === 'hour').value, 10);
+    const currentMinute = parseInt(parts.find(p => p.type === 'minute').value, 10);
+
+    const resetTotalMinutes = hours * 60 + minutes;
+    const currentTotalMinutes = currentHour * 60 + currentMinute;
+    let diffMinutes = resetTotalMinutes - currentTotalMinutes;
+
+    if (diffMinutes <= 0) diffMinutes += 24 * 60;
+
+    // Add 60-second buffer so we don't resume right at the boundary
+    return (diffMinutes * 60 + 60) * 1000;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Detect a rate-limit error from CLI response data.
  * @param {object} data - Parsed CLI JSON response (from --run-step)
  * @returns {{ detected: boolean, retryAfterMs: number|null }}
@@ -239,10 +284,12 @@ function detectRateLimit(data) {
     return { detected: true, retryAfterMs: data.retryAfterMs ?? null };
   }
 
-  // Fallback: pattern-match the error string
-  const error = data.error || '';
-  if (/rate.?limit|429|quota|exceeded|overloaded|too many requests|usage.?limit|throttl/i.test(error)) {
-    return { detected: true, retryAfterMs: null };
+  // Fallback: pattern-match the error string or output
+  const searchText = (data.error || '') + '\n' + (data.output || '');
+  if (/rate.?limit|429|quota|exceeded|overloaded|too many requests|usage.?limit|throttl|hit your limit/i.test(searchText)) {
+    // Try to parse an exact reset time (e.g., "resets 2pm (America/New_York)")
+    const retryAfterMs = parseResetTime(searchText);
+    return { detected: true, retryAfterMs };
   }
 
   return { detected: false, retryAfterMs: null };
@@ -367,6 +414,7 @@ const NtLogic = {
   detectGitError,
   detectStaleState,
   detectRateLimit,
+  parseResetTime,
   formatCountdown,
   preprocessClaudeOutput,
   INIT_PHASES,
