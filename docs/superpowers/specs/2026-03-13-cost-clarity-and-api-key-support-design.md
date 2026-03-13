@@ -271,15 +271,17 @@ Accessible anytime from a gear icon in the GUI header (all screens except during
 
 ## 7. GUI Server Endpoints
 
-### New Endpoints
+### Endpoint Changes
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| GET | `/config` | Returns current config (API key masked to last 4 chars) |
-| POST | `/config` | Saves config (API key, model, authMethod) |
-| DELETE | `/config/api-key` | Removes API key from config file |
-| POST | `/verify-setup` | Spawns Claude Code with minimal prompt, returns success/failure |
-| GET | `/setup-status` | Returns `{ claudeInstalled, authenticated, setupComplete }` |
+**Implementation note:** The original endpoint paths below were revised during planning to reuse existing GUI server endpoints and avoid naming collisions. See the implementation plan for actual paths (`/api/user-config`, `/api/save-config`, `/api/check-prerequisites`, `/api/delete-api-key`, `/api/verify-auth`).
+
+| Logical Function | Implemented Via | Purpose |
+|-----------------|----------------|---------|
+| Read config | Extend `POST /api/user-config` | Returns config with masked API key + `availableModels` |
+| Save config | Extend `POST /api/save-config` | Saves API key, model, authMethod (validates key format) |
+| Delete API key | New `POST /api/delete-api-key` | Removes API key from config file |
+| Verify auth | New `POST /api/verify-auth` | Spawns Claude Code with minimal prompt, returns success/failure |
+| Setup status | Extend `POST /api/check-prerequisites` | Adds `envKeyDetected` to existing prerequisite check response |
 
 ### Security
 
