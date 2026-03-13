@@ -1,12 +1,15 @@
 # NightyTidy
 
-Automated overnight codebase improvement through [Claude Code](https://docs.anthropic.com/en/docs/claude-code). NightyTidy runs 33 AI-driven improvement prompts against your codebase — handling git branching, retries, timeouts, and reporting. You kick it off before bed and review the results in the morning.
+Automated overnight codebase improvement through [Claude Code](https://docs.anthropic.com/en/docs/claude-code). NightyTidy sequences 33 AI-driven improvement prompts against your codebase — handling git branching, retries, rate-limit recovery, notifications, and reporting. Kick it off before bed, review the results in the morning.
+
+Built for vibe coders and small teams who want production-grade code quality without the grind.
 
 ## Prerequisites
 
 - **Node.js** >= 20.12.0
 - **Git** installed and on your PATH
 - **Claude Code CLI** installed and authenticated — [installation guide](https://docs.anthropic.com/en/docs/claude-code)
+- **Google Chrome** (for the desktop GUI)
 
 ## Installation
 
@@ -16,30 +19,59 @@ cd NightyTidy
 npm install
 ```
 
-Then run it from any git project:
+No build step — plain JavaScript ESM, runs directly.
+
+## Quick Start
+
+Launch the desktop GUI:
 
 ```bash
-npx nightytidy
+npm run gui
 ```
 
-Or link it globally:
+This opens a Chrome app-mode window. From there:
+
+1. **Select your project folder** using the native folder picker
+2. **Pick which steps to run** — or Select All for all 33
+3. **Set the timeout** per step (default: 45 minutes)
+4. **Click Start Run** and walk away
+
+NightyTidy handles everything from there: progress tracking, live Claude output, rate-limit pausing, report generation, and merging changes back to your branch.
+
+## Desktop GUI
+
+The GUI is the primary way to use NightyTidy. It wraps the CLI orchestrator in a five-screen visual workflow.
+
+### Screens
+
+| Screen | What it does |
+|--------|-------------|
+| **Setup** | Pick a project folder via native file dialog. Validates git repo and Claude CLI. |
+| **Step Selection** | Browse all 33 steps with checkboxes, Select All / Deselect All, set timeout. Detects and offers to resume paused runs. |
+| **Running** | Live progress bar, per-step status indicators, real-time Claude output panel, elapsed time, cost/token tracking, Skip Step and Stop Run controls. |
+| **Finishing** | Generates an AI-narrated report and merges changes back to your original branch. |
+| **Summary** | Final results — steps completed/failed, total cost, token usage, duration. Click any step to review its full output. |
+
+### Features
+
+- **Live output viewer** — Watch Claude work in real time. Markdown-rendered output panel with a "Claude is working" indicator during long tool executions.
+- **Step output drawer** — Click any completed or failed step to open its full output in a side panel with markdown rendering and a copy button.
+- **Rate-limit handling** — If you hit Claude's API usage limit, NightyTidy pauses automatically with a countdown timer. Three options: Resume Now, Finish with Partial Results, or Save & Close to resume later.
+- **Pause and resume** — Close the GUI mid-run and come back later. Progress is saved to `nightytidy-run-state.json`. On next launch, the GUI detects the saved state and offers to resume.
+- **Page refresh safe** — Accidentally refresh the browser? The GUI reconnects to the still-running backend process and picks up where it left off.
+- **Background tab safe** — Alt-tab away without worry. A Web Worker heartbeat keeps the server connection alive even when Chrome throttles background tabs.
+- **Skip and stop** — Skip the current step or stop the entire run at any time. A confirmation dialog prevents accidental stops. Completed work is always preserved.
+- **Singleton guard** — Only one GUI instance can run at a time. Launching again focuses the existing window.
+
+## CLI Usage
+
+For terminal users, scripting, or CI environments:
 
 ```bash
-npm link
-nightytidy
-```
-
-## Usage
-
-NightyTidy can be run from the terminal (CLI) or through a desktop GUI. Both use the same engine — the GUI wraps the CLI's orchestrator mode in a visual interface.
-
-### CLI
-
-```bash
-# Interactive — pick which steps to run
+# Interactive — pick steps from a checklist
 npx nightytidy
 
-# Run all 33 improvement steps
+# Run all 33 steps
 npx nightytidy --all
 
 # Run specific steps by number
@@ -50,143 +82,152 @@ npx nightytidy --list
 
 # Preview what would run without actually running
 npx nightytidy --dry-run
-npx nightytidy --all --dry-run
 
 # Set per-step timeout (default: 45 minutes)
 npx nightytidy --timeout 60
+
+# Resume a paused run (after rate limit or restart)
+npx nightytidy --resume
+
+# Sync prompts from the Google Doc
+npx nightytidy --sync
+
+# Preview what sync would change without writing
+npx nightytidy --sync-dry-run
+
+# Skip automatic prompt sync before a run
+npx nightytidy --skip-sync
 
 # Add NightyTidy integration to a project's CLAUDE.md
 npx nightytidy --setup
 ```
 
-#### Non-interactive mode
-
 In environments without a TTY (CI, scripts), you must specify `--all` or `--steps` — interactive step selection is not available.
 
-#### Claude Code orchestrator mode
+### Orchestrator Mode
 
-If you use NightyTidy from within Claude Code (no terminal), use the step-by-step orchestrator commands. These output JSON and let Claude Code drive the workflow conversationally:
-
-```bash
-# 1. List steps as JSON
-npx nightytidy --list --json
-
-# 2. Initialize a run (pre-checks, git setup, state file)
-npx nightytidy --init-run --steps 1,5,12
-
-# 3. Run steps one at a time
-npx nightytidy --run-step 1
-npx nightytidy --run-step 5
-npx nightytidy --run-step 12
-
-# 4. Finish (report, merge, cleanup)
-npx nightytidy --finish-run
-```
-
-Run `npx nightytidy --setup` in your project to add a CLAUDE.md snippet that teaches Claude Code this workflow automatically.
-
-### Desktop GUI
-
-Launch the GUI from the NightyTidy project directory:
+For use within Claude Code (no terminal). Outputs JSON for conversational workflows:
 
 ```bash
-npm run gui
+npx nightytidy --list --json              # List steps as JSON
+npx nightytidy --init-run --steps 1,5,12  # Initialize a run
+npx nightytidy --run-step 1              # Run one step
+npx nightytidy --finish-run              # Generate report + merge
 ```
 
-This starts a local HTTP server and opens a Chrome app-mode window with a five-screen workflow:
+Run `npx nightytidy --setup` in your project to add a CLAUDE.md snippet that teaches Claude Code this workflow.
 
-1. **Setup** — Select the target project folder using a native file dialog
-2. **Steps** — Pick which of the 33 improvement steps to run and set the timeout
-3. **Running** — Live progress view with step status, elapsed time, and a Stop button
-4. **Finishing** — Report generation and merge (automatic)
-5. **Summary** — Final stats (passed/failed/duration), report path, and branch info
+## The 33 Improvement Steps
 
-The GUI calls the same CLI orchestrator commands under the hood (`--init-run`, `--run-step`, `--finish-run`), so behavior is identical to CLI usage.
+| # | Step | Focus |
+|---|------|-------|
+| 1 | Documentation | Coverage, accuracy, API docs |
+| 2 | Test Coverage | Missing tests, untested paths |
+| 3 | Test Hardening | Flaky tests, edge cases, error paths |
+| 4 | Test Architecture | Structure, patterns, organization |
+| 5 | Test Consolidation | Remove duplicates, merge related tests |
+| 6 | Test Quality | Tautological tests, testing implementation details |
+| 7 | API Design | Consistency, naming, contracts |
+| 8 | Security Sweep | Auth, injection, OWASP top 10 |
+| 9 | Dependency Health | Outdated, unused, vulnerable deps |
+| 10 | Codebase Cleanup | Dead code, unused imports, lint |
+| 11 | Cross-Cutting Concerns | Logging, error handling, validation patterns |
+| 12 | File Decomposition | Large files, single-responsibility splits |
+| 13 | Code Elegance | Readability, naming, simplification |
+| 14 | Architectural Complexity | Over-engineering, unnecessary abstraction |
+| 15 | Type Safety | Type assertions, null safety, contracts |
+| 16 | Logging & Error Messages | Quality, consistency, actionability |
+| 17 | Data Integrity | Validation, constraints, edge cases |
+| 18 | Performance | N+1 queries, memory, algorithmic complexity |
+| 19 | Cost & Resource Optimization | API calls, caching, efficiency |
+| 20 | Error Recovery | Graceful degradation, retry logic |
+| 21 | Race Condition Audit | Concurrency, atomicity, ordering |
+| 22 | Bug Hunt | Logic errors, off-by-ones, silent failures |
+| 23 | Frontend Quality | Components, rendering, accessibility |
+| 24 | UI/UX Audit | Usability, consistency, friction |
+| 25 | State Management | State flow, side effects, synchronization |
+| 26 | Perceived Performance | Loading states, skeleton screens, responsiveness |
+| 27 | DevOps | CI/CD, deployment, environment config |
+| 28 | Scheduled Jobs & Cron | Reliability, idempotency, monitoring |
+| 29 | Observability | Metrics, tracing, alerting |
+| 30 | Backup Check | Data safety, recovery procedures |
+| 31 | Product Polish & UX Friction | Edge cases, empty states, error UX |
+| 32 | Feature Discovery & Opportunity | Missing features, quick wins |
+| 33 | Strategic Opportunities | Architecture direction, scaling, roadmap |
 
-**Requirements**: Google Chrome must be installed (the GUI uses Chrome's `--app` mode for a frameless window). Windows only for now (the native folder picker uses a Windows COM dialog).
+Prompts auto-sync from a published Google Doc before every run. Use `--skip-sync` to skip, or `npx nightytidy --sync` to sync manually.
 
-## The 33 improvement steps
+## How It Works
 
-| # | Step | Category |
-|---|------|----------|
-| 1 | Documentation | Docs |
-| 2 | Test Coverage | Testing |
-| 3 | Test Hardening | Testing |
-| 4 | Test Architecture | Testing |
-| 5 | Test Consolidation | Testing |
-| 6 | Test Quality | Testing |
-| 7 | API Design | Architecture |
-| 8 | Security Sweep | Security |
-| 9 | Dependency Health | Maintenance |
-| 10 | Codebase Cleanup | Maintenance |
-| 11 | Cross-Cutting Concerns | Architecture |
-| 12 | File Decomposition | Architecture |
-| 13 | Code Elegance | Quality |
-| 14 | Architectural Complexity | Architecture |
-| 15 | Type Safety | Quality |
-| 16 | Logging & Error Message | Observability |
-| 17 | Data Integrity | Reliability |
-| 18 | Performance | Performance |
-| 19 | Cost & Resource Optimization | Performance |
-| 20 | Error Recovery | Reliability |
-| 21 | Race Condition Audit | Reliability |
-| 22 | Bug Hunt | Quality |
-| 23 | Frontend Quality | Frontend |
-| 24 | UI/UX Audit | Frontend |
-| 25 | State Management | Frontend |
-| 26 | Perceived Performance | Frontend |
-| 27 | DevOps | Infrastructure |
-| 28 | Scheduled Jobs | Infrastructure |
-| 29 | Observability | Infrastructure |
-| 30 | Backup Check | Infrastructure |
-| 31 | Product Polish & UX Friction | Product |
-| 32 | Feature Discovery & Opportunity | Product |
-| 33 | Strategic Opportunities | Product |
+### Safety First
 
-Run `npx nightytidy --list` for full descriptions.
+Every run is protected by git:
 
-## How it works
+1. **Safety tag** — `nightytidy-before-YYYY-MM-DD-HHMM` snapshots your current state before any changes
+2. **Dedicated branch** — All work happens on `nightytidy/run-YYYY-MM-DD-HHMM`, never on your working branch
+3. **Auto-merge** — On completion, changes merge back to your original branch with `--no-ff`
+4. **Conflict handling** — On merge conflict, the run branch is left intact for manual resolution
+5. **Undo** — Reset to the safety tag at any time: `git reset --hard nightytidy-before-<timestamp>`
 
-1. **Pre-checks** — verifies git, Claude Code CLI, authentication, and disk space.
-2. **Safety snapshot** — tags the current state (`nightytidy-before-*`) so you can always get back.
-3. **Run branch** — creates `nightytidy/run-*` and runs all steps there. Your main branch is never touched during execution.
-4. **Step execution** — each step sends an improvement prompt to Claude Code, then a follow-up doc-update prompt. If Claude doesn't commit its changes, NightyTidy makes a fallback commit.
-5. **Action plan** — consolidates recommendations from all steps into a prioritized `NIGHTYTIDY-ACTIONS.md`.
-6. **Report** — generates `NIGHTYTIDY-REPORT.md` with results for every step.
-7. **Merge** — merges the run branch back into your original branch with `--no-ff`. On conflict, the run branch is left for manual resolution.
+### Step Execution
 
-### Abort handling
+Each step runs in its own Claude Code session:
 
-Press `Ctrl+C` once to finish the current step and generate a partial report. Press `Ctrl+C` again to force-exit. Changes are always on the run branch — your original branch is safe.
+1. Claude receives the improvement prompt + your codebase context
+2. Claude makes changes, runs tests, iterates
+3. Changes are committed to the run branch
+4. If Claude doesn't commit, NightyTidy makes a fallback commit
+5. Branch guards ensure all commits land on the correct branch (Claude sometimes creates its own branches — NightyTidy catches this and merges them back)
 
-## What it creates in your project
+### 3-Tier Step Recovery
 
-| Artifact | Committed? | Purpose |
-|----------|-----------|---------|
-| `NIGHTYTIDY-REPORT.md` | Yes (on run branch) | Summary of what each step did |
-| `NIGHTYTIDY-ACTIONS.md` | Yes (on run branch) | Consolidated prioritized action plan |
-| `CLAUDE.md` section | Yes (on run branch) | "NightyTidy — Last Run" with undo instructions |
-| `nightytidy-before-*` tag | Yes (tag) | Safety snapshot for easy rollback |
-| `nightytidy/run-*` branch | Yes (branch) | All changes from the run |
-| `nightytidy-run.log` | No | Detailed log (deleted after review) |
+If a step fails, NightyTidy retries automatically with three escalating tiers:
 
-## Dashboard
+- **Tier 1** — Normal retry (up to 4 attempts per tier)
+- **Tier 2 (Prod)** — Resume the killed session via `--continue` to recover partial work. Claude Code saves session state to disk, so partial progress isn't lost.
+- **Tier 3 (Fresh)** — Clean slate retry with a completely new session
 
-During a run, NightyTidy opens a progress dashboard — either a TUI window or a browser-based view — showing step status in real time. The dashboard includes a Stop button to abort gracefully.
+Maximum 12 Claude invocations per step across all tiers.
 
-## Security note
+### Rate-Limit Recovery
 
-NightyTidy runs Claude Code with `--dangerously-skip-permissions` because non-interactive `claude -p` has no TTY to approve tool permissions (Bash, Edit, Write, etc.). NightyTidy is the permission layer — it controls what prompts are sent and operates on a safety branch. The subprocess is also given a safety preamble that prevents destructive git operations.
+If Claude's API usage limit is reached mid-run:
 
-Review the run branch diff before merging to verify the changes.
+- **GUI** — A pause overlay appears with a countdown timer. Options: Resume Now (if you've added credits or upgraded), Finish with Partial Results, or Save & Close for later.
+- **CLI** — Automatic exponential backoff (2 min, 5 min, 15 min, ... up to 2 hours per wait). API probes between waits. Total coverage: ~10 hours.
+- **Resume later** — Close everything and run `npx nightytidy --resume`, or relaunch the GUI — it detects saved state and offers to continue.
 
-## Environment variables
+### Abort Handling
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NIGHTYTIDY_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
+- **CLI**: Press `Ctrl+C` once to finish the current step and generate a partial report. Press again to force-exit.
+- **GUI**: Click Stop Run (with confirmation dialog). Completed work is preserved and a report is generated.
 
-No API keys needed — Claude Code handles its own authentication.
+Changes are always on the run branch — your original branch is safe.
+
+### Report Generation
+
+After all steps complete, NightyTidy generates:
+
+- **NIGHTYTIDY-REPORT.md** — AI-narrated run summary with per-step results, costs, token usage, duration, and a prioritized action plan
+- **CLAUDE.md update** — Appends a "Last Run" section with the run date and undo instructions
+- **Audit trail** — All 33 step prompts are copied to `audit-reports/refactor-prompts/` so you can see exactly what was asked
+
+If the AI report fails verification (junk detection), NightyTidy falls back to a template-based report so you always get results.
+
+## Files Created in Your Project
+
+| File | Committed? | Purpose |
+|------|-----------|---------|
+| `NIGHTYTIDY-REPORT_NN_YYYY-MM-DD-HHMM.md` | Yes | Run summary with step results + action plan |
+| `CLAUDE.md` (appended section) | Yes | "NightyTidy — Last Run" with undo tag |
+| `audit-reports/refactor-prompts/*.md` | Yes | All 33 prompts for audit trail |
+| `nightytidy-before-*` git tag | Yes (tag) | Safety snapshot for rollback |
+| `nightytidy/run-*` git branch | Yes (branch) | All changes from the run |
+| `nightytidy-run.log` | No | Detailed timestamped run log |
+| `nightytidy-progress.json` | No | Live progress state (read by GUI) |
+| `nightytidy-run-state.json` | No | Saved state for pause/resume |
+| `nightytidy.lock` | No | Prevents concurrent runs |
+| `nightytidy-gui.log` | No | GUI session log (errors, API requests) |
 
 ## Rollback
 
@@ -198,19 +239,63 @@ git reset --hard nightytidy-before-<timestamp>
 
 The safety tag created before each run makes rollback a one-liner.
 
+## Configuration
+
+NightyTidy works with zero configuration. The only environment variable:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NIGHTYTIDY_LOG_LEVEL` | `info` | Log verbosity: `debug`, `info`, `warn`, `error` |
+
+No API keys needed — Claude Code handles its own authentication.
+
+## Security
+
+- All changes happen on a dedicated git branch with a pre-run safety tag
+- Claude Code runs with `--dangerously-skip-permissions` — NightyTidy is the permission layer, controlling what prompts are sent and operating on a safety branch
+- GUI server binds to `127.0.0.1` only (not exposed to the network)
+- Dashboard endpoints use CSRF tokens and security headers (CSP, X-Frame-Options, X-Content-Type-Options)
+- Lock file prevents concurrent runs (atomic via `O_EXCL`)
+- Environment variables filtered through an explicit allowlist before passing to Claude Code
+- `.npmrc` with `ignore-scripts=true` blocks malicious post-install scripts
+- CI includes Gitleaks secret scanning and `npm audit`
+
+Always review the run branch diff before merging to verify the changes.
+
 ## Development
 
 ```bash
-npm test              # Run all tests (28 test files)
-npm run test:fast     # Excludes slow integration/git tests
-npm run test:watch    # Watch mode
-npm run test:ci       # With coverage enforcement (90% stmts, 80% branches, 80% functions)
-npm run test:flaky    # Run suite 3x to detect flaky tests
-npm run check:docs    # Verify documentation matches code
-npm run check:security # npm audit for high+ severity vulnerabilities
+npm test                   # All tests (40 files, ~900 tests)
+npm run test:fast          # Skip slow integration/git tests (~6s vs ~10s)
+npm run test:watch         # Watch mode
+npm run test:ci            # With coverage enforcement (90% stmts, 80% branches/functions)
+npm run test:flaky         # Run suite 3x to detect flaky tests
+npm run check:docs         # Verify documentation matches code
+npm run check:security     # npm audit — fails on high+ severity
 ```
 
-No build step — plain JavaScript ESM, runs directly.
+### CI Pipeline
+
+GitHub Actions on every push/PR to master:
+- Test matrix across Ubuntu + Windows, Node.js 20 / 22 / 24
+- Coverage threshold enforcement
+- Documentation freshness check
+- Gitleaks secret scan
+- Security audit (`npm audit`)
+
+### Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Runtime | Node.js (ESM) >= 20.12.0 |
+| CLI | Commander v14, @inquirer/checkbox v5 |
+| Terminal UX | ora v9 (spinners), chalk v5 (colors) |
+| Git | simple-git v3 |
+| AI Engine | Claude Code CLI (subprocess) |
+| Notifications | node-notifier v10 |
+| GUI | Node.js HTTP server + Chrome `--app` mode |
+| GUI Markdown | marked v17 (vendored UMD) |
+| Testing | Vitest v3 |
 
 ## License
 

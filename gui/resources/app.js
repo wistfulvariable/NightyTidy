@@ -207,14 +207,20 @@ function renderInitChecklist(progress) {
     const iconEl = el.querySelector('.init-phase-icon');
 
     if (i < currentIdx) {
-      el.className = 'init-phase init-phase-done';
-      iconEl.textContent = '\u2713';
+      if (!el.classList.contains('init-phase-done')) {
+        el.className = 'init-phase init-phase-done';
+        iconEl.textContent = '\u2713';
+      }
     } else if (i === currentIdx) {
-      el.className = 'init-phase init-phase-active';
-      iconEl.innerHTML = '<span class="spinner"></span>';
+      if (!el.classList.contains('init-phase-active')) {
+        el.className = 'init-phase init-phase-active';
+        iconEl.innerHTML = '<span class="spinner"></span>';
+      }
     } else {
-      el.className = 'init-phase init-phase-pending';
-      iconEl.innerHTML = '&#9675;';
+      if (!el.classList.contains('init-phase-pending')) {
+        el.className = 'init-phase init-phase-pending';
+        iconEl.innerHTML = '&#9675;';
+      }
     }
   }
 }
