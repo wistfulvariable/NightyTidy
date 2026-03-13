@@ -2,7 +2,8 @@
  * @fileoverview NightyTidy Desktop GUI — Node.js backend server.
  *
  * Serves static files + API endpoints for the GUI.
- * Opens Chrome in --app mode for a native-feeling window.
+ * Opens a Chromium-based browser in --app mode for a native-feeling window,
+ * falling back to the system default browser if none is found.
  *
  * Security features:
  * - Binds to localhost only (127.0.0.1)
@@ -19,8 +20,9 @@ const { createServer } = http;
 import { readFile } from 'node:fs/promises';
 import { appendFileSync, openSync, closeSync, readFileSync, statSync, writeFileSync, unlinkSync } from 'node:fs';
 import { spawn, execSync } from 'node:child_process';
-import { join, extname, resolve, sep } from 'node:path';
-import { tmpdir } from 'node:os';
+import { join, extname, resolve, sep, dirname } from 'node:path';
+import { tmpdir, homedir } from 'node:os';
+import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
@@ -589,6 +591,180 @@ function handleLogPath(res) {
   sendJson(res, { ok: true, path: guiLogFilePath });
 }
 
+// ── User Config Directory ──────────────────────────────────────────
+// Stores user preferences, recent projects, and setup state.
+const CONFIG_DIR = join(homedir(), '.nightytidy');
+const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
+const PROJECTS_FILE = join(CONFIG_DIR, 'projects.json');
+
+/**
+ * Ensure the config directory exists.
+ */
+async function ensureConfigDir() {
+  await mkdir(CONFIG_DIR, { recursive: true });
+}
+
+/**
+ * Read a JSON config file, returning default value on error.
+ * @param {string} filePath - Path to JSON file
+ * @param {any} defaultValue - Default value if file missing or invalid
+ * @returns {any}
+ */
+function readJsonConfig(filePath, defaultValue) {
+  try {
+    return JSON.parse(readFileSync(filePath, 'utf8'));
+  } catch {
+    return defaultValue;
+  }
+}
+
+/**
+ * Write a JSON config file atomically.
+ * @param {string} filePath - Path to JSON file
+ * @param {any} data - Data to serialize
+ */
+async function writeJsonConfig(filePath, data) {
+  await ensureConfigDir();
+  writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+}
+
+// ── API: Check Prerequisites ──────────────────────────────────────
+
+/**
+ * Run a command and return success + trimmed output.
+ * @param {string} cmd - Command to run
+ * @returns {{ ok: boolean, output: string }}
+ */
+function tryExec(cmd) {
+  try {
+    const output = execSync(cmd, { encoding: 'utf-8', timeout: 10000, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    return { ok: true, output };
+  } catch {
+    return { ok: false, output: '' };
+  }
+}
+
+/**
+ * Handle /api/check-prerequisites - validate all required tools.
+ * @param {import('http').ServerResponse} res - HTTP response
+ */
+async function handleCheckPrerequisites(res) {
+  const checks = {};
+
+  // Node.js — already running if we got here, but report version
+  checks.node = { ok: true, version: process.version, detail: `Node.js ${process.version}` };
+
+  // Git
+  const git = tryExec('git --version');
+  checks.git = { ok: git.ok, version: git.output.replace('git version ', ''), detail: git.ok ? git.output : 'Git not found' };
+
+  // Claude Code CLI
+  const claude = tryExec('claude --version');
+  checks.claude = { ok: claude.ok, version: claude.output, detail: claude.ok ? `Claude Code ${claude.output}` : 'Claude Code CLI not found' };
+
+  // Claude Code auth — check if authenticated
+  if (claude.ok) {
+    const auth = tryExec('claude auth status');
+    // auth status returns 0 if authenticated
+    checks.claudeAuth = { ok: auth.ok, detail: auth.ok ? 'Authenticated' : 'Not authenticated — run: claude auth login' };
+  } else {
+    checks.claudeAuth = { ok: false, detail: 'Install Claude Code first' };
+  }
+
+  // Check if setup wizard was previously completed
+  const config = readJsonConfig(CONFIG_FILE, {});
+  checks.setupComplete = !!config.setupComplete;
+
+  sendJson(res, { ok: true, checks });
+}
+
+// ── API: Complete Setup ────────────────────────────────────────────
+
+/**
+ * Handle /api/complete-setup - mark setup wizard as done.
+ * @param {import('http').ServerResponse} res - HTTP response
+ */
+async function handleCompleteSetup(res) {
+  const config = readJsonConfig(CONFIG_FILE, {});
+  config.setupComplete = true;
+  config.setupCompletedAt = new Date().toISOString();
+  await writeJsonConfig(CONFIG_FILE, config);
+  sendJson(res, { ok: true });
+}
+
+// ── API: User Config (read/write) ──────────────────────────────────
+
+async function handleGetConfig(res) {
+  const config = readJsonConfig(CONFIG_FILE, {});
+  sendJson(res, { ok: true, config });
+}
+
+async function handleSaveConfig(req, res) {
+  const body = await readBody(req);
+  const { config: newConfig } = body;
+  if (!newConfig || typeof newConfig !== 'object') {
+    sendJson(res, { ok: false, error: 'Invalid config' }, 400);
+    return;
+  }
+  const existing = readJsonConfig(CONFIG_FILE, {});
+  const merged = { ...existing, ...newConfig };
+  await writeJsonConfig(CONFIG_FILE, merged);
+  sendJson(res, { ok: true });
+}
+
+// ── API: Recent Projects ──────────────────────────────────────────
+
+async function handleGetProjects(res) {
+  const projects = readJsonConfig(PROJECTS_FILE, []);
+  sendJson(res, { ok: true, projects });
+}
+
+async function handleSaveProject(req, res) {
+  const body = await readBody(req);
+  const { path: projectPath, name } = body;
+  if (!projectPath) {
+    sendJson(res, { ok: false, error: 'No path provided' }, 400);
+    return;
+  }
+
+  const projects = readJsonConfig(PROJECTS_FILE, []);
+
+  // Update existing or add new
+  const idx = projects.findIndex(p => p.path === projectPath);
+  const entry = {
+    path: projectPath,
+    name: name || projectPath.split(/[\\/]/).pop(),
+    lastUsed: new Date().toISOString(),
+  };
+
+  if (idx >= 0) {
+    projects[idx] = { ...projects[idx], ...entry };
+  } else {
+    projects.unshift(entry);
+  }
+
+  // Keep only the 20 most recent
+  projects.sort((a, b) => new Date(b.lastUsed) - new Date(a.lastUsed));
+  if (projects.length > 20) projects.length = 20;
+
+  await writeJsonConfig(PROJECTS_FILE, projects);
+  sendJson(res, { ok: true });
+}
+
+async function handleRemoveProject(req, res) {
+  const body = await readBody(req);
+  const { path: projectPath } = body;
+  if (!projectPath) {
+    sendJson(res, { ok: false, error: 'No path provided' }, 400);
+    return;
+  }
+
+  const projects = readJsonConfig(PROJECTS_FILE, []);
+  const filtered = projects.filter(p => p.path !== projectPath);
+  await writeJsonConfig(PROJECTS_FILE, filtered);
+  sendJson(res, { ok: true });
+}
+
 // ── API: Shutdown ──────────────────────────────────────────────────
 
 function handleExit(res) {
@@ -685,6 +861,27 @@ function handleRequest(req, res) {
   if (url.pathname === '/api/log-path' && req.method === 'POST') {
     return handleLogPath(res);
   }
+  if (url.pathname === '/api/check-prerequisites' && req.method === 'POST') {
+    return handleCheckPrerequisites(res);
+  }
+  if (url.pathname === '/api/complete-setup' && req.method === 'POST') {
+    return handleCompleteSetup(res);
+  }
+  if (url.pathname === '/api/user-config' && req.method === 'POST') {
+    return handleGetConfig(res);
+  }
+  if (url.pathname === '/api/save-config' && req.method === 'POST') {
+    return handleSaveConfig(req, res);
+  }
+  if (url.pathname === '/api/projects' && req.method === 'POST') {
+    return handleGetProjects(res);
+  }
+  if (url.pathname === '/api/save-project' && req.method === 'POST') {
+    return handleSaveProject(req, res);
+  }
+  if (url.pathname === '/api/remove-project' && req.method === 'POST') {
+    return handleRemoveProject(req, res);
+  }
   if (url.pathname === '/api/exit' && req.method === 'POST') {
     return handleExit(res);
   }
@@ -693,77 +890,155 @@ function handleRequest(req, res) {
   return serveStatic(res, url.pathname);
 }
 
-// ── Chrome Launcher ────────────────────────────────────────────────
+// ── Browser Launcher ───────────────────────────────────────────────
 
 /**
- * Find Chrome executable path (platform-specific).
- * @returns {string|null} Path to Chrome or null if not found
+ * Chromium-based browser candidates, ordered by preference.
+ * Each entry has platform-specific paths. Chrome is preferred for --app mode,
+ * but Edge, Brave, and Chromium also support it.
+ * @type {Array<{ name: string, paths: Record<string, string[]> }>}
  */
-function findChrome() {
-  const paths = process.platform === 'win32'
-    ? [
+const CHROMIUM_BROWSERS = [
+  {
+    name: 'Chrome',
+    paths: {
+      win32: [
         'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
         'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-        `${process.env.LOCALAPPDATA}\\Google\\Chrome\\Application\\chrome.exe`,
-      ]
-    : process.platform === 'darwin'
-      ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
-      : ['google-chrome', 'google-chrome-stable', 'chromium-browser', 'chromium'];
+        `${process.env.LOCALAPPDATA || ''}\\Google\\Chrome\\Application\\chrome.exe`,
+      ],
+      darwin: ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'],
+      linux: ['google-chrome', 'google-chrome-stable'],
+    },
+  },
+  {
+    name: 'Edge',
+    paths: {
+      win32: [
+        'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+        'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+      ],
+      darwin: ['/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'],
+      linux: ['microsoft-edge', 'microsoft-edge-stable'],
+    },
+  },
+  {
+    name: 'Brave',
+    paths: {
+      win32: [
+        'C:\\Program Files\\BraveSoftware\\Brave-Browser\\Application\\brave.exe',
+        'C:\\Program Files (x86)\\BraveSoftware\\Brave-Browser\\Application\\brave.exe',
+        `${process.env.LOCALAPPDATA || ''}\\BraveSoftware\\Brave-Browser\\Application\\brave.exe`,
+      ],
+      darwin: ['/Applications/Brave Browser.app/Contents/MacOS/Brave Browser'],
+      linux: ['brave-browser', 'brave'],
+    },
+  },
+  {
+    name: 'Chromium',
+    paths: {
+      win32: [],
+      darwin: ['/Applications/Chromium.app/Contents/MacOS/Chromium'],
+      linux: ['chromium-browser', 'chromium'],
+    },
+  },
+];
 
-  for (const p of paths) {
-    try {
-      // Check if path exists (absolute) or is in PATH (basename)
-      if (p.includes('/') || p.includes('\\')) {
-        const s = statSync(p);
-        if (s.isFile()) return p;
-      } else {
-        execSync(`which ${p}`, { stdio: 'ignore' });
-        return p;
-      }
-    } catch { /* try next */ }
+/**
+ * Find a Chromium-based browser executable (platform-specific).
+ * Tries Chrome, Edge, Brave, then Chromium — all support --app mode.
+ * @returns {{ name: string, path: string } | null} Browser info or null if none found
+ */
+function findChromiumBrowser() {
+  const platform = process.platform;
+
+  for (const browser of CHROMIUM_BROWSERS) {
+    const candidates = browser.paths[platform] || [];
+    for (const p of candidates) {
+      try {
+        if (p.includes('/') || p.includes('\\')) {
+          const s = statSync(p);
+          if (s.isFile()) return { name: browser.name, path: p };
+        } else {
+          execSync(`which ${p}`, { stdio: 'ignore' });
+          return { name: browser.name, path: p };
+        }
+      } catch { /* try next */ }
+    }
   }
   return null;
 }
 
 /**
- * Launch Chrome in app mode pointing to the server URL.
+ * Open a URL in the system default browser.
  * @param {string} url - URL to open
- * @returns {import('child_process').ChildProcess|null} Chrome process or null
  */
-function launchChrome(url) {
+function openDefaultBrowser(url) {
+  const platform = process.platform;
+  try {
+    if (platform === 'win32') {
+      spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+    } else if (platform === 'darwin') {
+      spawn('open', [url], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+      spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref();
+    }
+  } catch {
+    console.log(`  Could not open browser automatically. Open this URL manually: ${url}`);
+  }
+}
+
+/**
+ * Launch a browser pointing to the server URL.
+ * Tries Chromium-based browsers in --app mode first (native window feel),
+ * then falls back to the system default browser.
+ *
+ * @param {string} url - URL to open
+ * @returns {import('child_process').ChildProcess|null} Browser process or null
+ */
+function launchBrowser(url) {
   if (process.env.NIGHTYTIDY_NO_CHROME) {
     console.log(`\n  NightyTidy GUI is running at: ${url}`);
-    console.log('  Chrome launch suppressed (NIGHTYTIDY_NO_CHROME is set).\n');
-    return null;
-  }
-  const chromePath = findChrome();
-  if (!chromePath) {
-    console.log(`\n  NightyTidy GUI is running at: ${url}`);
-    console.log('  Chrome not found — open the URL above in any browser.\n');
+    console.log('  Browser launch suppressed (NIGHTYTIDY_NO_CHROME is set).\n');
     return null;
   }
 
-  const args = [
-    `--app=${url}`,
-    '--disable-extensions',
-    '--disable-default-apps',
-    `--window-size=900,700`,
-  ];
+  const browser = findChromiumBrowser();
 
-  const chrome = spawn(chromePath, args, {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: false,
-  });
+  if (browser) {
+    const args = [
+      `--app=${url}`,
+      '--disable-extensions',
+      '--disable-default-apps',
+      `--window-size=900,700`,
+    ];
 
-  chrome.unref();
+    const proc = spawn(browser.path, args, {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: false,
+    });
 
-  // Note: Do NOT auto-exit when Chrome closes. If Chrome is already
-  // running, the spawned process exits immediately (delegates to
-  // existing instance). Server shuts down via /api/exit or Ctrl+C.
+    proc.unref();
+    guiLog('info', `Launched ${browser.name} in app mode`);
 
-  return chrome;
+    // Note: Do NOT auto-exit when browser closes. If the browser is already
+    // running, the spawned process exits immediately (delegates to
+    // existing instance). Server shuts down via /api/exit or Ctrl+C.
+
+    return proc;
+  }
+
+  // No Chromium-based browser found — fall back to system default
+  console.log(`\n  NightyTidy GUI is running at: ${url}`);
+  console.log('  No Chromium-based browser found — opening in default browser.\n');
+  guiLog('info', 'No Chromium browser found, falling back to default browser');
+  openDefaultBrowser(url);
+  return null;
 }
+
+// Legacy alias for backward compatibility (singleton check uses it)
+const launchChrome = launchBrowser;
 
 // ── Cleanup ────────────────────────────────────────────────────────
 
@@ -810,7 +1085,7 @@ function cleanup() {
     writeGuiLock(port);
     guiLog('info', `GUI server started on ${url}`);
     console.log(`NightyTidy GUI server running on ${url}`);
-    launchChrome(chromeUrl);
+    launchBrowser(chromeUrl);
 
     // Watchdog: self-terminate if no heartbeat from the browser.
     // Catches cases where Chrome crashes or is force-killed (unload never fires).

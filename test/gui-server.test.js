@@ -418,8 +418,9 @@ describe('HTML structure', () => {
     expect(html).toContain('id="screen-summary"');
   });
 
-  it('has the setup screen active by default', () => {
-    expect(html).toContain('id="screen-setup" class="screen active"');
+  it('has the setup and wizard screens (active screen set by JS)', () => {
+    expect(html).toContain('id="screen-setup"');
+    expect(html).toContain('id="screen-wizard"');
   });
 
   it('has all required buttons', () => {

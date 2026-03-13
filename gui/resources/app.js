@@ -89,6 +89,7 @@ const WORKING_INDICATOR_DELAY_MS = 8000; // Show after 8s of no output change
 // ── State ──────────────────────────────────────────────────────────
 
 const SCREENS = {
+  WIZARD: 'wizard',
   SETUP: 'setup',
   STEPS: 'steps',
   RUNNING: 'running',
@@ -448,6 +449,7 @@ async function selectFolder() {
 
     state.projectDir = result.folder;
     showFolderPath(result.folder);
+    await saveProjectToRecents(result.folder);
     await loadSteps();
   } catch (err) {
     // Restore button state on error
@@ -655,13 +657,27 @@ function renderStepChecklist() {
   const projectPath = document.getElementById('steps-project-path');
   projectPath.textContent = state.projectDir;
 
-  container.innerHTML = state.steps.map(s => `
-    <label class="step-check-item">
-      <input type="checkbox" value="${s.number}" checked>
-      <span class="step-num">${s.number}.</span>
-      <span class="step-label">${NtLogic.escapeHtml(s.name)}</span>
-    </label>
-  `).join('');
+  // Group steps by category
+  let html = '';
+  let lastCategory = '';
+
+  for (const s of state.steps) {
+    const category = NtLogic.getStepCategory(s.number);
+    if (category !== lastCategory) {
+      html += `<div class="step-category-header">${NtLogic.escapeHtml(category)}</div>`;
+      lastCategory = category;
+    }
+    const desc = NtLogic.STEP_DESCRIPTIONS[s.number] || '';
+    html += `
+      <label class="step-check-item" title="${NtLogic.escapeHtml(desc)}">
+        <input type="checkbox" value="${s.number}" checked>
+        <span class="step-num">${s.number}.</span>
+        <span class="step-label">${NtLogic.escapeHtml(s.name)}</span>
+        <span class="step-desc">${NtLogic.escapeHtml(desc)}</span>
+      </label>
+    `;
+  }
+  container.innerHTML = html;
 
   updateStepCount();
   container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
@@ -683,6 +699,14 @@ function updateStepCount() {
 function selectAllSteps(checked) {
   document.querySelectorAll('#step-checklist input[type="checkbox"]').forEach(cb => {
     cb.checked = checked;
+  });
+  updateStepCount();
+}
+
+function selectRecommendedSteps() {
+  const recommended = new Set(NtLogic.RECOMMENDED_STEPS);
+  document.querySelectorAll('#step-checklist input[type="checkbox"]').forEach(cb => {
+    cb.checked = recommended.has(parseInt(cb.value, 10));
   });
   updateStepCount();
 }
@@ -2080,6 +2104,7 @@ function resetApp() {
   document.title = 'NightyTidy';
 
   showScreen(SCREENS.SETUP);
+  loadRecentProjects();
 }
 
 // ── Window Close Protection ────────────────────────────────────────
@@ -2105,9 +2130,180 @@ window.addEventListener('unload', () => {
 
 // ── Event Binding ──────────────────────────────────────────────────
 
+// ── Settings Modal ──────────────────────────────────────────────────
+
+async function openSettings() {
+  const result = await api('user-config');
+  if (result.ok && result.config) {
+    document.getElementById('setting-timeout').value = result.config.defaultTimeout || 45;
+    document.getElementById('setting-auto-sync').checked = result.config.autoSync !== false;
+  }
+  document.getElementById('settings-overlay').classList.remove('hidden');
+}
+
+function closeSettings() {
+  document.getElementById('settings-overlay').classList.add('hidden');
+}
+
+async function saveSettings() {
+  const config = {
+    defaultTimeout: parseInt(document.getElementById('setting-timeout').value, 10) || 45,
+    autoSync: document.getElementById('setting-auto-sync').checked,
+  };
+  await api('save-config', { config });
+
+  // Apply saved timeout to the step selection screen if visible
+  document.getElementById('timeout-input').value = config.defaultTimeout;
+
+  closeSettings();
+}
+
+async function rerunWizard() {
+  closeSettings();
+  // Clear setup flag so wizard shows again
+  await api('save-config', { config: { setupComplete: false } });
+  showScreen(SCREENS.WIZARD);
+  runPrerequisiteChecks();
+}
+
+// ── Setup Wizard ────────────────────────────────────────────────────
+
+async function runPrerequisiteChecks() {
+  const result = await api('check-prerequisites');
+  if (!result.ok) return;
+
+  const { checks } = result;
+  let allPassed = true;
+  const helpItems = [];
+
+  // Node.js
+  updateWizardCheck('node', checks.node.ok, checks.node.detail);
+
+  // Git
+  updateWizardCheck('git', checks.git.ok, checks.git.detail);
+  if (!checks.git.ok) {
+    allPassed = false;
+    helpItems.push('<p><strong>Git:</strong> Install from <a href="https://git-scm.com/downloads" target="_blank" rel="noopener">git-scm.com</a></p>');
+  }
+
+  // Claude Code CLI
+  updateWizardCheck('claude', checks.claude.ok, checks.claude.detail);
+  if (!checks.claude.ok) {
+    allPassed = false;
+    helpItems.push('<p><strong>Claude Code:</strong> Install with <code>npm install -g @anthropic-ai/claude-code</code></p>');
+  }
+
+  // Claude Auth
+  if (checks.claudeAuth) {
+    if (checks.claudeAuth.ok) {
+      updateWizardCheck('auth', true, checks.claudeAuth.detail);
+    } else {
+      updateWizardCheck('auth', false, checks.claudeAuth.detail, 'warn');
+      allPassed = false;
+      helpItems.push('<p><strong>Authentication:</strong> Run <code>claude auth login</code> in your terminal</p>');
+    }
+  }
+
+  // Show/hide help
+  const helpEl = document.getElementById('wizard-help');
+  const helpContent = document.getElementById('wizard-help-content');
+  if (helpItems.length > 0) {
+    helpContent.innerHTML = helpItems.join('');
+    helpEl.style.display = 'block';
+  } else {
+    helpEl.style.display = 'none';
+  }
+
+  // Enable continue if critical checks pass (node + git + claude)
+  const canContinue = checks.node.ok && checks.git.ok && checks.claude.ok;
+  document.getElementById('btn-wizard-continue').disabled = !canContinue;
+  document.getElementById('btn-recheck').style.display = allPassed ? 'none' : 'inline-block';
+
+  return canContinue;
+}
+
+function updateWizardCheck(id, ok, detail, type) {
+  const el = document.getElementById(`wizard-${id}`);
+  const iconEl = el.querySelector('.wizard-icon');
+  const detailEl = document.getElementById(`wizard-${id}-detail`);
+
+  const status = type || (ok ? 'pass' : 'fail');
+  el.className = `wizard-check wizard-${status}`;
+  iconEl.textContent = ok ? '\u2713' : (status === 'warn' ? '\u26A0' : '\u2717');
+  detailEl.textContent = detail;
+}
+
+async function completeWizard() {
+  await api('complete-setup');
+  showScreen(SCREENS.SETUP);
+}
+
+// ── Recent Projects ─────────────────────────────────────────────────
+
+async function loadRecentProjects() {
+  const result = await api('projects');
+  if (!result.ok || !result.projects || !result.projects.length) return;
+
+  // Check if container already exists
+  let container = document.getElementById('recent-projects');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'recent-projects';
+    container.className = 'recent-projects';
+    // Insert before the error message in the setup screen
+    const setupHero = document.querySelector('.setup-hero');
+    setupHero.parentNode.insertBefore(container, setupHero.nextSibling);
+  }
+
+  container.innerHTML = '<h3>Recent Projects</h3>' +
+    result.projects.map(p => `
+      <div class="project-item" data-path="${NtLogic.escapeHtml(p.path)}">
+        <span class="project-name">${NtLogic.escapeHtml(p.name)}</span>
+        <span class="project-path-small" title="${NtLogic.escapeHtml(p.path)}">${NtLogic.escapeHtml(p.path)}</span>
+        <button class="project-remove" data-path="${NtLogic.escapeHtml(p.path)}" title="Remove" type="button">&times;</button>
+      </div>
+    `).join('');
+
+  // Bind click handlers
+  container.querySelectorAll('.project-item').forEach(item => {
+    item.addEventListener('click', async (e) => {
+      // Don't trigger if they clicked the remove button
+      if (e.target.classList.contains('project-remove')) return;
+      const path = item.dataset.path;
+      state.projectDir = path;
+      showFolderPath(path);
+      await saveProjectToRecents(path);
+      await loadSteps();
+    });
+  });
+
+  container.querySelectorAll('.project-remove').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const path = btn.dataset.path;
+      await api('remove-project', { path });
+      // Re-render
+      await loadRecentProjects();
+    });
+  });
+}
+
+async function saveProjectToRecents(projectPath) {
+  const name = projectPath.split(/[\\/]/).pop();
+  await api('save-project', { path: projectPath, name });
+}
+
 function bindEvents() {
+  document.getElementById('btn-wizard-continue').addEventListener('click', completeWizard);
+  document.getElementById('btn-recheck').addEventListener('click', runPrerequisiteChecks);
+  document.getElementById('btn-open-settings').addEventListener('click', openSettings);
+  document.getElementById('btn-settings-close').addEventListener('click', closeSettings);
+  document.getElementById('btn-settings-cancel').addEventListener('click', closeSettings);
+  document.getElementById('btn-settings-save').addEventListener('click', saveSettings);
+  document.getElementById('btn-rerun-wizard').addEventListener('click', rerunWizard);
   document.getElementById('btn-select-folder').addEventListener('click', selectFolder);
   document.getElementById('btn-change-folder').addEventListener('click', selectFolder);
+  document.getElementById('btn-select-recommended').addEventListener('click', selectRecommendedSteps);
   document.getElementById('btn-select-all').addEventListener('click', () => selectAllSteps(true));
   document.getElementById('btn-select-none').addEventListener('click', () => selectAllSteps(false));
   document.getElementById('btn-back-setup').addEventListener('click', () => showScreen(SCREENS.SETUP));
@@ -2144,6 +2340,11 @@ function bindEvents() {
   // Keyboard accessibility — Escape key to close drawer and modals
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      const settingsOverlay = document.getElementById('settings-overlay');
+      if (!settingsOverlay.classList.contains('hidden')) {
+        closeSettings();
+        return;
+      }
       const confirmOverlay = document.getElementById('confirm-stop-overlay');
       if (!confirmOverlay.classList.contains('hidden')) {
         cancelStopRun();
@@ -2157,10 +2358,15 @@ function bindEvents() {
     }
   });
 
-  // Click outside modal to close (confirm dialog only)
+  // Click outside modal to close
   document.getElementById('confirm-stop-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'confirm-stop-overlay') {
       cancelStopRun();
+    }
+  });
+  document.getElementById('settings-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'settings-overlay') {
+      closeSettings();
     }
   });
 }
@@ -2355,7 +2561,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Show the UI immediately for instant perceived startup
   bindEvents();
-  showScreen(SCREENS.SETUP);
 
   // Start heartbeat systems immediately (fire-and-forget)
   initHeartbeat();
@@ -2363,9 +2568,25 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load config in background (non-blocking)
   loadConfigAsync();
 
-  // Check for an active run (page-refresh recovery)
-  checkForActiveRun().then(active => {
-    if (active) reconnectToRun(active.runData, active.progress);
+  // Check for an active run first (page-refresh recovery)
+  checkForActiveRun().then(async (active) => {
+    if (active) {
+      showScreen(SCREENS.SETUP); // Show setup briefly then reconnect
+      reconnectToRun(active.runData, active.progress);
+      return;
+    }
+
+    // Check if setup wizard has been completed before
+    const prereqResult = await api('check-prerequisites');
+    if (prereqResult.ok && !prereqResult.checks?.setupComplete) {
+      // First run — show wizard
+      showScreen(SCREENS.WIZARD);
+      runPrerequisiteChecks();
+    } else {
+      // Setup already done — show main screen with recent projects
+      showScreen(SCREENS.SETUP);
+      loadRecentProjects();
+    }
   });
 });
 
@@ -2398,4 +2619,15 @@ async function loadConfigAsync() {
     const config = await api('config');
     if (config.ok && config.bin) state.bin = config.bin;
   } catch { /* fallback to npx */ }
+
+  // Load user config (default timeout, etc.)
+  try {
+    const userConfig = await api('user-config');
+    if (userConfig.ok && userConfig.config) {
+      if (userConfig.config.defaultTimeout) {
+        state.timeout = userConfig.config.defaultTimeout;
+        document.getElementById('timeout-input').value = state.timeout;
+      }
+    }
+  } catch { /* ignore */ }
 }

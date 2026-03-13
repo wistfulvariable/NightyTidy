@@ -284,6 +284,75 @@ function getInitPhaseIndex(phaseKey) {
   return INIT_PHASES.findIndex(p => p.key === phaseKey);
 }
 
+/**
+ * Step categories for grouping in the UI.
+ * Maps step numbers to a category key.
+ */
+const STEP_CATEGORIES = {
+  'Testing & Docs': [1, 2, 3, 4, 5, 6],
+  'Code Quality': [7, 8, 9, 10, 11, 12, 13, 14, 15],
+  'Reliability': [16, 17, 18, 19, 20, 21, 22],
+  'Frontend': [23, 24, 25, 26],
+  'Infrastructure': [27, 28, 29, 30],
+  'Product & Strategy': [31, 32, 33],
+};
+
+/**
+ * Get the category name for a given step number.
+ * @param {number} stepNum
+ * @returns {string}
+ */
+function getStepCategory(stepNum) {
+  for (const [cat, nums] of Object.entries(STEP_CATEGORIES)) {
+    if (nums.includes(stepNum)) return cat;
+  }
+  return 'Other';
+}
+
+/**
+ * Short descriptions for each step (used in tooltips and onboarding).
+ */
+const STEP_DESCRIPTIONS = {
+  1: 'Create and improve documentation, CLAUDE.md, and memory files',
+  2: 'Find untested code paths and add missing test coverage',
+  3: 'Fix flaky tests, add edge cases, harden error paths',
+  4: 'Improve test structure, patterns, and organization',
+  5: 'Remove duplicate tests and merge related test files',
+  6: 'Fix tautological tests and implementation-detail testing',
+  7: 'Audit API naming, consistency, and contracts',
+  8: 'Security scan: auth, injection, OWASP top 10, secrets',
+  9: 'Check for outdated, unused, or vulnerable dependencies',
+  10: 'Remove dead code, unused imports, and stale files',
+  11: 'Unify logging, error handling, and validation patterns',
+  12: 'Split large files into focused, single-responsibility modules',
+  13: 'Improve readability, naming, and code simplification',
+  14: 'Reduce over-engineering and unnecessary abstractions',
+  15: 'Add type assertions, null safety, and contracts',
+  16: 'Improve log messages, error messages, and diagnostics',
+  17: 'Add data validation, constraints, and edge case handling',
+  18: 'Fix N+1 queries, memory issues, algorithmic complexity',
+  19: 'Optimize API calls, caching, and resource usage',
+  20: 'Add graceful degradation and retry logic',
+  21: 'Audit concurrency, atomicity, and race conditions',
+  22: 'Hunt for logic errors, off-by-ones, and subtle bugs',
+  23: 'Improve components, rendering, and accessibility',
+  24: 'Audit usability, consistency, and UI friction',
+  25: 'Fix state flow, side effects, and synchronization',
+  26: 'Add loading states, skeleton screens, and perceived speed',
+  27: 'Improve CI/CD, deployment, and environment config',
+  28: 'Audit scheduled jobs for reliability and idempotency',
+  29: 'Add metrics, tracing, and alerting',
+  30: 'Verify data backup and recovery procedures',
+  31: 'Polish edge cases, empty states, and error UX',
+  32: 'Discover missing features and quick wins',
+  33: 'Analyze architecture direction and scaling opportunities',
+};
+
+/**
+ * Recommended steps for a first run (balanced coverage, ~6 steps).
+ */
+const RECOMMENDED_STEPS = [1, 2, 8, 10, 13, 22];
+
 // Export for browser (app.js) and for Node.js tests
 const NtLogic = {
   buildCommand,
@@ -302,6 +371,10 @@ const NtLogic = {
   preprocessClaudeOutput,
   INIT_PHASES,
   getInitPhaseIndex,
+  STEP_CATEGORIES,
+  getStepCategory,
+  STEP_DESCRIPTIONS,
+  RECOMMENDED_STEPS,
 };
 
 // Browser: attach to window. Node.js: attach to globalThis.

@@ -12,13 +12,55 @@
   <!-- Skip link for keyboard users -->
   <a href="#main-content" class="skip-link">Skip to main content</a>
 
-  <!-- ═══ Screen 1: Setup ═══ -->
+  <!-- ═══ Screen 0: Setup Wizard (first-run only) ═══ -->
   <main id="main-content">
-  <section id="screen-setup" class="screen active" aria-labelledby="setup-heading">
+  <section id="screen-wizard" class="screen" aria-labelledby="wizard-heading">
+    <div class="setup-hero">
+      <h1 id="wizard-heading">Welcome to NightyTidy</h1>
+      <p>Let's make sure everything is set up correctly.</p>
+    </div>
+
+    <div class="wizard-checklist" id="wizard-checklist">
+      <div class="wizard-check" id="wizard-node">
+        <span class="wizard-icon">&#9675;</span>
+        <span class="wizard-label">Node.js</span>
+        <span class="wizard-detail" id="wizard-node-detail">Checking...</span>
+      </div>
+      <div class="wizard-check" id="wizard-git">
+        <span class="wizard-icon">&#9675;</span>
+        <span class="wizard-label">Git</span>
+        <span class="wizard-detail" id="wizard-git-detail">Checking...</span>
+      </div>
+      <div class="wizard-check" id="wizard-claude">
+        <span class="wizard-icon">&#9675;</span>
+        <span class="wizard-label">Claude Code CLI</span>
+        <span class="wizard-detail" id="wizard-claude-detail">Checking...</span>
+      </div>
+      <div class="wizard-check" id="wizard-auth">
+        <span class="wizard-icon">&#9675;</span>
+        <span class="wizard-label">Claude Authentication</span>
+        <span class="wizard-detail" id="wizard-auth-detail">Checking...</span>
+      </div>
+    </div>
+
+    <div class="wizard-actions">
+      <button class="btn btn-secondary" id="btn-recheck" type="button" style="display:none">Re-check</button>
+      <button class="btn btn-primary" id="btn-wizard-continue" type="button" disabled>Continue</button>
+    </div>
+
+    <div class="wizard-help" id="wizard-help" style="display:none">
+      <h3>Setup Help</h3>
+      <div id="wizard-help-content"></div>
+    </div>
+  </section>
+
+  <!-- ═══ Screen 1: Setup ═══ -->
+  <section id="screen-setup" class="screen" aria-labelledby="setup-heading">
     <div class="setup-hero">
       <h1 id="setup-heading">NightyTidy</h1>
       <p>Automated overnight codebase improvement</p>
       <button class="btn btn-primary" id="btn-select-folder" type="button">Select Project Folder</button>
+      <button class="link-btn setup-settings-link" id="btn-open-settings" type="button">Settings</button>
       <div class="folder-display" id="folder-display" style="display:none">
         <span class="path" id="folder-path"></span>
         <button class="link-btn" id="btn-change-folder" type="button">Change</button>
@@ -49,6 +91,7 @@
     <div class="steps-header">
       <span class="project-path" id="steps-project-path"></span>
       <div class="btn-group">
+        <button class="btn btn-secondary btn-sm" id="btn-select-recommended" type="button" title="Docs, Tests, Security, Cleanup, Elegance, Bug Hunt">Recommended</button>
         <button class="btn btn-secondary btn-sm" id="btn-select-all" type="button">Select All</button>
         <button class="btn btn-secondary btn-sm" id="btn-select-none" type="button">Deselect All</button>
       </div>
@@ -215,6 +258,34 @@
       </div>
       <p class="pause-hint">If you've added credits or upgraded your plan, click <strong>Resume Now</strong>.<br>
         <strong>Save & Close</strong> saves progress so you can resume later.</p>
+    </div>
+  </div>
+
+  <!-- ═══ Settings Modal ═══ -->
+  <div class="modal-overlay hidden" id="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="modal modal-settings">
+      <button class="modal-close" id="btn-settings-close" type="button" aria-label="Close settings">&times;</button>
+      <h2 id="settings-title">Settings</h2>
+
+      <div class="settings-group">
+        <label for="setting-timeout">Default timeout per step (minutes)</label>
+        <input type="number" id="setting-timeout" value="45" min="1" max="180" class="settings-input">
+      </div>
+
+      <div class="settings-group">
+        <label for="setting-auto-sync">
+          <input type="checkbox" id="setting-auto-sync" checked>
+          Auto-sync prompts from Google Doc before each run
+        </label>
+      </div>
+
+      <div class="settings-actions">
+        <button class="link-btn" id="btn-rerun-wizard" type="button">Re-run Setup Wizard</button>
+        <div class="btn-group">
+          <button class="btn btn-secondary" id="btn-settings-cancel" type="button">Cancel</button>
+          <button class="btn btn-primary" id="btn-settings-save" type="button">Save</button>
+        </div>
+      </div>
     </div>
   </div>
 
