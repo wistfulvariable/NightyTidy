@@ -35,13 +35,18 @@ Every dollar amount gets two treatments:
 - Token counts — those are actual measured values, not estimates.
 - Cost extraction logic from Claude Code output.
 
+### Implementation Notes
+
+- **Two separate `formatCost()` functions** exist: `gui/resources/logic.js` (browser) and `src/report.js` (Node). Both get the `(est.)` suffix. All call sites of `formatCost()` in `logic.js` must be audited during implementation to confirm none do string matching on the output (e.g., in `parseCliOutput()`). The suffix is appended by `formatCost()` itself, so it propagates everywhere automatically.
+- **`costIsEstimate: true`** is added once at the top level of orchestrator JSON responses (e.g., `--init-run`, `--finish-run`), not repeated per-step.
+
 ### Files Changed
 
 - `gui/resources/logic.js` — `formatCost()` appends ` (est.)`
 - `gui/resources/app.js` — add `title` attribute to cost elements for tooltip
 - `gui/resources/styles.css` — tooltip styling (dotted underline on cost elements to hint hover)
 - `src/report.js` — `formatCost()` appends ` (est.)`, cost column header updated, footer disclaimer added
-- `src/orchestrator.js` — add `costIsEstimate: true` to JSON responses containing cost data
+- `src/orchestrator.js` — add `costIsEstimate: true` to top-level JSON responses
 
 ---
 
@@ -82,6 +87,8 @@ NightyTidy does NOT call the Anthropic API directly. It continues to spawn `clau
 2. Config file `apiKey` field
 3. Claude Code's own authentication (subscription)
 
+**Implementation**: `spawnClaude()` calls `cleanEnv()` first, then only sets `ANTHROPIC_API_KEY` from config if it is NOT already present in the cleaned env. This ensures env var always wins over config file. See Section 8 for details.
+
 ### Security Measures
 
 - On save, GUI shows warning: *"Your API key will be saved to ~/.nightytidy/config.json in plaintext. For better security, set the ANTHROPIC_API_KEY environment variable instead."*
@@ -94,11 +101,15 @@ NightyTidy does NOT call the Anthropic API directly. It continues to spawn `clau
 
 Reads/writes `~/.nightytidy/config.json`.
 
-**Exports**: `loadConfig()`, `saveConfig()`, `getApiKey()`, `getModel()`
+**Exports**: `loadConfig()`, `saveConfig()`, `getApiKey()`, `getModel()`, `AVAILABLE_MODELS`
 
-**Error contract**: Never throws — returns defaults on missing/corrupt file. Follows the same pattern as `notifications.js` (swallow errors silently).
+**Error contract**: Never throws — returns defaults on missing/corrupt file. Logs warnings via `logger.debug()` wrapped in try/catch (same defensive pattern as `env.js` line 95) so it is safe to call before `initLogger()`.
 
-**Dependencies**: `node:fs`, `node:path` only. Zero risk of circular imports.
+**Dependencies**: `node:fs`, `node:path`, `../logger.js` (defensive — tolerates uninitialized logger).
+
+**Validation**: `saveConfig()` validates API key format before writing — key must start with `sk-ant-`. Invalid keys are rejected with a returned error, not thrown.
+
+**Model constants**: `AVAILABLE_MODELS` array is defined in `config.js` as the single source of truth. GUI and any future CLI references import from here. Model IDs will need manual updates when Anthropic releases new models — this is intentional (no dynamic fetching).
 
 ---
 
@@ -212,6 +223,8 @@ Two buttons:
 - "I have a Claude Code subscription" → skip to Screen 4 (verification)
 - "I'll use an API key" → Screen 2
 
+If `ANTHROPIC_API_KEY` is already set in the environment (detected by `/setup-status`), show: "API key detected in environment. Ready to verify." → skip to Screen 4.
+
 If Claude Code isn't installed, a banner at top:
 > "Claude Code CLI not found. Install it first: `npm install -g @anthropic-ai/claude-code`"
 
@@ -243,7 +256,7 @@ With a "Check Again" button that re-calls `/setup-status`.
 
 ### Re-Entry
 
-The wizard only shows when setup is incomplete. Once verification passes, `setupComplete: true` is saved to config. The wizard never appears again unless the user deletes their config.
+Once verification passes, `setupComplete: true` is saved to config. On subsequent launches, the GUI calls `/setup-status` which performs a lightweight auth check (not the full wizard). If auth has become invalid (revoked key, expired subscription), the user sees the main screen with an error banner and a link to Settings — NOT the full wizard again. The `setupComplete` flag means "user has been through onboarding" not "auth is currently valid." The pre-check in `checks.js` remains the actual auth validation gate at run time.
 
 ### Settings Screen
 
@@ -274,6 +287,7 @@ Accessible anytime from a gear icon in the GUI header (all screens except during
 - Body size limits on POST (existing 1MB limit applies)
 - `/config` GET never returns the full API key — always masked
 - `/verify-setup` has a 15-second timeout to avoid hanging
+- `/verify-setup` allows only one concurrent verification — subsequent calls while one is running return `409 Conflict`. Debounced to one call per 10 seconds to prevent subprocess spam.
 
 ### GUI-Side (`app.js`)
 
@@ -288,11 +302,15 @@ Accessible anytime from a gear icon in the GUI header (all screens except during
 
 ### `claude.js` Changes
 
-At spawn time in `runPrompt()`:
-1. Call `getApiKey()` — if present, inject `ANTHROPIC_API_KEY` into child process env
-2. Call `getModel()` — if present, append `--model <modelId>` to spawn args
+API key and model injection happens inside `spawnClaude()` (which owns the `env` option on `spawn()`), not in `runPrompt()`:
 
-Both injected via the existing `env` option on `spawn()`. The existing `cleanEnv()` allowlist already passes `ANTHROPIC_*` through — no change needed.
+1. `spawnClaude()` calls `cleanEnv()` to build the base environment
+2. If `ANTHROPIC_API_KEY` is NOT already in the cleaned env, call `getApiKey()` — if it returns a key, add it to the env object
+3. Call `getModel()` — if it returns a model ID, append `--model <modelId>` to the args array
+
+This keeps all env construction in `spawnClaude()` where it belongs. `runPrompt()` is unchanged.
+
+The existing `cleanEnv()` allowlist already passes `ANTHROPIC_*` through — no change needed to `env.js`.
 
 ### `checks.js` Changes
 
@@ -334,15 +352,29 @@ gui/server.js → config.js (for settings endpoints)
 | `gui/resources/styles.css` | Tooltip styling, wizard screen styles, settings screen styles |
 | `gui/resources/index.html` | Wizard + settings screen HTML sections |
 
+### CLAUDE.md Updates Required
+
+During implementation, update CLAUDE.md:
+- **Error Handling Strategy table**: add `config.js` row — "Never throws — returns defaults"
+- **Module Map**: add `config.js` entry
+- **Module Dependency Graph**: add `claude.js → config.js`, `checks.js → config.js`, `gui/server.js → config.js`
+- **Environment Variables table**: add note about `ANTHROPIC_API_KEY` support
+- **Security section**: add config file security notes
+- **Test file count**: update if new test files added
+
+### Windows File Permissions Note
+
+On Windows, `~/.nightytidy/config.json` inherits ACLs from `C:\Users\<name>` which is user-only by default. We do not explicitly set Windows ACLs — this is acceptable because the parent directory already restricts access. On Unix, `0600` is set explicitly via `fs.writeFileSync` mode option.
+
 ---
 
 ## Testing Strategy
 
 - `config.js` — unit tests: read/write/defaults/corrupt file/missing dir/permissions
-- `gui-server.test.js` — new endpoint tests: /config CRUD, /verify-setup, /setup-status
+- `gui-server.test.js` — new endpoint tests: /config CRUD, /verify-setup, /setup-status, verify-setup concurrency guard
 - `gui-logic.test.js` — updated `formatCost()` tests for `(est.)` suffix
 - `checks.test.js` / `checks-extended.test.js` — config-aware auth check paths
-- `claude.test.js` — model flag injection, API key env injection
+- `claude.test.js` — model flag injection, API key env injection, env var precedence over config
 - `report.test.js` — updated cost formatting in reports
 - `contracts.test.js` — add `config.js` error contract verification
-- Onboarding wizard — manual testing (4-screen flow with verification)
+- Onboarding wizard — manual testing (4-screen flow with verification) + automated tests for `/setup-status` routing logic in `gui-server.test.js`
