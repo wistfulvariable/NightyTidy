@@ -6,7 +6,7 @@ A deployed web application at **nightytidy.com** that provides a polished, intui
 
 **Target users:** Developers, semi-technical vibe coders, and non-technical team leads/managers.
 
-**Repository:** Separate repo (`nightytidy-web`). The local agent shells out to the NightyTidy CLI (`npx nightytidy --init-run`, `--run-step`, `--finish-run`).
+**Repository:** Separate repo (`nightytidy-web`). The local agent is a new `agent` subcommand added to the existing `nightytidy` npm package (in the main NightyTidy repo). The web frontend and Cloud Functions live in `nightytidy-web`. The agent shells out to the NightyTidy CLI (`npx nightytidy --init-run`, `--run-step`, `--finish-run`).
 
 ---
 
@@ -136,7 +136,7 @@ All features ship in a single release:
   - **Right:** Output panel with Summary / Raw Output toggle
     - Summary mode: Activity feed with icons (searching, editing, checking)
     - Raw mode: Full Claude Code stream output
-- **Action buttons:** Pause, Skip Step, Stop Run
+- **Action buttons:** Pause, Skip Step, Stop Run (all with confirmation dialogs)
 - **Estimated time remaining**
 
 ### Screen 5b: Rate Limit Pause Overlay
@@ -150,7 +150,7 @@ All features ship in a single release:
 
 - **Success/failure banner** with date and duration
 - **Stats row:** Passed, failed, total cost, duration, files changed
-- **Action buttons:** Merge to main, Create GitHub PR, Download Report, Rollback Everything
+- **Action buttons:** Merge to main, Create GitHub PR, Download Report, Rollback Everything (merge and rollback require confirmation dialogs)
 - **Tabs:** Step Results, Diff Viewer, Full Report
 - **Step Results tab:** Expandable cards per step with status, files changed, cost, duration, summary. Failed steps show error + "Retry This Step" link
 - **Diff Viewer tab:** File list (left) + syntax-highlighted unified diff (right) with add/remove/modify indicators
@@ -173,8 +173,9 @@ All features ship in a single release:
 ### Components
 
 **1. WebSocket Server**
-- Binds to `127.0.0.1:PORT` (random available port)
-- Token-based auth on handshake (one-time token generated at startup)
+- Binds to `127.0.0.1:48372` (well-known default port, fallback to next available if taken)
+- Token-based auth on handshake (one-time token generated at startup, written to `~/.nightytidy/config.json`)
+- Browser discovers agent by trying `ws://127.0.0.1:48372` with the token. Port is also written to `~/.nightytidy/config.json` if the default was unavailable.
 - Handles commands from browser, streams events back
 - Ping/pong health check every 10s
 
@@ -224,8 +225,9 @@ All features ship in a single release:
 
 **7. Git Integration**
 - Diff generation for web UI (via `git diff` subprocess)
+- `filesChanged` count computed by agent via `git diff --stat` after each step (CLI does not provide this)
 - GitHub PR creation via `gh` CLI
-- Rollback via `git reset --hard <safety-tag>`
+- Rollback via `git reset --hard <safety-tag>` (requires user confirmation via the web UI)
 
 ### Agent Lifecycle
 
@@ -234,7 +236,7 @@ npx nightytidy agent
 ├── Read/create ~/.nightytidy/config.json
 ├── Authenticate with Firebase (first run: browser OAuth flow, then cached)
 ├── Start WebSocket server on localhost
-├── Register token in Firestore (so web app knows how to connect)
+├── Write token + port to ~/.nightytidy/config.json (browser reads locally)
 ├── Load project registry + queue
 ├── Start scheduler
 ├── Print: "Agent running — open nightytidy.com to connect"
@@ -265,17 +267,17 @@ npx nightytidy agent
 | `remove-project` | `{ projectId }` | Unregister a project |
 | `select-folder` | — | Open native folder picker |
 | `start-run` | `{ projectId, steps[], timeout }` | Start a NightyTidy run |
-| `stop-run` | `{ runId }` | Stop a running run |
-| `pause-run` | `{ runId }` | Pause a running run |
-| `resume-run` | `{ runId }` | Resume a paused run |
-| `skip-step` | `{ runId }` | Skip the current step |
+| `stop-run` | `{ runId }` | Stop a running or queued run. For running: sends SIGTERM to Claude subprocess, commits partial work, runs `--finish-run`. For queued: removes from queue. |
+| `pause-run` | `{ runId }` | Agent-level pause: waits for current step to finish, then holds the queue. Does not interrupt Claude mid-step. |
+| `resume-run` | `{ runId }` | Resume a paused run: agent advances to next step in queue. |
+| `skip-step` | `{ runId }` | Skip current step: sends SIGTERM to Claude subprocess, discards partial output, advances to next step. Commits any completed work before skipping. |
 | `rollback` | `{ projectId, tag }` | Reset to safety tag |
 | `create-pr` | `{ projectId, branch }` | Create GitHub PR |
 | `merge` | `{ projectId, branch }` | Merge run branch to main |
 | `get-diff` | `{ projectId, branch }` | Get file diffs for results view |
-| `retry-step` | `{ projectId, stepNum }` | Re-run a single failed step |
+| `retry-step` | `{ projectId, stepNum }` | Re-run a single failed step. Starts a fresh mini-run: `--init-run --steps N` → `--run-step N` → `--finish-run`. Only available after the original run is finished. |
 | `get-queue` | — | Get current queue state |
-| `reorder-queue` | `{ order[] }` | Reorder queued runs |
+| `reorder-queue` | `{ order: string[] }` | Reorder queued runs. `order` is an array of `runId` strings in desired execution order, excluding the currently running item. Agent ignores unknown/completed IDs and responds with the reconciled `queue-updated`. |
 | `ping` | — | Health check |
 
 ### Agent → Browser (Events)
@@ -299,8 +301,26 @@ npx nightytidy agent
 | `pr-created` | `{ url }` | PR created on GitHub |
 | `merged` | `{ projectId }` | Branch merged |
 | `rolled-back` | `{ projectId }` | Rollback completed |
-| `error` | `{ message }` | Error response |
+| `error` | `{ message, code, id? }` | Error response (see error codes below) |
 | `pong` | — | Health check response |
+
+### Message Correlation
+
+All commands may include an optional `id` field (string). Responses include the same `id` for request/response correlation. This prevents ambiguity when the browser sends multiple concurrent requests.
+
+### Error Codes
+
+| Code | Meaning | Triggered By |
+|------|---------|-------------|
+| `agent_busy` | Agent is already running a step | `start-run` when at capacity |
+| `project_not_found` | Project ID not in registry | Any command with `projectId` |
+| `no_active_run` | No run in progress | `stop-run`, `pause-run`, `skip-step` when idle |
+| `git_conflict` | Merge encountered conflicts | `merge` |
+| `gh_not_installed` | GitHub CLI (`gh`) not found | `create-pr` |
+| `invalid_step` | Step number out of range (1-33) | `retry-step`, `start-run` |
+| `run_not_finished` | Run still in progress | `retry-step`, `rollback`, `merge`, `create-pr` |
+| `folder_not_found` | Project path no longer exists on disk | `start-run` |
+| `nightytidy_not_installed` | NightyTidy CLI not found | `start-run` |
 
 ---
 
@@ -337,15 +357,16 @@ createdAt: timestamp
 
 ```
 name: string
-path: string (local path — never sent to Firestore, stored locally only)
 addedAt: timestamp
 lastRunAt: timestamp | null
 schedule: {
   cron: string | null
-  preset: string | null
+  presetId: string | null  (references presets subcollection document ID)
   enabled: boolean
 } | null
 ```
+
+**Note:** The local filesystem path is NOT stored in Firestore. It is stored only in the agent's local `~/.nightytidy/projects.json`. Only the project name and run metadata are synced to Firestore.
 
 ### `users/{uid}/projects/{projectId}/presets/{presetId}`
 
@@ -440,9 +461,11 @@ Receives status updates from local agents.
 3. Write step result to `users/{uid}/runs/{runId}/steps/{stepNum}`
 4. Return `200 OK`
 
+**Rate limiting:** Max 60 writes/minute per user. Excess requests return `429 Too Many Requests`.
+
 ### `GET /api/status/{runId}`
 
-Returns current run status from Firestore. Used for remote monitoring when browser is not on the same machine as agent.
+Returns current run status from Firestore. Used for remote monitoring when browser is not on the same machine as agent. The `uid` is extracted from the auth token and used to scope the Firestore query to `users/{uid}/runs/{runId}`.
 
 **Auth:** Firebase Auth token.
 
@@ -461,7 +484,7 @@ Returns paginated run history. Optional `?projectId=` filter.
 | Layer | Mechanism |
 |-------|-----------|
 | Web app → Firestore | Firebase Auth (GitHub OAuth). Security rules: users read/write own data only |
-| Browser → Local agent | One-time token on WebSocket handshake. Token stored in Firestore for auto-connect |
+| Browser → Local agent | One-time token on WebSocket handshake. Token stored locally in `~/.nightytidy/config.json`. Browser reads token via a localhost HTTP endpoint on the agent (`GET /auth-token` with same-origin check). |
 | Agent → Cloud Functions | Firebase Auth token (agent authenticates on first setup, caches credentials) |
 | Agent → NightyTidy CLI | Local subprocess, no auth needed |
 
@@ -519,6 +542,8 @@ Project type detection by agent (scans repo root):
 - React deps → Frontend-heavy
 
 Cold start defaults: steps 1, 2, 8, 10, 13, 22.
+
+Cold start cost estimates (hardcoded from internal testing, per step): ~$0.08-$0.25 depending on step complexity. These are updated with actual averages as historical data accumulates.
 
 Recommendations improve as run data accumulates.
 
@@ -644,16 +669,9 @@ nightytidy-web/
 │   │   └── runs.ts               # GET /api/runs
 │   ├── package.json
 │   └── tsconfig.json
-├── agent/                        # Local agent (shipped via npm)
-│   ├── index.js                  # Entry point
-│   ├── websocket-server.js       # WebSocket server
-│   ├── project-manager.js        # Project registry
-│   ├── run-queue.js              # Sequential run queue
-│   ├── scheduler.js              # Cron scheduling
-│   ├── cli-bridge.js             # NightyTidy CLI subprocess wrapper
-│   ├── webhook-dispatcher.js     # Webhook sending
-│   ├── git-integration.js        # Diff, PR, rollback
-│   └── firebase-auth.js          # Agent Firebase authentication
+│   # Note: The local agent lives in the main NightyTidy repo (src/agent/),
+│   # not in this web repo. It is shipped as part of the nightytidy npm package
+│   # and invoked via `npx nightytidy agent`.
 ├── public/
 │   └── favicon.ico
 ├── firebase.json                 # Firebase config
@@ -676,6 +694,8 @@ The agent creates these files on the user's machine:
 | `~/.nightytidy/projects.json` | Project registry (paths, schedules, presets) |
 | `~/.nightytidy/queue.json` | Persisted run queue |
 | `~/.nightytidy/agent.log` | Agent log file |
+
+All config files include a `version` field (integer). The agent migrates old schemas forward on startup. Current versions: `config.json` v1, `projects.json` v1, `queue.json` v1.
 
 ---
 
@@ -714,6 +734,36 @@ service cloud.firestore {
     }
   }
 }
+```
+
+---
+
+## Degraded Mode (Agent Disconnected)
+
+When the agent is not running or the user is on a different device:
+
+- **Available (from Firestore):** Run history, analytics, settings, account management
+- **Disabled (require agent):** Start run, stop run, merge, rollback, create PR, add project, folder picker
+- **UI treatment:** Disabled buttons show tooltip: "Connect agent to use this feature." Agent indicator shows red dot with "Disconnected" label.
+- **Remote monitoring:** Run status updates continue to flow via webhooks even if the browser was closed. User can check status from any device by visiting the dashboard.
+
+---
+
+## Agent File Structure (in main NightyTidy repo)
+
+The agent is a subcommand of the existing NightyTidy CLI, living in `src/agent/`:
+
+```
+src/agent/
+├── index.js                  # Entry point (registered as `agent` subcommand in cli.js)
+├── websocket-server.js       # WebSocket server (localhost binding, token auth)
+├── project-manager.js        # Project registry (~/.nightytidy/projects.json)
+├── run-queue.js              # Sequential run queue (persist to ~/.nightytidy/queue.json)
+├── scheduler.js              # Cron scheduling (node-cron)
+├── cli-bridge.js             # NightyTidy CLI subprocess wrapper
+├── webhook-dispatcher.js     # Webhook sending (nightytidy.com + external)
+├── git-integration.js        # Diff generation, PR creation, rollback
+└── firebase-auth.js          # Firebase authentication (browser OAuth on first run, cached)
 ```
 
 ---
