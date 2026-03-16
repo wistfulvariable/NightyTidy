@@ -338,8 +338,8 @@ export async function startAgent() {
         id: run.id,
         startedAt: run.startedAt,
         selectedSteps: run.steps,
-        gitBranch: initResult.parsed?.runInfo?.branch || '',
-        gitTag: initResult.parsed?.runInfo?.tag || '',
+        gitBranch: initResult.parsed?.runBranch || '',
+        gitTag: initResult.parsed?.tagName || '',
       },
     }, startEndpoints);
 
@@ -370,18 +370,32 @@ export async function startAgent() {
         const git = new AgentGit(project.path);
         let filesChanged = 0;
         try {
-          const branch = initResult.parsed?.runInfo?.branch;
-          const tag = initResult.parsed?.runInfo?.tag;
+          const branch = initResult.parsed?.runBranch;
+          const tag = initResult.parsed?.tagName;
           if (branch && tag) {
             filesChanged = await git.countFilesChanged(tag, branch);
           }
         } catch { /* ignore */ }
 
+        // Build step data from parsed result — orchestrator returns flat object
+        // with fields: name, duration, costUSD, output, attempts, inputTokens, outputTokens
+        const stepData = {
+          number: stepNum,
+          name: stepParsed.name || `Step ${stepNum}`,
+          duration: stepParsed.duration || 0,
+          cost: stepParsed.costUSD || 0,
+          attempts: stepParsed.attempts || 1,
+          summary: stepParsed.output || null,
+          filesChanged,
+          inputTokens: stepParsed.inputTokens || null,
+          outputTokens: stepParsed.outputTokens || null,
+        };
+
         wsServer.broadcast({
           type: 'step-completed',
           runId: run.id,
-          step: { number: stepNum, ...stepParsed.step, filesChanged },
-          cost: stepParsed.step?.cost,
+          step: stepData,
+          cost: stepData.cost,
         });
 
         const endpoints = [...(project.webhooks || [])];
@@ -395,8 +409,8 @@ export async function startAgent() {
         webhookDispatcher.dispatch('step_completed', {
           project: project.name,
           projectId: project.id,
-          step: { number: stepNum, ...stepParsed.step, filesChanged },
-          run: { id: run.id, progress: `${stepIndex + 1}/${totalSteps}`, costSoFar: stepParsed.step?.cost, elapsedMs: stepParsed.step?.duration },
+          step: stepData,
+          run: { id: run.id, progress: `${stepIndex + 1}/${totalSteps}`, costSoFar: stepData.cost, elapsedMs: stepData.duration },
         }, endpoints);
         stepIndex++;
       } else {
@@ -415,8 +429,10 @@ export async function startAgent() {
         wsServer.broadcast({
           type: 'step-failed',
           runId: run.id,
-          step: { number: stepNum },
+          step: { number: stepNum, name: stepParsed.name || `Step ${stepNum}` },
           error: stepParsed.error || stepResult.stderr,
+          duration: stepParsed.duration || 0,
+          cost: stepParsed.costUSD || 0,
         });
 
         const endpoints = [...(project.webhooks || [])];
@@ -430,7 +446,7 @@ export async function startAgent() {
         webhookDispatcher.dispatch('step_failed', {
           project: project.name,
           projectId: project.id,
-          step: { number: stepNum, status: 'failed' },
+          step: { number: stepNum, name: stepParsed.name || `Step ${stepNum}`, status: 'failed', duration: stepParsed.duration || 0, cost: stepParsed.costUSD || 0 },
           run: { id: run.id },
         }, endpoints);
         stepIndex++;

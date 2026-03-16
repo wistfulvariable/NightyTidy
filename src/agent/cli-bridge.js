@@ -86,11 +86,28 @@ export class CliBridge {
       proc.stdout.on('data', (data) => {
         const text = data.toString();
         stdout += text;
-        if (onOutput) onOutput(text);
+        // Filter the final JSON result line from streaming output — it's the
+        // orchestrator's return value, not Claude's output. The parsed result
+        // is extracted separately by parseOutput() after process close.
+        if (onOutput) {
+          const trimmed = text.trim();
+          if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+            try {
+              const obj = JSON.parse(trimmed);
+              if ('success' in obj && ('step' in obj || 'error' in obj)) return;
+            } catch { /* not JSON, forward as normal output */ }
+          }
+          onOutput(text);
+        }
       });
 
       proc.stderr.on('data', (data) => {
-        stderr += data.toString();
+        const text = data.toString();
+        stderr += text;
+        // Filter Node.js ExperimentalWarning noise before forwarding to UI
+        if (onOutput && !text.includes('ExperimentalWarning') && !text.includes('--experimental-')) {
+          onOutput(text);
+        }
       });
 
       proc.on('close', (code) => {
