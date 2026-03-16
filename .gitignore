@@ -23,6 +23,9 @@ repomix-output.*
 credentials.*
 secrets.*
 
+# Git worktrees
+.worktrees/
+
 # Claude Code — ignore all except memory files
 .claude/*
 !.claude/memory/
