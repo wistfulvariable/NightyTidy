@@ -322,12 +322,23 @@ export async function startAgent() {
     const runBranch = initResult.parsed?.runBranch || '';
     if (runBranch) info(`  Branch: ${runBranch}`);
 
+    // Fetch step names so the web app can show the full step list
+    let stepNames = {};
+    try {
+      const listResult = await bridge.listSteps();
+      const allSteps = listResult.parsed || [];
+      for (const s of allSteps) {
+        stepNames[s.number] = s.name;
+      }
+    } catch { /* non-critical — steps will show as "Step N" */ }
+
     wsServer.broadcast({
       type: 'run-init',
       runId: run.id,
       projectName: project.name,
       totalSteps: run.steps.length,
       startedAt: run.startedAt,
+      steps: run.steps.map(n => ({ number: n, name: stepNames[n] || `Step ${n}` })),
     });
 
     // Send run_started webhook so Firestore run doc is created immediately
