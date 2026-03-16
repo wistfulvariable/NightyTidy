@@ -1,0 +1,432 @@
+// src/agent/index.js
+import { info, warn, debug } from '../logger.js';
+import { getConfigDir, readConfig, writeConfig, ensureConfigDir } from './config.js';
+import { ProjectManager } from './project-manager.js';
+import { RunQueue } from './run-queue.js';
+import { Scheduler } from './scheduler.js';
+import { AgentWebSocketServer } from './websocket-server.js';
+import { WebhookDispatcher } from './webhook-dispatcher.js';
+import { CliBridge } from './cli-bridge.js';
+import { AgentGit } from './git-integration.js';
+import { FirebaseAuth } from './firebase-auth.js';
+
+export async function startAgent() {
+  const configDir = getConfigDir();
+  ensureConfigDir(configDir);
+  const config = readConfig(configDir);
+
+  info(`NightyTidy Agent starting on ${config.machine}`);
+
+  // Initialize components
+  const projectManager = new ProjectManager(configDir);
+  projectManager.pruneStaleProjects();
+
+  const runQueue = new RunQueue(configDir);
+  const firebaseAuth = new FirebaseAuth(configDir);
+  const webhookDispatcher = new WebhookDispatcher({
+    machine: config.machine,
+    version: '1.0.0',
+  });
+
+  // Track the active CLI bridge so stop-run can kill it
+  let activeBridge = null;
+  let pauseRequested = false;
+  let skipCurrentStep = false;
+
+  // Command handler (async — some commands need await)
+  const handleCommand = async (msg, reply) => {
+    switch (msg.type) {
+      case 'list-projects':
+        reply({ type: 'projects', projects: projectManager.listProjects() });
+        break;
+
+      case 'add-project':
+        try {
+          const name = msg.path.split(/[\\/]/).pop();
+          const project = projectManager.addProject(msg.path, name);
+          reply({ type: 'projects', projects: projectManager.listProjects() });
+        } catch (err) {
+          reply({ type: 'error', message: err.message, code: 'add_failed' });
+        }
+        break;
+
+      case 'remove-project':
+        projectManager.removeProject(msg.projectId);
+        reply({ type: 'projects', projects: projectManager.listProjects() });
+        break;
+
+      case 'get-queue':
+        reply({
+          type: 'queue-updated',
+          queue: runQueue.getQueue(),
+          current: runQueue.getCurrent(),
+        });
+        break;
+
+      case 'start-run':
+        handleStartRun(msg, reply);
+        break;
+
+      case 'stop-run':
+        handleStopRun(msg, reply);
+        break;
+
+      case 'select-folder': {
+        reply({ type: 'folder-selected', path: msg.path || null });
+        break;
+      }
+
+      case 'pause-run': {
+        pauseRequested = true;
+        wsServer.broadcast({ type: 'run-paused', runId: msg.runId });
+        reply({ type: 'run-paused', runId: msg.runId });
+        break;
+      }
+
+      case 'resume-run': {
+        pauseRequested = false;
+        wsServer.broadcast({ type: 'run-resumed', runId: msg.runId });
+        reply({ type: 'run-resumed', runId: msg.runId });
+        break;
+      }
+
+      case 'skip-step': {
+        skipCurrentStep = true;
+        reply({ type: 'step-skipped', runId: msg.runId, step: msg.step });
+        break;
+      }
+
+      case 'get-diff': {
+        const proj = projectManager.getProject(msg.projectId);
+        if (!proj) { reply({ type: 'error', message: 'Project not found', code: 'project_not_found' }); break; }
+        const gitObj = new AgentGit(proj.path);
+        const diff = await gitObj.getDiff(msg.baseBranch, msg.runBranch);
+        const stat = await gitObj.getDiffStat(msg.baseBranch, msg.runBranch);
+        reply({ type: 'diff', diff, stat });
+        break;
+      }
+
+      case 'merge': {
+        const proj = projectManager.getProject(msg.projectId);
+        if (!proj) { reply({ type: 'error', message: 'Project not found', code: 'project_not_found' }); break; }
+        const gitObj = new AgentGit(proj.path);
+        const result = await gitObj.merge(msg.runBranch, msg.targetBranch);
+        reply({ type: 'merge-result', ...result });
+        break;
+      }
+
+      case 'rollback': {
+        const proj = projectManager.getProject(msg.projectId);
+        if (!proj) { reply({ type: 'error', message: 'Project not found', code: 'project_not_found' }); break; }
+        const gitObj = new AgentGit(proj.path);
+        try {
+          await gitObj.rollback(msg.tag);
+          reply({ type: 'rollback-result', success: true });
+        } catch (err) {
+          reply({ type: 'error', message: err.message, code: 'rollback_failed' });
+        }
+        break;
+      }
+
+      case 'create-pr': {
+        const proj = projectManager.getProject(msg.projectId);
+        if (!proj) { reply({ type: 'error', message: 'Project not found', code: 'project_not_found' }); break; }
+        const gitObj = new AgentGit(proj.path);
+        const result = await gitObj.createPr(msg.branch, msg.title, msg.body);
+        reply({ type: 'pr-result', ...result });
+        break;
+      }
+
+      case 'retry-step': {
+        const proj = projectManager.getProject(msg.projectId);
+        if (!proj) { reply({ type: 'error', message: 'Project not found', code: 'project_not_found' }); break; }
+        const retryRun = runQueue.enqueue({
+          projectId: msg.projectId,
+          steps: [msg.step],
+          timeout: msg.timeout || 45,
+        });
+        wsServer.broadcast({ type: 'queue-updated', queue: runQueue.getQueue() });
+        reply({ type: 'retry-queued', runId: retryRun.id });
+        if (!runQueue.getCurrent()) processQueue();
+        break;
+      }
+
+      case 'reorder-queue': {
+        runQueue.reorder(msg.order);
+        wsServer.broadcast({ type: 'queue-updated', queue: runQueue.getQueue() });
+        reply({ type: 'queue-updated', queue: runQueue.getQueue() });
+        break;
+      }
+
+      case 'cancel-queued': {
+        runQueue.cancel(msg.runId);
+        wsServer.broadcast({ type: 'queue-updated', queue: runQueue.getQueue() });
+        reply({ type: 'queue-updated', queue: runQueue.getQueue() });
+        break;
+      }
+
+      case 'get-schedules': {
+        reply({ type: 'schedules', schedules: scheduler.getSchedules() });
+        break;
+      }
+
+      case 'set-schedule': {
+        if (!Scheduler.isValidCron(msg.cron)) {
+          reply({ type: 'error', message: 'Invalid cron expression', code: 'invalid_cron' });
+          break;
+        }
+        scheduler.addSchedule(msg.projectId, msg.cron);
+        projectManager.updateProject(msg.projectId, {
+          schedule: { cron: msg.cron, enabled: true, steps: msg.steps || [] },
+        });
+        reply({ type: 'schedule-updated', projectId: msg.projectId });
+        break;
+      }
+
+      case 'remove-schedule': {
+        scheduler.removeSchedule(msg.projectId);
+        projectManager.updateProject(msg.projectId, {
+          schedule: { cron: null, enabled: false, steps: [] },
+        });
+        reply({ type: 'schedule-removed', projectId: msg.projectId });
+        break;
+      }
+
+      default:
+        reply({ type: 'error', message: `Unknown command: ${msg.type}`, code: 'unknown_command' });
+    }
+  };
+
+  // Start WebSocket server
+  const wsServer = new AgentWebSocketServer({
+    port: config.port,
+    token: config.token,
+    onCommand: handleCommand,
+  });
+
+  const actualPort = await wsServer.start();
+
+  // Update config with actual port
+  config.port = actualPort;
+  writeConfig(configDir, config);
+
+  // Initialize scheduler
+  const scheduler = new Scheduler((projectId) => {
+    const project = projectManager.getProject(projectId);
+    if (project) {
+      runQueue.enqueue({
+        projectId,
+        steps: project.schedule?.steps || [],
+        timeout: 45,
+      });
+      wsServer.broadcast({ type: 'queue-updated', queue: runQueue.getQueue() });
+      webhookDispatcher.dispatch('schedule_triggered', {
+        project: project.name,
+        projectId,
+      }, project.webhooks || []);
+    }
+  });
+
+  // Load schedules from projects
+  for (const project of projectManager.listProjects()) {
+    if (project.schedule?.enabled && project.schedule?.cron) {
+      scheduler.addSchedule(project.id, project.schedule.cron);
+    }
+  }
+
+  // Run execution handler
+  async function handleStartRun(msg, reply) {
+    const project = projectManager.getProject(msg.projectId);
+    if (!project) {
+      reply({ type: 'error', message: 'Project not found', code: 'project_not_found' });
+      return;
+    }
+
+    const run = runQueue.enqueue({
+      projectId: msg.projectId,
+      steps: msg.steps,
+      timeout: msg.timeout || 45,
+    });
+
+    wsServer.broadcast({ type: 'queue-updated', queue: runQueue.getQueue() });
+    reply({ type: 'run-started', runId: run.id, projectId: msg.projectId });
+
+    if (!runQueue.getCurrent()) {
+      processQueue();
+    }
+  }
+
+  async function processQueue() {
+    const run = runQueue.dequeue();
+    if (!run) return;
+
+    const project = projectManager.getProject(run.projectId);
+    if (!project) {
+      runQueue.completeCurrent({ success: false });
+      processQueue();
+      return;
+    }
+
+    const bridge = new CliBridge(project.path);
+    activeBridge = bridge;
+
+    wsServer.broadcast({ type: 'run-started', runId: run.id, projectId: run.projectId, branch: '' });
+    const initResult = await bridge.initRun(run.steps, run.timeout);
+    if (!initResult.success) {
+      wsServer.broadcast({ type: 'run-failed', runId: run.id, error: initResult.stderr });
+      runQueue.completeCurrent({ success: false });
+      processQueue();
+      return;
+    }
+
+    const stepsToRun = [...run.steps];
+    const totalSteps = stepsToRun.length;
+    let stepIndex = 0;
+    while (stepIndex < stepsToRun.length) {
+      while (pauseRequested) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      if (skipCurrentStep) {
+        skipCurrentStep = false;
+        wsServer.broadcast({ type: 'step-skipped', runId: run.id, step: { number: stepsToRun[stepIndex] } });
+        stepIndex++;
+        continue;
+      }
+
+      const stepNum = stepsToRun[stepIndex];
+      wsServer.broadcast({ type: 'step-started', runId: run.id, step: { number: stepNum } });
+
+      const stepResult = await bridge.runStep(stepNum, (text) => {
+        wsServer.broadcast({ type: 'step-output', runId: run.id, text, mode: 'raw' });
+      });
+
+      const stepParsed = stepResult.parsed || {};
+      if (stepParsed.success) {
+        const git = new AgentGit(project.path);
+        let filesChanged = 0;
+        try {
+          const branch = initResult.parsed?.runInfo?.branch;
+          const tag = initResult.parsed?.runInfo?.tag;
+          if (branch && tag) {
+            filesChanged = await git.countFilesChanged(tag, branch);
+          }
+        } catch { /* ignore */ }
+
+        wsServer.broadcast({
+          type: 'step-completed',
+          runId: run.id,
+          step: { number: stepNum, ...stepParsed.step, filesChanged },
+          cost: stepParsed.step?.cost,
+        });
+
+        const endpoints = [...(project.webhooks || [])];
+        if (firebaseAuth.isAuthenticated()) {
+          endpoints.push({
+            url: 'https://us-central1-nightytidy.cloudfunctions.net/webhookIngest',
+            label: 'nightytidy.com',
+            headers: firebaseAuth.getAuthHeader(),
+          });
+        }
+        webhookDispatcher.dispatch('step_completed', {
+          project: project.name,
+          projectId: project.id,
+          step: { number: stepNum, ...stepParsed.step, filesChanged },
+          run: { progress: `${stepIndex + 1}/${totalSteps}` },
+        }, endpoints);
+        stepIndex++;
+      } else {
+        const errorType = stepParsed.errorType;
+        if (errorType === 'rate_limit') {
+          wsServer.broadcast({
+            type: 'rate-limit',
+            runId: run.id,
+            retryAfterMs: stepParsed.retryAfterMs || 120000,
+            step: { number: stepNum },
+          });
+          await new Promise(r => setTimeout(r, stepParsed.retryAfterMs || 120000));
+          wsServer.broadcast({ type: 'rate-limit-resumed', runId: run.id });
+          continue;
+        }
+        wsServer.broadcast({
+          type: 'step-failed',
+          runId: run.id,
+          step: { number: stepNum },
+          error: stepParsed.error || stepResult.stderr,
+        });
+
+        const endpoints = [...(project.webhooks || [])];
+        if (firebaseAuth.isAuthenticated()) {
+          endpoints.push({
+            url: 'https://us-central1-nightytidy.cloudfunctions.net/webhookIngest',
+            label: 'nightytidy.com',
+            headers: firebaseAuth.getAuthHeader(),
+          });
+        }
+        webhookDispatcher.dispatch('step_failed', {
+          project: project.name,
+          step: { number: stepNum, status: 'failed' },
+        }, endpoints);
+        stepIndex++;
+      }
+    }
+
+    await bridge.finishRun();
+    projectManager.updateProject(run.projectId, { lastRunAt: Date.now() });
+
+    wsServer.broadcast({ type: 'run-completed', runId: run.id, results: {} });
+
+    const completionEndpoints = [...(project.webhooks || [])];
+    if (firebaseAuth.isAuthenticated()) {
+      completionEndpoints.push({
+        url: 'https://us-central1-nightytidy.cloudfunctions.net/webhookIngest',
+        label: 'nightytidy.com',
+        headers: firebaseAuth.getAuthHeader(),
+      });
+    }
+    webhookDispatcher.dispatch('run_completed', {
+      project: project.name,
+      projectId: project.id,
+    }, completionEndpoints);
+
+    activeBridge = null;
+    runQueue.completeCurrent({ success: true });
+    processQueue();
+  }
+
+  function handleStopRun(msg, reply) {
+    const current = runQueue.getCurrent();
+    if (current && current.id === msg.runId) {
+      if (activeBridge) {
+        activeBridge.kill();
+        activeBridge = null;
+      }
+      runQueue.completeCurrent({ success: false });
+      wsServer.broadcast({ type: 'run-failed', runId: msg.runId, error: 'Stopped by user' });
+      reply({ type: 'run-failed', runId: msg.runId, error: 'Stopped by user' });
+      processQueue();
+    } else {
+      runQueue.cancel(msg.runId);
+      reply({ type: 'queue-updated', queue: runQueue.getQueue() });
+    }
+  }
+
+  // Graceful shutdown
+  const shutdown = async () => {
+    info('Agent shutting down...');
+    scheduler.stopAll();
+    await wsServer.stop();
+    info('Agent stopped');
+    process.exit(0);
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+
+  // Print startup info
+  console.log(`\nNightyTidy Agent v1.0.0`);
+  console.log(`WebSocket: ws://127.0.0.1:${actualPort}`);
+  console.log(`Token: ${config.token.slice(0, 6)}...(see ~/.nightytidy/config.json)`);
+  console.log(`\nOpen nightytidy.com to connect.\n`);
+
+  return { wsServer, scheduler, projectManager, runQueue };
+}

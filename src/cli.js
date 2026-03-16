@@ -814,6 +814,16 @@ export async function run() {
     .option('--skip-dashboard', 'Skip launching the standalone dashboard server (used by GUI)')
     .option('--resume', 'Resume a previously paused run (usage limit / manual restart)');
 
+  program
+    .command('agent')
+    .description('Start the NightyTidy agent for web app connectivity')
+    .action(async () => {
+      const { initLogger } = await import('./logger.js');
+      initLogger(process.cwd());
+      const { startAgent } = await import('./agent/index.js');
+      await startAgent();
+    });
+
   program.parse();
   const opts = program.opts();
 
