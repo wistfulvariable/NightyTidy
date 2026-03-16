@@ -23,6 +23,7 @@ vi.mock('commander', () => {
     description: vi.fn().mockReturnThis(),
     version: vi.fn().mockReturnThis(),
     option: vi.fn().mockReturnThis(),
+    command: vi.fn(() => ({ description: vi.fn().mockReturnValue({ action: vi.fn() }) })),
     parse: vi.fn(),
     opts: vi.fn(() => mockOpts),
   };
