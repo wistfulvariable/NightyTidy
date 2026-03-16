@@ -52,6 +52,14 @@ export async function startAgent() {
 
       case 'add-project':
         try {
+          // Validate path is a git repository
+          const gitCheck = new AgentGit(msg.path);
+          try {
+            await gitCheck._exec('git', ['rev-parse', '--is-inside-work-tree']);
+          } catch {
+            reply({ type: 'error', message: 'Not a git repository. NightyTidy requires a git repo.', code: 'not_git_repo' });
+            break;
+          }
           const name = msg.path.split(/[\\/]/).pop();
           const project = projectManager.addProject(msg.path, name);
           reply({ type: 'projects', projects: projectManager.listProjects() });
