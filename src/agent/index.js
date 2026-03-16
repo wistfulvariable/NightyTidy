@@ -32,6 +32,7 @@ export async function startAgent() {
   let activeBridge = null;
   let pauseRequested = false;
   let skipCurrentStep = false;
+  let runOutputBuffer = '';  // Accumulated raw output for the current run
 
   // Command handler (async — some commands need await)
   const handleCommand = async (msg, reply) => {
@@ -62,6 +63,26 @@ export async function startAgent() {
           current: runQueue.getCurrent(),
         });
         break;
+
+      case 'get-run': {
+        const current = runQueue.getCurrent();
+        if (current && (!msg.runId || current.id === msg.runId)) {
+          const proj = projectManager.getProject(current.projectId);
+          reply({
+            type: 'run-state',
+            runId: current.id,
+            projectId: current.projectId,
+            projectName: proj?.name ?? current.projectId,
+            status: current.status,
+            steps: current.steps,
+            startedAt: current.startedAt,
+            rawOutput: runOutputBuffer,
+          });
+        } else {
+          reply({ type: 'run-state', runId: null, status: 'not_found' });
+        }
+        break;
+      }
 
       case 'start-run':
         handleStartRun(msg, reply);
@@ -100,9 +121,17 @@ export async function startAgent() {
         const proj = projectManager.getProject(msg.projectId);
         if (!proj) { reply({ type: 'error', message: 'Project not found', code: 'project_not_found' }); break; }
         const gitObj = new AgentGit(proj.path);
-        const diff = await gitObj.getDiff(msg.baseBranch, msg.runBranch);
-        const stat = await gitObj.getDiffStat(msg.baseBranch, msg.runBranch);
-        reply({ type: 'diff', diff, stat });
+        try {
+          const diff = await gitObj.getDiff(msg.baseBranch, msg.runBranch);
+          const stat = await gitObj.getDiffStat(msg.baseBranch, msg.runBranch);
+          reply({ type: 'diff', diff, stat });
+        } catch (err) {
+          const message = err.message || 'Failed to get diff';
+          const code = message.includes('unknown revision') || message.includes('bad revision')
+            ? 'branch_not_found'
+            : 'diff_failed';
+          reply({ type: 'error', message, code });
+        }
         break;
       }
 
@@ -202,6 +231,11 @@ export async function startAgent() {
     port: config.port,
     token: config.token,
     onCommand: handleCommand,
+    onAuthCallback: ({ token }) => {
+      // Firebase ID tokens expire after 1 hour
+      firebaseAuth.setToken(token, Date.now() + 3600_000);
+      info('Firebase auth token received from web app');
+    },
   });
 
   const actualPort = await wsServer.start();
@@ -269,8 +303,9 @@ export async function startAgent() {
 
     const bridge = new CliBridge(project.path);
     activeBridge = bridge;
+    runOutputBuffer = '';
 
-    wsServer.broadcast({ type: 'run-started', runId: run.id, projectId: run.projectId, branch: '' });
+    wsServer.broadcast({ type: 'run-started', runId: run.id, projectId: run.projectId, projectName: project.name, branch: '' });
     const initResult = await bridge.initRun(run.steps, run.timeout);
     if (!initResult.success) {
       wsServer.broadcast({ type: 'run-failed', runId: run.id, error: initResult.stderr });
@@ -278,6 +313,35 @@ export async function startAgent() {
       processQueue();
       return;
     }
+
+    wsServer.broadcast({
+      type: 'run-init',
+      runId: run.id,
+      projectName: project.name,
+      totalSteps: run.steps.length,
+      startedAt: run.startedAt,
+    });
+
+    // Send run_started webhook so Firestore run doc is created immediately
+    const startEndpoints = [...(project.webhooks || [])];
+    if (firebaseAuth.isAuthenticated()) {
+      startEndpoints.push({
+        url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
+        label: 'nightytidy.com',
+        headers: firebaseAuth.getAuthHeader(),
+      });
+    }
+    webhookDispatcher.dispatch('run_started', {
+      project: project.name,
+      projectId: project.id,
+      run: {
+        id: run.id,
+        startedAt: run.startedAt,
+        selectedSteps: run.steps,
+        gitBranch: initResult.parsed?.runInfo?.branch || '',
+        gitTag: initResult.parsed?.runInfo?.tag || '',
+      },
+    }, startEndpoints);
 
     const stepsToRun = [...run.steps];
     const totalSteps = stepsToRun.length;
@@ -297,6 +361,7 @@ export async function startAgent() {
       wsServer.broadcast({ type: 'step-started', runId: run.id, step: { number: stepNum } });
 
       const stepResult = await bridge.runStep(stepNum, (text) => {
+        runOutputBuffer += text;
         wsServer.broadcast({ type: 'step-output', runId: run.id, text, mode: 'raw' });
       });
 
@@ -322,7 +387,7 @@ export async function startAgent() {
         const endpoints = [...(project.webhooks || [])];
         if (firebaseAuth.isAuthenticated()) {
           endpoints.push({
-            url: 'https://us-central1-nightytidy.cloudfunctions.net/webhookIngest',
+            url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
             label: 'nightytidy.com',
             headers: firebaseAuth.getAuthHeader(),
           });
@@ -331,7 +396,7 @@ export async function startAgent() {
           project: project.name,
           projectId: project.id,
           step: { number: stepNum, ...stepParsed.step, filesChanged },
-          run: { progress: `${stepIndex + 1}/${totalSteps}` },
+          run: { id: run.id, progress: `${stepIndex + 1}/${totalSteps}`, costSoFar: stepParsed.step?.cost, elapsedMs: stepParsed.step?.duration },
         }, endpoints);
         stepIndex++;
       } else {
@@ -357,14 +422,16 @@ export async function startAgent() {
         const endpoints = [...(project.webhooks || [])];
         if (firebaseAuth.isAuthenticated()) {
           endpoints.push({
-            url: 'https://us-central1-nightytidy.cloudfunctions.net/webhookIngest',
+            url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
             label: 'nightytidy.com',
             headers: firebaseAuth.getAuthHeader(),
           });
         }
         webhookDispatcher.dispatch('step_failed', {
           project: project.name,
+          projectId: project.id,
           step: { number: stepNum, status: 'failed' },
+          run: { id: run.id },
         }, endpoints);
         stepIndex++;
       }
@@ -378,7 +445,7 @@ export async function startAgent() {
     const completionEndpoints = [...(project.webhooks || [])];
     if (firebaseAuth.isAuthenticated()) {
       completionEndpoints.push({
-        url: 'https://us-central1-nightytidy.cloudfunctions.net/webhookIngest',
+        url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
         label: 'nightytidy.com',
         headers: firebaseAuth.getAuthHeader(),
       });
@@ -386,6 +453,7 @@ export async function startAgent() {
     webhookDispatcher.dispatch('run_completed', {
       project: project.name,
       projectId: project.id,
+      run: { id: run.id, totalSteps, completedSteps: run.steps.length, elapsedMs: Date.now() - run.startedAt },
     }, completionEndpoints);
 
     activeBridge = null;
