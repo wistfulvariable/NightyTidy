@@ -1,3 +1,4 @@
+import http from 'node:http';
 import { WebSocketServer } from 'ws';
 import os from 'node:os';
 import { info, debug, warn } from '../logger.js';
@@ -5,29 +6,94 @@ import { info, debug, warn } from '../logger.js';
 const RATE_LIMIT_PER_SEC = 10;
 
 export class AgentWebSocketServer {
-  constructor({ port, token, onCommand }) {
+  constructor({ port, token, onCommand, onAuthCallback }) {
     this.port = port;
     this.token = token;
     this.onCommand = onCommand || (() => {});
+    this.onAuthCallback = onAuthCallback || (() => {});
     this.wss = null;
+    this.httpServer = null;
     this.clients = new Set();
   }
 
   start() {
     return new Promise((resolve, reject) => {
-      this.wss = new WebSocketServer({
-        port: this.port,
-        host: '127.0.0.1',
+      this.httpServer = http.createServer((req, res) => {
+        // CORS headers for cross-origin fetch from nightytidy.com
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', '*');
+
+        // Handle OPTIONS preflight
+        if (req.method === 'OPTIONS') {
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+
+        const remoteAddress = req.socket.remoteAddress;
+        const isLocalhost =
+          remoteAddress === '127.0.0.1' ||
+          remoteAddress === '::1' ||
+          remoteAddress === '::ffff:127.0.0.1';
+
+        if (req.method === 'GET' && req.url === '/auth-info') {
+          // Only respond to requests from localhost
+          if (!isLocalhost) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Forbidden' }));
+            return;
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ port: this.port, token: this.token }));
+          return;
+        }
+
+        if (req.method === 'POST' && req.url === '/auth-callback') {
+          let body = '';
+          req.on('data', (chunk) => {
+            body += chunk.toString();
+            if (body.length > 65536) {
+              req.destroy();
+            }
+          });
+          req.on('end', () => {
+            let parsed;
+            try {
+              parsed = JSON.parse(body);
+            } catch {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Invalid JSON' }));
+              return;
+            }
+            const { token } = parsed;
+            if (!token || typeof token !== 'string') {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Missing token' }));
+              return;
+            }
+            debug('Auth callback received Firebase token');
+            this.onAuthCallback({ token });
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ ok: true }));
+          });
+          return;
+        }
+
+        res.writeHead(404, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Not found' }));
       });
 
-      this.wss.on('listening', () => {
-        const addr = this.wss.address();
+      this.wss = new WebSocketServer({ server: this.httpServer });
+
+      this.httpServer.on('error', reject);
+
+      this.httpServer.listen(this.port, '127.0.0.1', () => {
+        const addr = this.httpServer.address();
         this.port = addr.port;
         info(`WebSocket server listening on ws://127.0.0.1:${this.port}`);
         resolve(this.port);
       });
-
-      this.wss.on('error', reject);
 
       this.wss.on('connection', (ws) => {
         let authenticated = false;
@@ -109,7 +175,15 @@ export class AgentWebSocketServer {
         for (const client of this.clients) {
           client.close();
         }
-        this.wss.close(resolve);
+        this.wss.close(() => {
+          if (this.httpServer) {
+            this.httpServer.close(resolve);
+          } else {
+            resolve();
+          }
+        });
+      } else if (this.httpServer) {
+        this.httpServer.close(resolve);
       } else {
         resolve();
       }
