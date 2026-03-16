@@ -38,6 +38,18 @@ This opens a Chrome app-mode window. From there:
 
 NightyTidy handles everything from there: progress tracking, live Claude output, rate-limit pausing, report generation, and merging changes back to your branch.
 
+## Run Duration and Token Usage
+
+A full 33-step run is a serious workload — expect **6 to 8 hours** with Claude running at full capacity the entire time. Each step gets its own Claude Code session, and many steps involve reading your entire codebase, making changes, running tests, and iterating. This adds up fast.
+
+**You will likely hit usage limits** unless you're on Anthropic's Max plan. To avoid mid-run rate limits:
+
+- **Max plan recommended** — A full run burns through a large number of tokens. The Max plan gives you the headroom to complete all 33 steps without interruption.
+- **Run in batches** — If you're not on Max, run a quarter or half of the steps at a time (e.g., `--steps 1-8`, then `--steps 9-16` after your usage resets). The GUI's step picker makes this easy.
+- **Use the rate-limit recovery** — If you do hit limits mid-run, NightyTidy pauses automatically and can resume later. Save & Close in the GUI, or use `--resume` in the CLI when your limits reset.
+
+Running fewer steps per session is a perfectly valid workflow — you'll get the same results, just spread over multiple nights.
+
 ## Desktop GUI
 
 The GUI is the primary way to use NightyTidy. It wraps the CLI orchestrator in a five-screen visual workflow.
