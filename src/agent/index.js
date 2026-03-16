@@ -305,14 +305,22 @@ export async function startAgent() {
     activeBridge = bridge;
     runOutputBuffer = '';
 
+    info(`\n━━━ Run started: ${project.name} ━━━`);
+    info(`  Steps: [${run.steps.join(', ')}] (${run.steps.length} total)`);
+    info(`  Project: ${project.path}`);
+
     wsServer.broadcast({ type: 'run-started', runId: run.id, projectId: run.projectId, projectName: project.name, branch: '' });
     const initResult = await bridge.initRun(run.steps, run.timeout);
     if (!initResult.success) {
+      info(`  ✗ Init failed: ${initResult.stderr}`);
       wsServer.broadcast({ type: 'run-failed', runId: run.id, error: initResult.stderr });
       runQueue.completeCurrent({ success: false });
       processQueue();
       return;
     }
+
+    const runBranch = initResult.parsed?.runBranch || '';
+    if (runBranch) info(`  Branch: ${runBranch}`);
 
     wsServer.broadcast({
       type: 'run-init',
@@ -358,6 +366,7 @@ export async function startAgent() {
       }
 
       const stepNum = stepsToRun[stepIndex];
+      info(`  [${stepIndex + 1}/${totalSteps}] Running step ${stepNum}...`);
       wsServer.broadcast({ type: 'step-started', runId: run.id, step: { number: stepNum } });
 
       const stepResult = await bridge.runStep(stepNum, (text) => {
@@ -391,6 +400,12 @@ export async function startAgent() {
           outputTokens: stepParsed.outputTokens || null,
         };
 
+        const durMin = Math.floor((stepData.duration || 0) / 60000);
+        const durSec = Math.floor(((stepData.duration || 0) % 60000) / 1000);
+        const durStr = durMin > 0 ? `${durMin}m ${durSec}s` : `${durSec}s`;
+        const costStr = stepData.cost > 0 ? `, $${stepData.cost.toFixed(2)}` : '';
+        info(`  ✓ Step ${stepNum} "${stepData.name}" passed (${durStr}${costStr})`);
+
         wsServer.broadcast({
           type: 'step-completed',
           runId: run.id,
@@ -416,6 +431,8 @@ export async function startAgent() {
       } else {
         const errorType = stepParsed.errorType;
         if (errorType === 'rate_limit') {
+          const waitSec = Math.round((stepParsed.retryAfterMs || 120000) / 1000);
+          info(`  ⏸ Rate limited — waiting ${waitSec}s before retrying step ${stepNum}`);
           wsServer.broadcast({
             type: 'rate-limit',
             runId: run.id,
@@ -423,13 +440,16 @@ export async function startAgent() {
             step: { number: stepNum },
           });
           await new Promise(r => setTimeout(r, stepParsed.retryAfterMs || 120000));
+          info(`  ▶ Resuming after rate limit`);
           wsServer.broadcast({ type: 'rate-limit-resumed', runId: run.id });
           continue;
         }
+        const stepName = stepParsed.name || `Step ${stepNum}`;
+        info(`  ✗ Step ${stepNum} "${stepName}" failed: ${stepParsed.error || 'unknown error'}`);
         wsServer.broadcast({
           type: 'step-failed',
           runId: run.id,
-          step: { number: stepNum, name: stepParsed.name || `Step ${stepNum}` },
+          step: { number: stepNum, name: stepName },
           error: stepParsed.error || stepResult.stderr,
           duration: stepParsed.duration || 0,
           cost: stepParsed.costUSD || 0,
@@ -453,8 +473,15 @@ export async function startAgent() {
       }
     }
 
+    info(`  Finishing run (report + merge)...`);
     await bridge.finishRun();
     projectManager.updateProject(run.projectId, { lastRunAt: Date.now() });
+
+    const elapsedMs = Date.now() - run.startedAt;
+    const elMin = Math.floor(elapsedMs / 60000);
+    const elSec = Math.floor((elapsedMs % 60000) / 1000);
+    const elStr = elMin > 0 ? `${elMin}m ${elSec}s` : `${elSec}s`;
+    info(`━━━ Run complete: ${project.name} (${totalSteps} steps, ${elStr}) ━━━\n`);
 
     wsServer.broadcast({ type: 'run-completed', runId: run.id, results: {} });
 
@@ -480,6 +507,7 @@ export async function startAgent() {
   function handleStopRun(msg, reply) {
     const current = runQueue.getCurrent();
     if (current && current.id === msg.runId) {
+      info(`  ■ Run stopped by user`);
       if (activeBridge) {
         activeBridge.kill();
         activeBridge = null;
