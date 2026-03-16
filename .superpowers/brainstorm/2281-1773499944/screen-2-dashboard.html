@@ -1,0 +1,110 @@
+<h2>Screen 2: Dashboard (Home)</h2>
+<p class="subtitle">The main hub after login — everything at a glance</p>
+
+<div class="mockup">
+  <div class="mockup-header">nightytidy.com/dashboard</div>
+  <div class="mockup-body" style="padding:0;">
+
+    <!-- Top bar -->
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 20px; border-bottom:1px solid rgba(255,255,255,0.1);">
+      <div style="font-weight:bold; font-size:1.1em;">&#x1f9f9; NightyTidy</div>
+      <div style="display:flex; align-items:center; gap:16px;">
+        <div style="display:flex; align-items:center; gap:6px;">
+          <div style="width:8px; height:8px; border-radius:50%; background:#22c55e;"></div>
+          <span style="color:#94a3b8; font-size:0.85em;">Agent connected</span>
+        </div>
+        <div style="color:#94a3b8; font-size:0.85em;">Steve &#x25BE;</div>
+      </div>
+    </div>
+
+    <div style="display:flex; min-height:500px;">
+
+      <!-- Sidebar -->
+      <div style="width:200px; border-right:1px solid rgba(255,255,255,0.1); padding:16px 12px;">
+        <div style="padding:8px 12px; background:rgba(59,130,246,0.15); border-radius:6px; margin-bottom:4px; font-size:0.9em; color:#93c5fd;">&#x1f3e0; Dashboard</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f4c1; Projects</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f4cb; Queue</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x23f0; Schedules</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f4ca; Analytics</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x2699;&#xfe0f; Settings</div>
+      </div>
+
+      <!-- Main content -->
+      <div style="flex:1; padding:20px;">
+
+        <!-- Active Run Banner -->
+        <div style="background:rgba(59,130,246,0.1); border:1px solid rgba(59,130,246,0.3); border-radius:8px; padding:14px 18px; margin-bottom:20px; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-weight:bold; font-size:0.95em;">&#x26a1; Active Run: PRDStack</div>
+            <div style="color:#94a3b8; font-size:0.85em;">Step 14/33 — Security Audit &bull; 45 min elapsed &bull; $3.28</div>
+          </div>
+          <div style="background:rgba(59,130,246,0.2); padding:6px 14px; border-radius:6px; font-size:0.85em; cursor:pointer;">View Live</div>
+        </div>
+
+        <!-- Project Cards -->
+        <div style="font-weight:bold; margin-bottom:12px;">Projects</div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:24px;">
+
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:16px; cursor:pointer;">
+            <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:8px;">
+              <div style="font-weight:bold;">PRDStack</div>
+              <div style="font-size:0.75em; background:rgba(59,130,246,0.2); color:#93c5fd; padding:2px 8px; border-radius:4px;">Running</div>
+            </div>
+            <div style="color:#94a3b8; font-size:0.85em; margin-bottom:4px;">Last run: Today, 2:00 AM — 28/33 passed</div>
+            <div style="color:#94a3b8; font-size:0.85em;">Next scheduled: Tomorrow, 2:00 AM</div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:16px; cursor:pointer;">
+            <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:8px;">
+              <div style="font-weight:bold;">SteadySteps</div>
+              <div style="font-size:0.75em; background:rgba(34,197,94,0.2); color:#86efac; padding:2px 8px; border-radius:4px;">Idle</div>
+            </div>
+            <div style="color:#94a3b8; font-size:0.85em; margin-bottom:4px;">Last run: Mar 12 — 33/33 passed</div>
+            <div style="color:#94a3b8; font-size:0.85em;">No schedule set</div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:16px; cursor:pointer;">
+            <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:8px;">
+              <div style="font-weight:bold;">Image Storm</div>
+              <div style="font-size:0.75em; background:rgba(234,179,8,0.2); color:#fde047; padding:2px 8px; border-radius:4px;">Queued</div>
+            </div>
+            <div style="color:#94a3b8; font-size:0.85em; margin-bottom:4px;">Last run: Mar 10 — 20/25 passed</div>
+            <div style="color:#94a3b8; font-size:0.85em;">Queued: runs after PRDStack</div>
+          </div>
+
+          <div style="background:rgba(255,255,255,0.03); border:1px dashed rgba(255,255,255,0.15); border-radius:8px; padding:16px; cursor:pointer; display:flex; align-items:center; justify-content:center; color:#94a3b8;">
+            + Add Project
+          </div>
+
+        </div>
+
+        <!-- Queue -->
+        <div style="font-weight:bold; margin-bottom:12px;">Run Queue</div>
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; overflow:hidden; margin-bottom:24px;">
+          <div style="display:flex; align-items:center; padding:10px 16px; border-bottom:1px solid rgba(255,255,255,0.05);">
+            <div style="width:20px; color:#94a3b8; font-size:0.8em;">1</div>
+            <div style="flex:1; font-size:0.9em;"><span style="color:#93c5fd;">&#x26a1;</span> PRDStack — Steps 1-33 <span style="color:#94a3b8; font-size:0.8em;">(running, step 14)</span></div>
+            <div style="color:#94a3b8; font-size:0.8em;">45 min</div>
+          </div>
+          <div style="display:flex; align-items:center; padding:10px 16px; border-bottom:1px solid rgba(255,255,255,0.05);">
+            <div style="width:20px; color:#94a3b8; font-size:0.8em;">2</div>
+            <div style="flex:1; font-size:0.9em;"><span style="color:#fde047;">&#x23f3;</span> Image Storm — Steps 1,5,8,13,22 <span style="color:#94a3b8; font-size:0.8em;">(waiting)</span></div>
+            <div style="color:#94a3b8; font-size:0.8em; cursor:pointer;">&#x2195; &#x2716;</div>
+          </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div style="font-weight:bold; margin-bottom:12px;">Recent Activity</div>
+        <div style="font-size:0.85em; color:#94a3b8;">
+          <div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05);">&#x2705; <strong>PRDStack</strong> step 13 "Code Elegance" completed — 2 min ago</div>
+          <div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05);">&#x2705; <strong>PRDStack</strong> step 12 "Dead Code Removal" completed — 8 min ago</div>
+          <div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05);">&#x274c; <strong>PRDStack</strong> step 11 "Performance Optimization" failed (rate limit) — retrying — 12 min ago</div>
+          <div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05);">&#x1f552; <strong>Image Storm</strong> queued for after current run — 15 min ago</div>
+          <div style="padding:6px 0;">&#x1f3c1; <strong>SteadySteps</strong> run completed: 33/33 passed, $8.40 — yesterday</div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>

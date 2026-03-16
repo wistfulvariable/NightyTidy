@@ -17,6 +17,11 @@ function stripShebang() {
 export default defineConfig({
   plugins: [stripShebang()],
   test: {
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/.worktrees/**',
+    ],
     coverage: {
       include: ['src/**'],
       exclude: ['src/dashboard-standalone.js', 'src/dashboard-tui.js'],

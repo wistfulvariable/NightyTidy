@@ -1,0 +1,175 @@
+<h2>Screen 4: Run Setup</h2>
+<p class="subtitle">Step selection with categories, presets, smart recommendations, and cost estimates</p>
+
+<div class="mockup">
+  <div class="mockup-header">nightytidy.com/projects/prdstack/new-run</div>
+  <div class="mockup-body" style="padding:0;">
+
+    <!-- Top bar -->
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 20px; border-bottom:1px solid rgba(255,255,255,0.1);">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div style="font-weight:bold; font-size:1.1em;">&#x1f9f9; NightyTidy</div>
+        <span style="color:#94a3b8;">/</span>
+        <span>PRDStack</span>
+        <span style="color:#94a3b8;">/</span>
+        <span style="font-weight:bold;">New Run</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <div style="width:8px; height:8px; border-radius:50%; background:#22c55e;"></div>
+        <span style="color:#94a3b8; font-size:0.85em;">Agent connected</span>
+      </div>
+    </div>
+
+    <div style="display:flex; min-height:650px;">
+
+      <!-- Sidebar -->
+      <div style="width:200px; border-right:1px solid rgba(255,255,255,0.1); padding:16px 12px;">
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f3e0; Dashboard</div>
+        <div style="padding:8px 12px; background:rgba(59,130,246,0.15); border-radius:6px; margin-bottom:4px; font-size:0.9em; color:#93c5fd;">&#x1f4c1; Projects</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f4cb; Queue</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x23f0; Schedules</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f4ca; Analytics</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x2699;&#xfe0f; Settings</div>
+      </div>
+
+      <!-- Main content -->
+      <div style="flex:1; padding:20px; overflow-y:auto;">
+
+        <!-- Preset loader -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <div style="font-size:1.2em; font-weight:bold;">Select Steps</div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <select style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); border-radius:6px; padding:6px 12px; color:white; font-size:0.85em;">
+              <option>Load Preset...</option>
+              <option>&#x2B50; Quick Scan (5 steps)</option>
+              <option>&#x1f512; Security Focus (4 steps)</option>
+              <option>&#x1f680; Full Sweep (33 steps)</option>
+            </select>
+            <div style="color:#94a3b8; font-size:0.85em; cursor:pointer;">Select All</div>
+            <div style="color:#94a3b8; font-size:0.85em;">|</div>
+            <div style="color:#94a3b8; font-size:0.85em; cursor:pointer;">None</div>
+          </div>
+        </div>
+
+        <!-- Smart recommendation banner -->
+        <div style="background:rgba(168,85,247,0.1); border:1px solid rgba(168,85,247,0.3); border-radius:8px; padding:10px 14px; margin-bottom:16px; display:flex; align-items:center; gap:10px; font-size:0.85em;">
+          <span style="font-size:1.1em;">&#x1f4a1;</span>
+          <span style="color:#c4b5fd;"><strong>Recommended for Node.js projects:</strong> Steps 1, 2, 4, 8, 10, 13, 14, 22. Based on best results from similar codebases.</span>
+          <span style="color:#a78bfa; cursor:pointer; white-space:nowrap;">Apply</span>
+        </div>
+
+        <!-- Category: Code Quality -->
+        <div style="margin-bottom:16px;">
+          <div style="font-size:0.75em; text-transform:uppercase; letter-spacing:1px; color:#64748b; margin-bottom:8px; padding-left:4px;">Code Quality</div>
+          <div style="display:flex; flex-direction:column; gap:4px;">
+
+            <label style="display:flex; align-items:center; gap:10px; padding:8px 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:6px; cursor:pointer;">
+              <input type="checkbox" checked style="accent-color:#3b82f6; width:16px; height:16px;">
+              <div style="flex:1;">
+                <span style="font-size:0.9em;">1. Documentation</span>
+                <span style="font-size:0.75em; color:#a78bfa; margin-left:6px;">&#x2605; recommended</span>
+              </div>
+              <span style="color:#94a3b8; font-size:0.8em;">~$0.15</span>
+            </label>
+
+            <label style="display:flex; align-items:center; gap:10px; padding:8px 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:6px; cursor:pointer;">
+              <input type="checkbox" checked style="accent-color:#3b82f6; width:16px; height:16px;">
+              <div style="flex:1;">
+                <span style="font-size:0.9em;">2. Test Coverage</span>
+                <span style="font-size:0.75em; color:#a78bfa; margin-left:6px;">&#x2605; recommended</span>
+              </div>
+              <span style="color:#94a3b8; font-size:0.8em;">~$0.18</span>
+            </label>
+
+            <label style="display:flex; align-items:center; gap:10px; padding:8px 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:6px; cursor:pointer;">
+              <input type="checkbox" style="accent-color:#3b82f6; width:16px; height:16px;">
+              <div style="flex:1;">
+                <span style="font-size:0.9em;">3. Error Handling</span>
+              </div>
+              <span style="color:#94a3b8; font-size:0.8em;">~$0.12</span>
+            </label>
+
+            <label style="display:flex; align-items:center; gap:10px; padding:8px 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:6px; cursor:pointer;">
+              <input type="checkbox" checked style="accent-color:#3b82f6; width:16px; height:16px;">
+              <div style="flex:1;">
+                <span style="font-size:0.9em;">4. Code Consistency</span>
+                <span style="font-size:0.75em; color:#a78bfa; margin-left:6px;">&#x2605; recommended</span>
+              </div>
+              <span style="color:#94a3b8; font-size:0.8em;">~$0.10</span>
+            </label>
+
+          </div>
+        </div>
+
+        <!-- Category: Security -->
+        <div style="margin-bottom:16px;">
+          <div style="font-size:0.75em; text-transform:uppercase; letter-spacing:1px; color:#64748b; margin-bottom:8px; padding-left:4px;">Security</div>
+          <div style="display:flex; flex-direction:column; gap:4px;">
+
+            <label style="display:flex; align-items:center; gap:10px; padding:8px 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:6px; cursor:pointer;">
+              <input type="checkbox" checked style="accent-color:#3b82f6; width:16px; height:16px;">
+              <div style="flex:1;">
+                <span style="font-size:0.9em;">8. Security Audit</span>
+                <span style="font-size:0.75em; color:#a78bfa; margin-left:6px;">&#x2605; recommended</span>
+              </div>
+              <span style="color:#94a3b8; font-size:0.8em;">~$0.20</span>
+            </label>
+
+            <label style="display:flex; align-items:center; gap:10px; padding:8px 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:6px; cursor:pointer;">
+              <input type="checkbox" style="accent-color:#3b82f6; width:16px; height:16px;">
+              <div style="flex:1;">
+                <span style="font-size:0.9em;">14. Dependency Audit</span>
+              </div>
+              <span style="color:#94a3b8; font-size:0.8em;">~$0.08</span>
+            </label>
+
+          </div>
+        </div>
+
+        <!-- Category: Testing -->
+        <div style="margin-bottom:16px;">
+          <div style="font-size:0.75em; text-transform:uppercase; letter-spacing:1px; color:#64748b; margin-bottom:8px; padding-left:4px;">Testing</div>
+          <div style="display:flex; flex-direction:column; gap:4px;">
+
+            <label style="display:flex; align-items:center; gap:10px; padding:8px 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:6px; cursor:pointer;">
+              <input type="checkbox" checked style="accent-color:#3b82f6; width:16px; height:16px;">
+              <div style="flex:1;">
+                <span style="font-size:0.9em;">10. Test Quality</span>
+                <span style="font-size:0.75em; color:#a78bfa; margin-left:6px;">&#x2605; recommended</span>
+              </div>
+              <span style="color:#94a3b8; font-size:0.8em;">~$0.15</span>
+            </label>
+
+            <label style="display:flex; align-items:center; gap:10px; padding:8px 12px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:6px; cursor:pointer;">
+              <input type="checkbox" style="accent-color:#3b82f6; width:16px; height:16px;">
+              <div style="flex:1;">
+                <span style="font-size:0.9em;">11. Integration Tests</span>
+              </div>
+              <span style="color:#94a3b8; font-size:0.8em;">~$0.14</span>
+            </label>
+
+          </div>
+        </div>
+
+        <!-- More categories collapsed -->
+        <div style="color:#94a3b8; font-size:0.85em; margin-bottom:20px; cursor:pointer;">
+          + Show more: Strategic (6 steps), Infrastructure (4 steps), Frontend (3 steps), Ops (5 steps)
+        </div>
+
+        <!-- Bottom bar: summary + start -->
+        <div style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:14px 18px; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-size:0.95em;"><strong>6 steps</strong> selected</div>
+            <div style="color:#94a3b8; font-size:0.85em;">Est. cost: $0.86 &bull; Est. time: ~55 min &bull; Timeout: <input type="number" value="45" style="width:40px; background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.15); border-radius:4px; color:white; text-align:center; font-size:0.9em;"> min/step</div>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <div style="color:#94a3b8; font-size:0.85em; cursor:pointer;">Save as Preset</div>
+            <div style="background:#238636; padding:10px 24px; border-radius:6px; cursor:pointer; font-weight:bold;">&#x25B6; Start Run</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>

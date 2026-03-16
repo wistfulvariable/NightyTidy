@@ -1,0 +1,62 @@
+<h2>NightyTidy Web App — Screen Map</h2>
+<p class="subtitle">7 main screens. Click to select the ones you'd like to discuss further.</p>
+
+<div class="options" data-multiselect>
+
+  <div class="option" data-choice="landing" onclick="toggleSelect(this)">
+    <div class="letter">1</div>
+    <div class="content">
+      <h3>Landing / Login</h3>
+      <p><strong>nightytidy.com</strong> — marketing hero + "Sign in with GitHub" button. After auth, redirects to Dashboard. First-time users see agent install instructions.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="dashboard" onclick="toggleSelect(this)">
+    <div class="letter">2</div>
+    <div class="content">
+      <h3>Dashboard (Home)</h3>
+      <p><strong>Agent status</strong> (connected/disconnected) at top. <strong>Project cards</strong> showing last run, next scheduled run, quick-launch button. <strong>Active runs</strong> panel with live progress. <strong>Run queue</strong> with drag-to-reorder. Webhook feed showing recent events from all projects.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="project" onclick="toggleSelect(this)">
+    <div class="letter">3</div>
+    <div class="content">
+      <h3>Project Detail</h3>
+      <p>Click a project card to see: <strong>Run history</strong> table (date, steps, pass/fail, cost, duration). <strong>Step presets</strong> (save/load step combos). <strong>Schedule config</strong> (cron picker). <strong>Webhook config</strong> (add Slack/Discord/custom URLs). <strong>Analytics charts</strong> (cost trend, improvement rate, most valuable steps). <strong>Start New Run</strong> button.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="run-setup" onclick="toggleSelect(this)">
+    <div class="letter">4</div>
+    <div class="content">
+      <h3>Run Setup</h3>
+      <p><strong>Step selector</strong> — checkboxes for all 33 steps, grouped by category (Testing, Code Quality, Ops, Frontend, Infrastructure, Strategic). Step descriptions on hover. <strong>Load preset</strong> dropdown. <strong>Save as preset</strong> option. <strong>Timeout</strong> setting. <strong>Estimated cost range</strong> based on history. <strong>Smart recommendations</strong> badge on suggested steps. "Start Run" button.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="run-live" onclick="toggleSelect(this)">
+    <div class="letter">5</div>
+    <div class="content">
+      <h3>Live Run View</h3>
+      <p><strong>Progress bar</strong> with step count. <strong>Current step</strong> with summarized activity feed ("Editing README.md... Adding tests to utils.test.js..."). <strong>Toggle to raw output</strong> panel (full Claude Code stream). <strong>Step list</strong> with checkmarks/X/spinner. <strong>Live cost counter</strong>. <strong>Pause / Skip Step / Stop Run</strong> buttons. Rate-limit overlay with countdown + "Resume Now".</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="results" onclick="toggleSelect(this)">
+    <div class="letter">6</div>
+    <div class="content">
+      <h3>Run Results</h3>
+      <p><strong>Summary stats</strong> (steps passed/failed, total cost, duration). <strong>Diff viewer</strong> — syntax-highlighted file-by-file diff of all changes. <strong>Step detail cards</strong> (expand to see what each step did). <strong>Action buttons</strong>: "Merge to main", "Create GitHub PR", "Rollback Everything", "Download Report". <strong>Full report</strong> (rendered NIGHTYTIDY-REPORT markdown).</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="settings" onclick="toggleSelect(this)">
+    <div class="letter">7</div>
+    <div class="content">
+      <h3>Settings</h3>
+      <p><strong>Account</strong> — GitHub profile, sign out. <strong>Agent</strong> — connection info, reconnect instructions. <strong>Defaults</strong> — default timeout, default steps, log level. <strong>Notifications</strong> — global webhook endpoints, notification preferences. <strong>Appearance</strong> — dark/light theme toggle.</p>
+    </div>
+  </div>
+
+</div>

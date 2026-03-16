@@ -23,6 +23,27 @@ vi.mock('child_process', () => ({
   spawn: vi.fn(() => ({ unref: vi.fn() })),
 }));
 
+/**
+ * Poll for a progress file to contain specific content, with a timeout.
+ * Replaces arbitrary setTimeout delays for throttle-based tests.
+ * @param {string} filePath - Path to the progress JSON file
+ * @param {function} predicate - Function that receives parsed JSON and returns true when ready
+ * @param {number} timeoutMs - Maximum wait time
+ * @param {number} intervalMs - Polling interval
+ */
+async function waitForProgressFile(filePath, predicate = () => true, timeoutMs = 3000, intervalMs = 50) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const content = await readFile(filePath, 'utf8');
+      const parsed = JSON.parse(content);
+      if (predicate(parsed)) return parsed;
+    } catch { /* file not ready yet */ }
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  throw new Error(`Progress file condition not met within ${timeoutMs}ms: ${filePath}`);
+}
+
 function makeInitialState(overrides = {}) {
   return {
     status: 'starting',
@@ -85,12 +106,9 @@ describe('broadcastOutput buffer overflow', () => {
     // Broadcast output — this triggers the throttle mechanism
     mod.broadcastOutput('first chunk');
 
-    // Wait for the throttle timer to fire (500ms + buffer)
-    await new Promise(r => setTimeout(r, 700));
-
-    // The progress file should contain the output
+    // Poll for the throttled write to include the output
     const progressFile = path.join(tempDir, 'nightytidy-progress.json');
-    const content = JSON.parse(await readFile(progressFile, 'utf8'));
+    const content = await waitForProgressFile(progressFile, c => c.currentStepOutput === 'first chunk');
     expect(content.currentStepOutput).toBe('first chunk');
   });
 
@@ -104,11 +122,9 @@ describe('broadcastOutput buffer overflow', () => {
     mod.broadcastOutput('chunk1');
     mod.broadcastOutput('chunk2');
 
-    // Wait for the throttle timer to fire
-    await new Promise(r => setTimeout(r, 700));
-
+    // Poll for the throttled write to include both chunks
     const progressFile = path.join(tempDir, 'nightytidy-progress.json');
-    const content = JSON.parse(await readFile(progressFile, 'utf8'));
+    const content = await waitForProgressFile(progressFile, c => c.currentStepOutput === 'chunk1chunk2');
     // Both chunks should be in the buffer
     expect(content.currentStepOutput).toBe('chunk1chunk2');
   });
@@ -137,15 +153,15 @@ describe('clearOutputBuffer with state', () => {
     });
 
     mod.broadcastOutput('some output');
-    // Wait for throttle to write
-    await new Promise(r => setTimeout(r, 700));
+    // Poll for the throttled write to include the output
+    const progressFile = path.join(tempDir, 'nightytidy-progress.json');
+    await waitForProgressFile(progressFile, c => c.currentStepOutput === 'some output');
 
     mod.clearOutputBuffer();
 
     // Update dashboard to flush state — the output should be gone
     mod.updateDashboard(state);
 
-    const progressFile = path.join(tempDir, 'nightytidy-progress.json');
     const content = JSON.parse(await readFile(progressFile, 'utf8'));
     expect(content.currentStepOutput).toBeUndefined();
   });
