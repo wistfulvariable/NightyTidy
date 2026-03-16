@@ -290,6 +290,8 @@ function createOutputHandler(progress, projectDir) {
 
   return (chunk) => {
     buffer += chunk;
+    // Forward to stdout so CLI bridge / agent can stream it in real time
+    process.stdout.write(chunk);
     if (buffer.length > OUTPUT_BUFFER_SIZE) {
       buffer = buffer.slice(buffer.length - OUTPUT_BUFFER_SIZE);
     }
