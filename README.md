@@ -309,6 +309,18 @@ GitHub Actions on every push/PR to master:
 | GUI Markdown | marked v17 (vendored UMD) |
 | Testing | Vitest v3 |
 
+## Web App (nightytidy.com)
+
+NightyTidy has a web dashboard at [nightytidy.com](https://nightytidy.com) for remote monitoring, scheduling, and analytics. Start the local agent to connect:
+
+```bash
+npx nightytidy agent
+```
+
+The agent runs on your machine at `127.0.0.1:48372`. The web app connects to it via WebSocket — your code never leaves your machine. Firebase handles authentication and stores run history so you can check status from any browser.
+
+**Source**: [nightytidy-web](https://github.com/dorianspitz23/nightytidy-web)
+
 ## License
 
 [MIT](LICENSE)
