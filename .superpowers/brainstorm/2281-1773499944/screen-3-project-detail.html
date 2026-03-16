@@ -1,0 +1,163 @@
+<h2>Screen 3: Project Detail</h2>
+<p class="subtitle">Deep dive into a single project — history, presets, schedule, analytics</p>
+
+<div class="mockup">
+  <div class="mockup-header">nightytidy.com/projects/prdstack</div>
+  <div class="mockup-body" style="padding:0;">
+
+    <!-- Top bar (same as dashboard) -->
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 20px; border-bottom:1px solid rgba(255,255,255,0.1);">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div style="font-weight:bold; font-size:1.1em;">&#x1f9f9; NightyTidy</div>
+        <span style="color:#94a3b8;">/</span>
+        <span style="font-weight:bold;">PRDStack</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:16px;">
+        <div style="display:flex; align-items:center; gap:6px;">
+          <div style="width:8px; height:8px; border-radius:50%; background:#22c55e;"></div>
+          <span style="color:#94a3b8; font-size:0.85em;">Agent connected</span>
+        </div>
+        <div style="color:#94a3b8; font-size:0.85em;">Steve &#x25BE;</div>
+      </div>
+    </div>
+
+    <div style="display:flex; min-height:600px;">
+
+      <!-- Sidebar -->
+      <div style="width:200px; border-right:1px solid rgba(255,255,255,0.1); padding:16px 12px;">
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f3e0; Dashboard</div>
+        <div style="padding:8px 12px; background:rgba(59,130,246,0.15); border-radius:6px; margin-bottom:4px; font-size:0.9em; color:#93c5fd;">&#x1f4c1; Projects</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f4cb; Queue</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x23f0; Schedules</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f4ca; Analytics</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x2699;&#xfe0f; Settings</div>
+      </div>
+
+      <!-- Main content -->
+      <div style="flex:1; padding:20px; overflow-y:auto;">
+
+        <!-- Project header -->
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+          <div>
+            <div style="font-size:1.3em; font-weight:bold;">PRDStack</div>
+            <div style="color:#94a3b8; font-size:0.85em; font-family:monospace;">C:\Users\steve\...\PRDStack\prdstack</div>
+          </div>
+          <div style="background:#238636; padding:8px 20px; border-radius:6px; cursor:pointer; font-size:0.95em;">&#x25B6; Start New Run</div>
+        </div>
+
+        <!-- Stats row -->
+        <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:24px;">
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:14px; text-align:center;">
+            <div style="font-size:1.6em; font-weight:bold;">12</div>
+            <div style="color:#94a3b8; font-size:0.8em;">Total Runs</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:14px; text-align:center;">
+            <div style="font-size:1.6em; font-weight:bold;">91%</div>
+            <div style="color:#94a3b8; font-size:0.8em;">Avg Pass Rate</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:14px; text-align:center;">
+            <div style="font-size:1.6em; font-weight:bold;">$47.23</div>
+            <div style="color:#94a3b8; font-size:0.8em;">Total Cost</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:14px; text-align:center;">
+            <div style="font-size:1.6em; font-weight:bold;">847</div>
+            <div style="color:#94a3b8; font-size:0.8em;">Improvements Made</div>
+          </div>
+        </div>
+
+        <!-- Tabs -->
+        <div style="display:flex; gap:4px; border-bottom:1px solid rgba(255,255,255,0.1); margin-bottom:20px;">
+          <div style="padding:8px 16px; border-bottom:2px solid #3b82f6; color:#93c5fd; font-size:0.9em;">History</div>
+          <div style="padding:8px 16px; color:#94a3b8; font-size:0.9em; cursor:pointer;">Presets</div>
+          <div style="padding:8px 16px; color:#94a3b8; font-size:0.9em; cursor:pointer;">Schedule</div>
+          <div style="padding:8px 16px; color:#94a3b8; font-size:0.9em; cursor:pointer;">Webhooks</div>
+          <div style="padding:8px 16px; color:#94a3b8; font-size:0.9em; cursor:pointer;">Analytics</div>
+        </div>
+
+        <!-- Run History Table -->
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; overflow:hidden;">
+          <!-- Header -->
+          <div style="display:grid; grid-template-columns:140px 80px 90px 80px 80px 1fr; padding:10px 16px; border-bottom:1px solid rgba(255,255,255,0.1); font-size:0.8em; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">
+            <div>Date</div>
+            <div>Steps</div>
+            <div>Result</div>
+            <div>Cost</div>
+            <div>Duration</div>
+            <div></div>
+          </div>
+          <!-- Row 1 -->
+          <div style="display:grid; grid-template-columns:140px 80px 90px 80px 80px 1fr; padding:10px 16px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:0.9em; align-items:center;">
+            <div>Today, 2:00 AM</div>
+            <div>33/33</div>
+            <div><span style="color:#22c55e;">28 passed</span> <span style="color:#ef4444;">5 failed</span></div>
+            <div>$4.12</div>
+            <div>3h 20m</div>
+            <div style="text-align:right;"><span style="color:#93c5fd; cursor:pointer; font-size:0.85em;">View Report</span></div>
+          </div>
+          <!-- Row 2 -->
+          <div style="display:grid; grid-template-columns:140px 80px 90px 80px 80px 1fr; padding:10px 16px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:0.9em; align-items:center;">
+            <div>Mar 12, 2:00 AM</div>
+            <div>33/33</div>
+            <div><span style="color:#22c55e;">30 passed</span> <span style="color:#ef4444;">3 failed</span></div>
+            <div>$3.87</div>
+            <div>2h 55m</div>
+            <div style="text-align:right;"><span style="color:#93c5fd; cursor:pointer; font-size:0.85em;">View Report</span></div>
+          </div>
+          <!-- Row 3 -->
+          <div style="display:grid; grid-template-columns:140px 80px 90px 80px 80px 1fr; padding:10px 16px; border-bottom:1px solid rgba(255,255,255,0.05); font-size:0.9em; align-items:center;">
+            <div>Mar 10, 9:15 PM</div>
+            <div>10/33</div>
+            <div><span style="color:#22c55e;">9 passed</span> <span style="color:#ef4444;">1 failed</span></div>
+            <div>$1.20</div>
+            <div>52m</div>
+            <div style="text-align:right;"><span style="color:#93c5fd; cursor:pointer; font-size:0.85em;">View Report</span></div>
+          </div>
+          <!-- Row 4 -->
+          <div style="display:grid; grid-template-columns:140px 80px 90px 80px 80px 1fr; padding:10px 16px; font-size:0.9em; align-items:center;">
+            <div>Mar 8, 2:00 AM</div>
+            <div>33/33</div>
+            <div><span style="color:#22c55e;">31 passed</span> <span style="color:#ef4444;">2 failed</span></div>
+            <div>$3.95</div>
+            <div>3h 10m</div>
+            <div style="text-align:right;"><span style="color:#93c5fd; cursor:pointer; font-size:0.85em;">View Report</span></div>
+          </div>
+        </div>
+
+        <!-- Presets tab preview (collapsed) -->
+        <div style="margin-top:24px; font-weight:bold; margin-bottom:12px;">Step Presets</div>
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:12px 16px; cursor:pointer;">
+            <div style="font-size:0.9em; font-weight:bold;">&#x2B50; Quick Scan</div>
+            <div style="color:#94a3b8; font-size:0.8em;">Steps 1, 2, 8, 10, 13 &bull; ~45 min</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:12px 16px; cursor:pointer;">
+            <div style="font-size:0.9em; font-weight:bold;">&#x1f512; Security Focus</div>
+            <div style="color:#94a3b8; font-size:0.8em;">Steps 8, 14, 15, 22 &bull; ~30 min</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:12px 16px; cursor:pointer;">
+            <div style="font-size:0.9em; font-weight:bold;">&#x1f680; Full Sweep</div>
+            <div style="color:#94a3b8; font-size:0.8em;">All 33 steps &bull; ~3.5 hrs</div>
+          </div>
+          <div style="background:rgba(255,255,255,0.03); border:1px dashed rgba(255,255,255,0.15); border-radius:8px; padding:12px 16px; cursor:pointer; color:#94a3b8;">
+            + New Preset
+          </div>
+        </div>
+
+        <!-- Schedule preview -->
+        <div style="margin-top:24px; font-weight:bold; margin-bottom:12px;">Schedule</div>
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; max-width:500px;">
+          <div>
+            <div style="font-size:0.9em;">&#x23f0; Every day at 2:00 AM</div>
+            <div style="color:#94a3b8; font-size:0.8em;">Using preset: Full Sweep &bull; Next run: Tomorrow</div>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <div style="color:#93c5fd; font-size:0.85em; cursor:pointer;">Edit</div>
+            <div style="color:#ef4444; font-size:0.85em; cursor:pointer;">Disable</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>

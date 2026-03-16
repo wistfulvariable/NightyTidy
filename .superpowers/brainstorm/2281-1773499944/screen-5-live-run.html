@@ -1,0 +1,210 @@
+<h2>Screen 5: Live Run View</h2>
+<p class="subtitle">Real-time execution monitoring with summarized + raw output toggle</p>
+
+<div class="mockup">
+  <div class="mockup-header">nightytidy.com/projects/prdstack/run/2026-03-14</div>
+  <div class="mockup-body" style="padding:0;">
+
+    <!-- Top bar -->
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 20px; border-bottom:1px solid rgba(255,255,255,0.1);">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div style="font-weight:bold; font-size:1.1em;">&#x1f9f9; NightyTidy</div>
+        <span style="color:#94a3b8;">/</span>
+        <span>PRDStack</span>
+        <span style="color:#94a3b8;">/</span>
+        <span style="font-weight:bold;">Running</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <div style="width:8px; height:8px; border-radius:50%; background:#22c55e;"></div>
+        <span style="color:#94a3b8; font-size:0.85em;">Agent connected</span>
+      </div>
+    </div>
+
+    <div style="display:flex; min-height:600px;">
+
+      <!-- Sidebar -->
+      <div style="width:200px; border-right:1px solid rgba(255,255,255,0.1); padding:16px 12px;">
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f3e0; Dashboard</div>
+        <div style="padding:8px 12px; background:rgba(59,130,246,0.15); border-radius:6px; margin-bottom:4px; font-size:0.9em; color:#93c5fd;">&#x1f4c1; Projects</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f4cb; Queue</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x23f0; Schedules</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f4ca; Analytics</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x2699;&#xfe0f; Settings</div>
+      </div>
+
+      <!-- Main content -->
+      <div style="flex:1; display:flex; flex-direction:column;">
+
+        <!-- Progress header -->
+        <div style="padding:16px 20px; border-bottom:1px solid rgba(255,255,255,0.1);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <div style="font-size:1.1em; font-weight:bold;">Step 5 of 6 — Security Audit</div>
+            <div style="display:flex; gap:8px; align-items:center; font-size:0.85em; color:#94a3b8;">
+              <span>$0.68</span>
+              <span>&bull;</span>
+              <span>38 min elapsed</span>
+            </div>
+          </div>
+          <!-- Progress bar -->
+          <div style="background:rgba(255,255,255,0.1); border-radius:4px; height:8px; overflow:hidden;">
+            <div style="background:linear-gradient(90deg, #22c55e 0%, #22c55e 66%, #3b82f6 66%, #3b82f6 83%, rgba(255,255,255,0.1) 83%); height:100%; width:100%; border-radius:4px;"></div>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:0.75em; color:#64748b;">
+            <span>4 passed, 0 failed, 1 running, 1 remaining</span>
+            <span>Est. ~12 min left</span>
+          </div>
+        </div>
+
+        <!-- Content area: split between step list and output -->
+        <div style="flex:1; display:flex; overflow:hidden;">
+
+          <!-- Step list (left panel) -->
+          <div style="width:240px; border-right:1px solid rgba(255,255,255,0.1); overflow-y:auto; padding:8px 0;">
+
+            <div style="display:flex; align-items:center; gap:8px; padding:8px 16px; font-size:0.85em;">
+              <span style="color:#22c55e;">&#x2705;</span>
+              <span>1. Documentation</span>
+              <span style="margin-left:auto; color:#64748b; font-size:0.8em;">4m</span>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:8px; padding:8px 16px; font-size:0.85em;">
+              <span style="color:#22c55e;">&#x2705;</span>
+              <span>2. Test Coverage</span>
+              <span style="margin-left:auto; color:#64748b; font-size:0.8em;">8m</span>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:8px; padding:8px 16px; font-size:0.85em;">
+              <span style="color:#22c55e;">&#x2705;</span>
+              <span>4. Code Consistency</span>
+              <span style="margin-left:auto; color:#64748b; font-size:0.8em;">6m</span>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:8px; padding:8px 16px; font-size:0.85em;">
+              <span style="color:#22c55e;">&#x2705;</span>
+              <span>10. Test Quality</span>
+              <span style="margin-left:auto; color:#64748b; font-size:0.8em;">12m</span>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:8px; padding:8px 16px; font-size:0.85em; background:rgba(59,130,246,0.1); border-left:2px solid #3b82f6;">
+              <span style="color:#3b82f6;">&#x25B6;</span>
+              <span style="font-weight:bold;">8. Security Audit</span>
+              <span style="margin-left:auto; color:#64748b; font-size:0.8em;">8m...</span>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:8px; padding:8px 16px; font-size:0.85em; color:#64748b;">
+              <span>&#x25CB;</span>
+              <span>13. Code Elegance</span>
+            </div>
+
+          </div>
+
+          <!-- Output panel (right) -->
+          <div style="flex:1; display:flex; flex-direction:column; overflow:hidden;">
+
+            <!-- Output toggle -->
+            <div style="display:flex; gap:4px; padding:8px 16px; border-bottom:1px solid rgba(255,255,255,0.1);">
+              <div style="padding:4px 12px; background:rgba(59,130,246,0.15); border-radius:4px; font-size:0.8em; color:#93c5fd; cursor:pointer;">Summary</div>
+              <div style="padding:4px 12px; font-size:0.8em; color:#64748b; cursor:pointer;">Raw Output</div>
+            </div>
+
+            <!-- Summarized output -->
+            <div style="flex:1; overflow-y:auto; padding:12px 16px; font-size:0.85em;">
+
+              <div style="color:#94a3b8; margin-bottom:12px; font-size:0.8em;">Step 8: Security Audit</div>
+
+              <div style="display:flex; gap:8px; align-items:start; margin-bottom:10px;">
+                <span style="color:#3b82f6; font-size:0.9em; margin-top:2px;">&#x1f50d;</span>
+                <div>
+                  <div>Scanning for hardcoded secrets...</div>
+                  <div style="color:#64748b; font-size:0.85em;">Checked 47 files</div>
+                </div>
+              </div>
+
+              <div style="display:flex; gap:8px; align-items:start; margin-bottom:10px;">
+                <span style="color:#22c55e; font-size:0.9em; margin-top:2px;">&#x2705;</span>
+                <div>
+                  <div>No hardcoded secrets found</div>
+                </div>
+              </div>
+
+              <div style="display:flex; gap:8px; align-items:start; margin-bottom:10px;">
+                <span style="color:#3b82f6; font-size:0.9em; margin-top:2px;">&#x1f50d;</span>
+                <div>
+                  <div>Checking authentication middleware...</div>
+                  <div style="color:#64748b; font-size:0.85em;">Reviewing src/auth/middleware.js</div>
+                </div>
+              </div>
+
+              <div style="display:flex; gap:8px; align-items:start; margin-bottom:10px;">
+                <span style="color:#f59e0b; font-size:0.9em; margin-top:2px;">&#x270f;&#xfe0f;</span>
+                <div>
+                  <div>Fixing CSRF token validation</div>
+                  <div style="color:#64748b; font-size:0.85em;">Editing src/auth/middleware.js — added origin check</div>
+                </div>
+              </div>
+
+              <div style="display:flex; gap:8px; align-items:start; margin-bottom:10px;">
+                <span style="color:#f59e0b; font-size:0.9em; margin-top:2px;">&#x270f;&#xfe0f;</span>
+                <div>
+                  <div>Adding rate limiting to login endpoint</div>
+                  <div style="color:#64748b; font-size:0.85em;">Editing src/routes/auth.js — 5 attempts per minute</div>
+                </div>
+              </div>
+
+              <div style="display:flex; gap:8px; align-items:start; margin-bottom:10px;">
+                <span style="color:#3b82f6; font-size:0.9em; margin-top:2px;">&#x1f50d;</span>
+                <div>
+                  <div style="color:#94a3b8;">Checking SQL injection vectors...</div>
+                  <div style="display:flex; gap:4px; margin-top:4px;">
+                    <span style="display:inline-block; width:4px; height:4px; background:#3b82f6; border-radius:50%; animation-name:none; margin-top:6px;"></span>
+                    <span style="display:inline-block; width:4px; height:4px; background:#3b82f6; border-radius:50%; opacity:0.6; margin-top:6px;"></span>
+                    <span style="display:inline-block; width:4px; height:4px; background:#3b82f6; border-radius:50%; opacity:0.3; margin-top:6px;"></span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Action buttons -->
+            <div style="padding:10px 16px; border-top:1px solid rgba(255,255,255,0.1); display:flex; gap:8px;">
+              <div style="background:rgba(234,179,8,0.15); color:#fde047; padding:6px 14px; border-radius:6px; font-size:0.85em; cursor:pointer;">&#x23f8; Pause</div>
+              <div style="background:rgba(255,255,255,0.05); color:#94a3b8; padding:6px 14px; border-radius:6px; font-size:0.85em; cursor:pointer;">&#x23ed; Skip Step</div>
+              <div style="background:rgba(239,68,68,0.15); color:#fca5a5; padding:6px 14px; border-radius:6px; font-size:0.85em; cursor:pointer;">&#x23f9; Stop Run</div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Rate limit overlay -->
+<h2 style="margin-top:32px;">Screen 5b: Rate Limit Pause Overlay</h2>
+<p class="subtitle">Shown when Claude Code hits a usage limit</p>
+
+<div class="mockup">
+  <div class="mockup-header">nightytidy.com/projects/prdstack/run/2026-03-14 (paused)</div>
+  <div class="mockup-body" style="padding:40px; text-align:center; position:relative;">
+
+    <div style="position:absolute; inset:0; background:rgba(0,0,0,0.7);"></div>
+    <div style="position:relative; z-index:1; max-width:400px; margin:0 auto; background:#1e293b; border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:28px;">
+      <div style="font-size:2em; margin-bottom:8px;">&#x23f8;</div>
+      <div style="font-size:1.2em; font-weight:bold; margin-bottom:6px;">Usage Limit Reached</div>
+      <div style="color:#94a3b8; margin-bottom:20px; font-size:0.9em;">Claude Code hit a rate limit on step 5. Auto-resuming when the limit resets.</div>
+
+      <div style="font-size:2em; font-weight:bold; font-family:monospace; margin-bottom:20px; color:#93c5fd;">14:32</div>
+      <div style="color:#64748b; font-size:0.85em; margin-bottom:20px;">Estimated resume at 3:15 PM</div>
+
+      <div style="display:flex; gap:8px; justify-content:center;">
+        <div style="background:rgba(59,130,246,0.2); color:#93c5fd; padding:8px 18px; border-radius:6px; font-size:0.9em; cursor:pointer;">&#x25B6; Resume Now</div>
+        <div style="background:rgba(255,255,255,0.05); color:#94a3b8; padding:8px 18px; border-radius:6px; font-size:0.9em; cursor:pointer;">Finish Partial</div>
+      </div>
+
+      <div style="margin-top:16px; color:#64748b; font-size:0.8em;">You can close this page. The agent will resume automatically and send a webhook when complete.</div>
+    </div>
+
+  </div>
+</div>

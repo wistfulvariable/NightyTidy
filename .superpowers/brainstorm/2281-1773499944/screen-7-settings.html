@@ -1,0 +1,201 @@
+<h2>Screen 7: Settings</h2>
+<p class="subtitle">Account, agent, defaults, notifications, and appearance</p>
+
+<div class="mockup">
+  <div class="mockup-header">nightytidy.com/settings</div>
+  <div class="mockup-body" style="padding:0;">
+
+    <!-- Top bar -->
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 20px; border-bottom:1px solid rgba(255,255,255,0.1);">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div style="font-weight:bold; font-size:1.1em;">&#x1f9f9; NightyTidy</div>
+        <span style="color:#94a3b8;">/</span>
+        <span style="font-weight:bold;">Settings</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <div style="width:8px; height:8px; border-radius:50%; background:#22c55e;"></div>
+        <span style="color:#94a3b8; font-size:0.85em;">Agent connected</span>
+      </div>
+    </div>
+
+    <div style="display:flex; min-height:600px;">
+
+      <!-- Sidebar -->
+      <div style="width:200px; border-right:1px solid rgba(255,255,255,0.1); padding:16px 12px;">
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f3e0; Dashboard</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f4c1; Projects</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f4cb; Queue</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x23f0; Schedules</div>
+        <div style="padding:8px 12px; margin-bottom:4px; font-size:0.9em; color:#94a3b8;">&#x1f4ca; Analytics</div>
+        <div style="padding:8px 12px; background:rgba(59,130,246,0.15); border-radius:6px; margin-bottom:4px; font-size:0.9em; color:#93c5fd;">&#x2699;&#xfe0f; Settings</div>
+      </div>
+
+      <!-- Main content -->
+      <div style="flex:1; padding:20px; overflow-y:auto;">
+
+        <!-- Settings nav tabs -->
+        <div style="display:flex; gap:4px; border-bottom:1px solid rgba(255,255,255,0.1); margin-bottom:24px;">
+          <div style="padding:8px 16px; border-bottom:2px solid #3b82f6; color:#93c5fd; font-size:0.9em;">Account</div>
+          <div style="padding:8px 16px; color:#94a3b8; font-size:0.9em; cursor:pointer;">Agent</div>
+          <div style="padding:8px 16px; color:#94a3b8; font-size:0.9em; cursor:pointer;">Defaults</div>
+          <div style="padding:8px 16px; color:#94a3b8; font-size:0.9em; cursor:pointer;">Notifications</div>
+          <div style="padding:8px 16px; color:#94a3b8; font-size:0.9em; cursor:pointer;">Appearance</div>
+        </div>
+
+        <!-- Account tab -->
+        <div style="max-width:550px;">
+
+          <div style="font-size:1.1em; font-weight:bold; margin-bottom:16px;">Account</div>
+
+          <!-- GitHub profile -->
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:16px; margin-bottom:20px; display:flex; align-items:center; gap:14px;">
+            <div style="width:48px; height:48px; border-radius:50%; background:rgba(59,130,246,0.2); display:flex; align-items:center; justify-content:center; font-size:1.3em;">S</div>
+            <div style="flex:1;">
+              <div style="font-weight:bold;">steve</div>
+              <div style="color:#94a3b8; font-size:0.85em;">Connected via GitHub</div>
+            </div>
+            <div style="color:#ef4444; font-size:0.85em; cursor:pointer;">Sign Out</div>
+          </div>
+
+          <!-- Agent tab content (shown inline for mockup) -->
+          <div style="font-size:1.1em; font-weight:bold; margin-bottom:16px; margin-top:32px; padding-top:20px; border-top:1px solid rgba(255,255,255,0.08);">Agent</div>
+
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:16px; margin-bottom:12px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+              <div style="font-weight:bold; font-size:0.95em;">Connection Status</div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <div style="width:8px; height:8px; border-radius:50%; background:#22c55e;"></div>
+                <span style="color:#22c55e; font-size:0.85em;">Connected</span>
+              </div>
+            </div>
+            <div style="font-size:0.85em; color:#94a3b8; margin-bottom:4px;">Machine: <span style="color:white;">Steve-Desktop</span></div>
+            <div style="font-size:0.85em; color:#94a3b8; margin-bottom:4px;">Agent version: <span style="color:white;">1.0.0</span></div>
+            <div style="font-size:0.85em; color:#94a3b8; margin-bottom:4px;">Uptime: <span style="color:white;">3h 42m</span></div>
+            <div style="font-size:0.85em; color:#94a3b8;">WebSocket: <span style="color:white; font-family:monospace;">ws://localhost:54321</span></div>
+          </div>
+
+          <div style="background:rgba(59,130,246,0.05); border:1px solid rgba(59,130,246,0.2); border-radius:8px; padding:12px 16px; margin-bottom:20px; font-size:0.85em;">
+            <div style="color:#93c5fd; margin-bottom:4px;">Reconnect from another terminal:</div>
+            <div style="font-family:monospace; background:rgba(0,0,0,0.3); padding:6px 10px; border-radius:4px; margin-top:4px;">npx nightytidy agent</div>
+          </div>
+
+          <!-- Defaults tab content -->
+          <div style="font-size:1.1em; font-weight:bold; margin-bottom:16px; margin-top:32px; padding-top:20px; border-top:1px solid rgba(255,255,255,0.08);">Defaults</div>
+
+          <div style="margin-bottom:16px;">
+            <label style="display:block; font-size:0.85em; color:#94a3b8; margin-bottom:6px;">Default timeout per step</label>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <input type="number" value="45" style="width:70px; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); border-radius:6px; padding:8px 12px; color:white; font-size:0.9em;">
+              <span style="color:#94a3b8; font-size:0.85em;">minutes</span>
+            </div>
+          </div>
+
+          <div style="margin-bottom:16px;">
+            <label style="display:block; font-size:0.85em; color:#94a3b8; margin-bottom:6px;">Default step preset for new runs</label>
+            <select style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); border-radius:6px; padding:8px 12px; color:white; font-size:0.9em; width:220px;">
+              <option>No preset (manual selection)</option>
+              <option>Quick Scan (5 steps)</option>
+              <option>Security Focus (4 steps)</option>
+              <option selected>Full Sweep (33 steps)</option>
+            </select>
+          </div>
+
+          <div style="margin-bottom:16px;">
+            <label style="display:block; font-size:0.85em; color:#94a3b8; margin-bottom:6px;">Google Doc sync URL</label>
+            <input type="text" value="https://docs.google.com/document/d/e/2PACX-1v..." style="width:100%; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); border-radius:6px; padding:8px 12px; color:white; font-size:0.85em; font-family:monospace;">
+          </div>
+
+          <div style="margin-bottom:16px;">
+            <label style="display:block; font-size:0.85em; color:#94a3b8; margin-bottom:6px;">Log level</label>
+            <select style="background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.15); border-radius:6px; padding:8px 12px; color:white; font-size:0.9em; width:140px;">
+              <option>debug</option>
+              <option selected>info</option>
+              <option>warn</option>
+              <option>error</option>
+            </select>
+          </div>
+
+          <!-- Notifications tab content -->
+          <div style="font-size:1.1em; font-weight:bold; margin-bottom:16px; margin-top:32px; padding-top:20px; border-top:1px solid rgba(255,255,255,0.08);">Notifications</div>
+
+          <div style="margin-bottom:12px; font-size:0.85em; color:#94a3b8;">Global webhook endpoints (apply to all projects unless overridden)</div>
+
+          <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.1); border-radius:8px; overflow:hidden; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; padding:10px 16px; border-bottom:1px solid rgba(255,255,255,0.05); gap:10px;">
+              <div style="width:20px; text-align:center;">&#x1f9f9;</div>
+              <div style="flex:1; font-size:0.85em;">nightytidy.com dashboard <span style="color:#64748b;">(automatic)</span></div>
+              <div style="color:#22c55e; font-size:0.8em;">Active</div>
+            </div>
+            <div style="display:flex; align-items:center; padding:10px 16px; border-bottom:1px solid rgba(255,255,255,0.05); gap:10px;">
+              <div style="width:20px; text-align:center;">&#x1f4ac;</div>
+              <div style="flex:1; font-size:0.85em; font-family:monospace;">https://hooks.slack.com/services/T0.../B0...</div>
+              <div style="color:#93c5fd; font-size:0.8em; cursor:pointer;">Edit</div>
+              <div style="color:#ef4444; font-size:0.8em; cursor:pointer;">Remove</div>
+            </div>
+            <div style="display:flex; align-items:center; padding:10px 16px; gap:10px;">
+              <div style="width:20px; text-align:center;">&#x1f514;</div>
+              <div style="flex:1; font-size:0.85em; font-family:monospace;">https://ntfy.sh/steve-nightytidy</div>
+              <div style="color:#93c5fd; font-size:0.8em; cursor:pointer;">Edit</div>
+              <div style="color:#ef4444; font-size:0.8em; cursor:pointer;">Remove</div>
+            </div>
+          </div>
+
+          <div style="color:#93c5fd; font-size:0.85em; cursor:pointer; margin-bottom:20px;">+ Add webhook endpoint</div>
+
+          <div style="margin-bottom:16px;">
+            <label style="display:block; font-size:0.85em; color:#94a3b8; margin-bottom:8px;">Notify on:</label>
+            <div style="display:flex; flex-direction:column; gap:6px;">
+              <label style="display:flex; align-items:center; gap:8px; font-size:0.9em; cursor:pointer;">
+                <input type="checkbox" checked style="accent-color:#3b82f6;"> Run started
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; font-size:0.9em; cursor:pointer;">
+                <input type="checkbox" checked style="accent-color:#3b82f6;"> Run completed
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; font-size:0.9em; cursor:pointer;">
+                <input type="checkbox" checked style="accent-color:#3b82f6;"> Step failed
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; font-size:0.9em; cursor:pointer;">
+                <input type="checkbox" style="accent-color:#3b82f6;"> Each step completed
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; font-size:0.9em; cursor:pointer;">
+                <input type="checkbox" checked style="accent-color:#3b82f6;"> Rate limit hit
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; font-size:0.9em; cursor:pointer;">
+                <input type="checkbox" checked style="accent-color:#3b82f6;"> Scheduled run triggered
+              </label>
+            </div>
+          </div>
+
+          <!-- Appearance tab content -->
+          <div style="font-size:1.1em; font-weight:bold; margin-bottom:16px; margin-top:32px; padding-top:20px; border-top:1px solid rgba(255,255,255,0.08);">Appearance</div>
+
+          <div style="margin-bottom:16px;">
+            <label style="display:block; font-size:0.85em; color:#94a3b8; margin-bottom:8px;">Theme</label>
+            <div style="display:flex; gap:10px;">
+              <div style="background:rgba(59,130,246,0.15); border:2px solid #3b82f6; border-radius:8px; padding:12px 20px; cursor:pointer; text-align:center;">
+                <div style="font-size:1.2em; margin-bottom:2px;">&#x1f31a;</div>
+                <div style="font-size:0.85em;">Dark</div>
+              </div>
+              <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:12px 20px; cursor:pointer; text-align:center;">
+                <div style="font-size:1.2em; margin-bottom:2px;">&#x2600;&#xfe0f;</div>
+                <div style="font-size:0.85em;">Light</div>
+              </div>
+              <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.15); border-radius:8px; padding:12px 20px; cursor:pointer; text-align:center;">
+                <div style="font-size:1.2em; margin-bottom:2px;">&#x1f4bb;</div>
+                <div style="font-size:0.85em;">System</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Save button -->
+          <div style="margin-top:24px; padding-top:20px; border-top:1px solid rgba(255,255,255,0.08);">
+            <div style="background:#238636; display:inline-block; padding:10px 24px; border-radius:6px; cursor:pointer; font-size:0.95em;">Save Settings</div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
