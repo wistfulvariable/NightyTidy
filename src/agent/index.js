@@ -457,6 +457,7 @@ export async function startAgent() {
         const stepData = {
           number: stepNum,
           name: stepParsed.name || `Step ${stepNum}`,
+          status: 'completed',
           duration: stepParsed.duration || 0,
           cost: stepParsed.costUSD || 0,
           attempts: stepParsed.attempts || 1,
