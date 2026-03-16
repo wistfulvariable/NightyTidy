@@ -34,6 +34,15 @@ export async function startAgent() {
   let skipCurrentStep = false;
   let runOutputBuffer = '';  // Accumulated raw output for the current run
 
+  // Accumulated run state — survives page refreshes via get-run
+  let runProgress = {
+    stepList: [],       // [{ number, name, status, duration?, cost?, ... }]
+    completedCount: 0,
+    failedCount: 0,
+    totalCost: 0,
+    currentStepNum: null,
+  };
+
   // Command handler (async — some commands need await)
   const handleCommand = async (msg, reply) => {
     switch (msg.type) {
@@ -77,6 +86,12 @@ export async function startAgent() {
             steps: current.steps,
             startedAt: current.startedAt,
             rawOutput: runOutputBuffer,
+            // Accumulated progress for page refresh recovery
+            stepList: runProgress.stepList,
+            completedCount: runProgress.completedCount,
+            failedCount: runProgress.failedCount,
+            totalCost: runProgress.totalCost,
+            currentStepNum: runProgress.currentStepNum,
           });
         } else {
           reply({ type: 'run-state', runId: null, status: 'not_found' });
@@ -304,6 +319,7 @@ export async function startAgent() {
     const bridge = new CliBridge(project.path);
     activeBridge = bridge;
     runOutputBuffer = '';
+    runProgress = { stepList: [], completedCount: 0, failedCount: 0, totalCost: 0, currentStepNum: null };
 
     info(`\n━━━ Run started: ${project.name} ━━━`);
     info(`  Steps: [${run.steps.join(', ')}] (${run.steps.length} total)`);
@@ -331,6 +347,13 @@ export async function startAgent() {
         stepNames[s.number] = s.name;
       }
     } catch { /* non-critical — steps will show as "Step N" */ }
+
+    // Initialize accumulated step list for refresh recovery
+    runProgress.stepList = run.steps.map(n => ({
+      number: n,
+      name: stepNames[n] || `Step ${n}`,
+      status: 'pending',
+    }));
 
     wsServer.broadcast({
       type: 'run-init',
@@ -377,6 +400,11 @@ export async function startAgent() {
       }
 
       const stepNum = stepsToRun[stepIndex];
+      runProgress.currentStepNum = stepNum;
+      // Update step status in accumulated list
+      const si = runProgress.stepList.findIndex(s => s.number === stepNum);
+      if (si >= 0) runProgress.stepList[si].status = 'running';
+
       info(`  [${stepIndex + 1}/${totalSteps}] Running step ${stepNum}...`);
       wsServer.broadcast({ type: 'step-started', runId: run.id, step: { number: stepNum } });
 
@@ -417,6 +445,13 @@ export async function startAgent() {
         const costStr = stepData.cost > 0 ? `, $${stepData.cost.toFixed(2)}` : '';
         info(`  ✓ Step ${stepNum} "${stepData.name}" passed (${durStr}${costStr})`);
 
+        // Update accumulated progress
+        runProgress.completedCount++;
+        runProgress.totalCost += stepData.cost;
+        runProgress.currentStepNum = null;
+        const ci = runProgress.stepList.findIndex(s => s.number === stepNum);
+        if (ci >= 0) Object.assign(runProgress.stepList[ci], { status: 'completed', ...stepData });
+
         wsServer.broadcast({
           type: 'step-completed',
           runId: run.id,
@@ -456,14 +491,27 @@ export async function startAgent() {
           continue;
         }
         const stepName = stepParsed.name || `Step ${stepNum}`;
+        const failCost = stepParsed.costUSD || 0;
         info(`  ✗ Step ${stepNum} "${stepName}" failed: ${stepParsed.error || 'unknown error'}`);
+
+        // Update accumulated progress
+        runProgress.failedCount++;
+        runProgress.totalCost += failCost;
+        runProgress.currentStepNum = null;
+        const fi = runProgress.stepList.findIndex(s => s.number === stepNum);
+        if (fi >= 0) Object.assign(runProgress.stepList[fi], {
+          status: 'failed', name: stepName,
+          duration: stepParsed.duration || 0, cost: failCost,
+          error: stepParsed.error || stepResult.stderr,
+        });
+
         wsServer.broadcast({
           type: 'step-failed',
           runId: run.id,
           step: { number: stepNum, name: stepName },
           error: stepParsed.error || stepResult.stderr,
           duration: stepParsed.duration || 0,
-          cost: stepParsed.costUSD || 0,
+          cost: failCost,
         });
 
         const endpoints = [...(project.webhooks || [])];
