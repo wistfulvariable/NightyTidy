@@ -1,20 +1,24 @@
 # NightyTidy API Design Guide
 
-This guide documents the API conventions for NightyTidy's internal HTTP servers. Follow these patterns when adding new endpoints or modifying existing ones.
+This guide documents the API conventions for NightyTidy's HTTP servers and Cloud Functions. Follow these patterns when adding new endpoints or modifying existing ones.
 
 ---
 
 ## Overview
 
-NightyTidy has **internal APIs** (localhost-only, GUI-to-server communication), not public REST APIs. Design decisions prioritize simplicity and frontend consistency over strict REST semantics.
+NightyTidy has two API layers with different conventions:
+
+1. **Local APIs** (localhost-only, GUI/dashboard-to-server) — prioritize simplicity and frontend consistency over strict REST semantics.
+2. **Cloud Functions** (Firebase-hosted, remote) — follow REST conventions with Bearer token auth.
 
 ## Servers
 
-| Server | File | Purpose |
-|--------|------|---------|
-| GUI Server | `gui/server.js` | Desktop GUI backend |
-| Dashboard | `src/dashboard.js` | Progress display (CLI mode) |
-| Standalone Dashboard | `src/dashboard-standalone.js` | Orchestrator mode dashboard |
+| Server | File | Purpose | Convention |
+|--------|------|---------|------------|
+| GUI Server | `gui/server.js` | Desktop GUI backend | Local |
+| Dashboard | `src/dashboard.js` | Progress display (CLI mode) | Local |
+| Standalone Dashboard | `src/dashboard-standalone.js` | Orchestrator mode dashboard | Local |
+| Cloud Functions | `functions/src/*.ts` | Remote API (webhook, runs, health) | Cloud |
 
 ---
 
@@ -374,4 +378,113 @@ res.writeHead(400);  // Missing SECURITY_HEADERS
 
 ---
 
-*Last updated: 2026-03-10*
+## Cloud Functions Conventions
+
+Cloud Functions (`functions/src/*.ts`) follow different conventions from the local APIs. This section documents the target patterns for new Cloud Functions.
+
+### URL Naming
+
+Function names become URL paths automatically (Firebase convention):
+
+```
+/webhookIngest   → POST (camelCase — Firebase convention)
+/runs            → GET  (resource name)
+/status          → GET  (health check)
+```
+
+### HTTP Methods
+
+Use standard REST semantics:
+- **GET** for read-only endpoints
+- **POST** for write/action endpoints
+
+Guard methods at handler start:
+
+```typescript
+if (req.method !== 'POST') {
+  res.status(405).send('Method not allowed');
+  return;
+}
+```
+
+### Authentication
+
+All Cloud Functions (except health checks) require Firebase ID Token:
+
+```typescript
+const authHeader = req.headers.authorization;
+if (!authHeader?.startsWith('Bearer ')) {
+  res.status(401).send('Unauthorized');
+  return;
+}
+
+const token = authHeader.split('Bearer ')[1];
+const decoded = await admin.auth().verifyIdToken(token);
+const uid = decoded.uid;
+```
+
+### Response Format
+
+```typescript
+// Success — JSON via res.json()
+res.status(200).json({ ok: true });
+res.status(200).json({ runs: data });
+
+// Error — plain text via res.send() (current convention)
+res.status(401).send('Unauthorized');
+res.status(405).send('Method not allowed');
+res.status(429).send('Too many requests');
+```
+
+### Rate Limiting
+
+Apply to write endpoints. Use the Firestore-backed sliding window pattern:
+
+```typescript
+const RATE_LIMIT_PER_MIN = 60;
+// ... (see webhookIngest.ts for full implementation)
+```
+
+Rate limiter **fails open** — if the Firestore transaction fails, the request proceeds. This prevents rate limiting infrastructure from blocking legitimate requests.
+
+### Status Codes
+
+| Code | When to Use |
+|------|-------------|
+| **200** | Successful operation |
+| **401** | Missing or invalid auth token |
+| **405** | Wrong HTTP method |
+| **429** | Rate limit exceeded |
+
+### Adding a New Cloud Function
+
+1. [ ] Create `functions/src/<name>.ts`
+2. [ ] Export from `functions/src/index.ts`
+3. [ ] Add method guard (`if (req.method !== ...)`)
+4. [ ] Add auth verification (Bearer token) unless public
+5. [ ] Add rate limiting for write endpoints
+6. [ ] Validate request body fields
+7. [ ] Return JSON for success, plain text for errors
+8. [ ] Add contract tests in `functions/src/__tests__/apiContracts.test.ts`
+
+### Field Naming (All Layers)
+
+Use **camelCase** everywhere — request bodies, response bodies, Firestore documents, TypeScript interfaces:
+
+```
+projectId, projectName, startedAt, finishedAt, totalCost, filesChanged
+```
+
+### Timestamp Fields
+
+Use Unix milliseconds (not ISO strings, not Firestore Timestamps):
+
+```
+startedAt: Date.now()    // 1700000000000
+finishedAt: Date.now()
+updatedAt: Date.now()
+```
+
+---
+
+*Last updated: 2026-03-16*
