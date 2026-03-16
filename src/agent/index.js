@@ -150,6 +150,25 @@ export async function startAgent() {
         break;
       }
 
+      case 'get-report': {
+        const proj = projectManager.getProject(msg.projectId);
+        if (!proj) { reply({ type: 'error', message: 'Project not found', code: 'project_not_found' }); break; }
+        const gitObj = new AgentGit(proj.path);
+        try {
+          const report = await gitObj.getReport(msg.runBranch);
+          if (report) {
+            reply({ type: 'report', filename: report.filename, content: report.content });
+          } else {
+            reply({ type: 'error', message: 'No report found on branch', code: 'report_not_found' });
+          }
+        } catch (err) {
+          const message = err.message || 'Failed to get report';
+          const code = message.includes('unknown revision') ? 'branch_not_found' : 'report_failed';
+          reply({ type: 'error', message, code });
+        }
+        break;
+      }
+
       case 'merge': {
         const proj = projectManager.getProject(msg.projectId);
         if (!proj) { reply({ type: 'error', message: 'Project not found', code: 'project_not_found' }); break; }

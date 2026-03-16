@@ -58,6 +58,18 @@ export class AgentGit {
     }
   }
 
+  async getReport(branch) {
+    // List files matching NIGHTYTIDY-REPORT*.md on the branch
+    const lsOutput = await this._exec('git', ['ls-tree', '--name-only', branch]);
+    const reportFile = lsOutput.trim().split('\n')
+      .filter(f => f.startsWith('NIGHTYTIDY-REPORT') && f.endsWith('.md'))
+      .sort()
+      .pop(); // Take the latest (highest numbered)
+    if (!reportFile) return null;
+    const content = await this._exec('git', ['show', `${branch}:${reportFile}`]);
+    return { filename: reportFile, content };
+  }
+
   async _exec(cmd, args) {
     const { stdout } = await execFileAsync(cmd, args, { cwd: this.projectDir });
     return stdout;
