@@ -728,12 +728,25 @@ export async function startAgent() {
    * Resume an interrupted run by running remaining steps then finishing.
    */
   async function resumeInterruptedRun(interrupted, project) {
-    const progress = interrupted.lastProgress || {};
-    const completedNums = new Set(
-      (progress.stepList || [])
-        .filter(s => s.status === 'completed')
-        .map(s => s.number)
-    );
+    // Determine which steps are already completed by reading the CLI state file
+    // (more reliable than lastProgress which may be empty if agent crashed before our code)
+    const completedNums = new Set();
+    try {
+      const stateFile = path.join(project.path, 'nightytidy-run-state.json');
+      const stateRaw = fs.readFileSync(stateFile, 'utf-8');
+      const state = JSON.parse(stateRaw);
+      for (const s of (state.completedSteps || [])) {
+        completedNums.add(s.number);
+      }
+      info(`  Found ${completedNums.size} completed steps in CLI state file`);
+    } catch {
+      // Fall back to lastProgress if state file is missing
+      const progress = interrupted.lastProgress || {};
+      for (const s of (progress.stepList || [])) {
+        if (s.status === 'completed') completedNums.add(s.number);
+      }
+      info(`  No CLI state file — using agent progress (${completedNums.size} completed)`);
+    }
     const remainingSteps = interrupted.steps.filter(n => !completedNums.has(n));
 
     if (remainingSteps.length === 0) {
@@ -748,11 +761,19 @@ export async function startAgent() {
     const bridge = new CliBridge(project.path);
     activeBridge = bridge;
     runOutputBuffer = '';
+
+    // Build step list with known completed steps marked
+    const stepList = interrupted.steps.map(n => ({
+      number: n,
+      name: `Step ${n}`,
+      status: completedNums.has(n) ? 'completed' : 'pending',
+    }));
+
     runProgress = {
-      stepList: progress.stepList || [],
-      completedCount: progress.completedCount || 0,
-      failedCount: progress.failedCount || 0,
-      totalCost: progress.totalCost || 0,
+      stepList,
+      completedCount: completedNums.size,
+      failedCount: 0,
+      totalCost: 0,
       currentStepNum: null,
     };
 
@@ -850,6 +871,14 @@ export async function startAgent() {
         wsServer.broadcast({ type: 'rate-limit-resumed', runId: interrupted.id });
         // Retry by re-adding to remaining (loop will naturally continue)
         continue;
+      } else if ((stepParsed.error || stepResult.stderr || '').includes('already been completed')) {
+        // Step was already completed in a prior session — skip, not fail
+        info(`  ⊘ Step ${stepNum} already completed — skipping`);
+        runProgress.completedCount++;
+        runProgress.currentStepNum = null;
+        const si = runProgress.stepList.findIndex(s => s.number === stepNum);
+        if (si >= 0) Object.assign(runProgress.stepList[si], { status: 'completed' });
+        wsServer.broadcast({ type: 'step-completed', runId: interrupted.id, step: { number: stepNum, status: 'completed', duration: 0, cost: 0 }, cost: 0 });
       } else {
         info(`  ✗ Step ${stepNum} failed: ${stepParsed.error || 'unknown'}`);
         runProgress.failedCount++;
