@@ -56,6 +56,41 @@ export class RunQueue {
     }
   }
 
+  /**
+   * Mark the current run as interrupted (agent shutting down mid-run).
+   * Preserves progress data so the run can be resumed on restart.
+   */
+  markInterrupted(progress) {
+    if (this.current) {
+      this.current.status = 'interrupted';
+      this.current.interruptedAt = Date.now();
+      this.current.lastProgress = progress || null;
+      this._save();
+      debug(`Marked run ${this.current.id} as interrupted`);
+    }
+  }
+
+  /**
+   * Returns the current run if it has status 'interrupted', else null.
+   */
+  getInterrupted() {
+    if (this.current && this.current.status === 'interrupted') {
+      return this.current;
+    }
+    return null;
+  }
+
+  /**
+   * Clear the interrupted run (after resume or discard).
+   */
+  clearInterrupted() {
+    if (this.current && this.current.status === 'interrupted') {
+      debug(`Cleared interrupted run ${this.current.id}`);
+      this.current = null;
+      this._save();
+    }
+  }
+
   cancel(runId) {
     this.queue = this.queue.filter(r => r.id !== runId);
     if (this.current && this.current.id === runId) {

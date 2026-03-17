@@ -1,4 +1,6 @@
 // src/agent/index.js
+import fs from 'node:fs';
+import path from 'node:path';
 import { info, warn, debug } from '../logger.js';
 import { getConfigDir, readConfig, writeConfig, ensureConfigDir } from './config.js';
 import { ProjectManager } from './project-manager.js';
@@ -43,6 +45,19 @@ export async function startAgent() {
     currentStepNum: null,
   };
 
+  /**
+   * Request a fresh Firebase auth token from the connected web app.
+   * Broadcasts a token-refresh-needed event; the web app responds
+   * with an auth-refresh command containing the new token.
+   * No-op if no refresh is needed or no clients are connected.
+   */
+  function requestTokenRefreshIfNeeded() {
+    if (!firebaseAuth.needsRefresh()) return;
+    firebaseAuth.markRefreshRequested();
+    warn('Firebase auth token expiring soon — requesting refresh from web app');
+    wsServer.broadcast({ type: 'token-refresh-needed' });
+  }
+
   // Command handler (async — some commands need await)
   const handleCommand = async (msg, reply) => {
     switch (msg.type) {
@@ -85,22 +100,43 @@ export async function startAgent() {
         const current = runQueue.getCurrent();
         if (current && (!msg.runId || current.id === msg.runId)) {
           const proj = projectManager.getProject(current.projectId);
-          reply({
-            type: 'run-state',
-            runId: current.id,
-            projectId: current.projectId,
-            projectName: proj?.name ?? current.projectId,
-            status: current.status,
-            steps: current.steps,
-            startedAt: current.startedAt,
-            rawOutput: runOutputBuffer,
-            // Accumulated progress for page refresh recovery
-            stepList: runProgress.stepList,
-            completedCount: runProgress.completedCount,
-            failedCount: runProgress.failedCount,
-            totalCost: runProgress.totalCost,
-            currentStepNum: runProgress.currentStepNum,
-          });
+          if (current.status === 'interrupted') {
+            // Return interrupted run state from saved progress
+            const progress = current.lastProgress || {};
+            reply({
+              type: 'run-state',
+              runId: current.id,
+              projectId: current.projectId,
+              projectName: proj?.name ?? current.projectId,
+              status: 'interrupted',
+              steps: current.steps,
+              startedAt: current.startedAt,
+              interruptedAt: current.interruptedAt,
+              stepList: progress.stepList || [],
+              completedCount: progress.completedCount || 0,
+              failedCount: progress.failedCount || 0,
+              totalCost: progress.totalCost || 0,
+              currentStepNum: null,
+              resumable: true,
+            });
+          } else {
+            reply({
+              type: 'run-state',
+              runId: current.id,
+              projectId: current.projectId,
+              projectName: proj?.name ?? current.projectId,
+              status: current.status,
+              steps: current.steps,
+              startedAt: current.startedAt,
+              rawOutput: runOutputBuffer,
+              // Accumulated progress for page refresh recovery
+              stepList: runProgress.stepList,
+              completedCount: runProgress.completedCount,
+              failedCount: runProgress.failedCount,
+              totalCost: runProgress.totalCost,
+              currentStepNum: runProgress.currentStepNum,
+            });
+          }
         } else {
           reply({ type: 'run-state', runId: null, status: 'not_found' });
         }
@@ -226,6 +262,78 @@ export async function startAgent() {
         runQueue.reorder(msg.order);
         wsServer.broadcast({ type: 'queue-updated', queue: runQueue.getQueue() });
         reply({ type: 'queue-updated', queue: runQueue.getQueue() });
+        break;
+      }
+
+      case 'auth-refresh': {
+        if (msg.token && typeof msg.token === 'string') {
+          firebaseAuth.setToken(msg.token, Date.now() + 3600_000);
+          info('Firebase auth token refreshed by web app');
+          reply({ type: 'auth-refresh-ack' });
+        } else {
+          reply({ type: 'error', message: 'Missing token', code: 'invalid_auth_refresh' });
+        }
+        break;
+      }
+
+      case 'resume-interrupted': {
+        const interrupted = runQueue.getInterrupted();
+        if (!interrupted) {
+          reply({ type: 'error', message: 'No interrupted run to resume', code: 'no_interrupted_run' });
+          break;
+        }
+        const proj = projectManager.getProject(interrupted.projectId);
+        if (!proj) {
+          reply({ type: 'error', message: 'Project not found', code: 'project_not_found' });
+          break;
+        }
+        // Check if the CLI state file exists (needed for --run-step to work)
+        const stateFile = path.join(proj.path, 'nightytidy-run-state.json');
+        if (!fs.existsSync(stateFile)) {
+          reply({ type: 'error', message: 'Run state file not found — cannot resume. Use "Finish with Partial Results" instead.', code: 'state_missing' });
+          break;
+        }
+        reply({ type: 'resume-started', runId: interrupted.id });
+        // Transition back to running and resume the step loop
+        resumeInterruptedRun(interrupted, proj);
+        break;
+      }
+
+      case 'finish-interrupted': {
+        const interrupted = runQueue.getInterrupted();
+        if (!interrupted) {
+          reply({ type: 'error', message: 'No interrupted run to finish', code: 'no_interrupted_run' });
+          break;
+        }
+        const proj = projectManager.getProject(interrupted.projectId);
+        if (!proj) {
+          reply({ type: 'error', message: 'Project not found', code: 'project_not_found' });
+          break;
+        }
+        reply({ type: 'finish-started', runId: interrupted.id });
+        finishInterruptedRun(interrupted, proj);
+        break;
+      }
+
+      case 'discard-interrupted': {
+        const interrupted = runQueue.getInterrupted();
+        if (!interrupted) {
+          reply({ type: 'error', message: 'No interrupted run to discard', code: 'no_interrupted_run' });
+          break;
+        }
+        runQueue.clearInterrupted();
+        // Notify Firestore
+        if (firebaseAuth.isAuthenticated()) {
+          webhookDispatcher.dispatch('run_failed', {
+            projectId: interrupted.projectId,
+            run: { id: interrupted.id },
+          }, [{
+            url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
+            label: 'nightytidy.com',
+            headers: firebaseAuth.getAuthHeader(),
+          }]);
+        }
+        reply({ type: 'interrupted-discarded', runId: interrupted.id });
         break;
       }
 
@@ -412,6 +520,8 @@ export async function startAgent() {
       },
     }, startEndpoints);
 
+    startHeartbeat(run.id, project.id);
+
     const stepsToRun = [...run.steps];
     const totalSteps = stepsToRun.length;
     let stepIndex = 0;
@@ -487,6 +597,7 @@ export async function startAgent() {
           cost: stepData.cost,
         });
 
+        requestTokenRefreshIfNeeded();
         const endpoints = [...(project.webhooks || [])];
         if (firebaseAuth.isAuthenticated()) {
           endpoints.push({
@@ -542,6 +653,7 @@ export async function startAgent() {
           cost: failCost,
         });
 
+        requestTokenRefreshIfNeeded();
         const endpoints = [...(project.webhooks || [])];
         if (firebaseAuth.isAuthenticated()) {
           endpoints.push({
@@ -560,6 +672,7 @@ export async function startAgent() {
       }
     }
 
+    stopHeartbeat();
     info(`  Finishing run (report + merge)...`);
     await bridge.finishRun();
     projectManager.updateProject(run.projectId, { lastRunAt: Date.now() });
@@ -572,6 +685,7 @@ export async function startAgent() {
 
     wsServer.broadcast({ type: 'run-completed', runId: run.id, results: {} });
 
+    requestTokenRefreshIfNeeded();
     const completionEndpoints = [...(project.webhooks || [])];
     if (firebaseAuth.isAuthenticated()) {
       completionEndpoints.push({
@@ -595,6 +709,7 @@ export async function startAgent() {
     const current = runQueue.getCurrent();
     if (current && current.id === msg.runId) {
       info(`  ■ Run stopped by user`);
+      stopHeartbeat();
       if (activeBridge) {
         activeBridge.kill();
         activeBridge = null;
@@ -609,9 +724,275 @@ export async function startAgent() {
     }
   }
 
+  /**
+   * Resume an interrupted run by running remaining steps then finishing.
+   */
+  async function resumeInterruptedRun(interrupted, project) {
+    const progress = interrupted.lastProgress || {};
+    const completedNums = new Set(
+      (progress.stepList || [])
+        .filter(s => s.status === 'completed')
+        .map(s => s.number)
+    );
+    const remainingSteps = interrupted.steps.filter(n => !completedNums.has(n));
+
+    if (remainingSteps.length === 0) {
+      info('  No remaining steps — finishing interrupted run');
+      return finishInterruptedRun(interrupted, project);
+    }
+
+    // Transition queue entry back to running
+    interrupted.status = 'running';
+    runQueue._save();
+
+    const bridge = new CliBridge(project.path);
+    activeBridge = bridge;
+    runOutputBuffer = '';
+    runProgress = {
+      stepList: progress.stepList || [],
+      completedCount: progress.completedCount || 0,
+      failedCount: progress.failedCount || 0,
+      totalCost: progress.totalCost || 0,
+      currentStepNum: null,
+    };
+
+    info(`\n━━━ Resuming interrupted run: ${project.name} ━━━`);
+    info(`  Remaining steps: [${remainingSteps.join(', ')}] (${remainingSteps.length} of ${interrupted.steps.length})`);
+
+    wsServer.broadcast({
+      type: 'run-resumed',
+      runId: interrupted.id,
+      projectName: project.name,
+      totalSteps: interrupted.steps.length,
+      completedSteps: runProgress.completedCount,
+      remainingSteps,
+    });
+
+    startHeartbeat(interrupted.id, project.id);
+
+    // Notify Firestore the run is active again
+    if (firebaseAuth.isAuthenticated()) {
+      webhookDispatcher.dispatch('run_started', {
+        project: project.name,
+        projectId: project.id,
+        run: { id: interrupted.id, startedAt: interrupted.startedAt, selectedSteps: interrupted.steps },
+      }, [{
+        url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
+        label: 'nightytidy.com',
+        headers: firebaseAuth.getAuthHeader(),
+      }]);
+    }
+
+    // Run remaining steps (reuse the same step loop pattern)
+    for (const stepNum of remainingSteps) {
+      while (pauseRequested) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
+
+      runProgress.currentStepNum = stepNum;
+      const si = runProgress.stepList.findIndex(s => s.number === stepNum);
+      if (si >= 0) runProgress.stepList[si].status = 'running';
+
+      info(`  [resume] Running step ${stepNum}...`);
+      wsServer.broadcast({ type: 'step-started', runId: interrupted.id, step: { number: stepNum } });
+
+      const stepResult = await bridge.runStep(stepNum, (text) => {
+        runOutputBuffer += text;
+        wsServer.broadcast({ type: 'step-output', runId: interrupted.id, text, mode: 'raw' });
+      });
+
+      const stepParsed = stepResult.parsed || {};
+      if (stepParsed.success) {
+        const git = new AgentGit(project.path);
+        let filesChanged = 0;
+        try {
+          const stateRaw = fs.readFileSync(path.join(project.path, 'nightytidy-run-state.json'), 'utf-8');
+          const state = JSON.parse(stateRaw);
+          if (state.runBranch && state.tagName) {
+            filesChanged = await git.countFilesChanged(state.tagName, state.runBranch);
+          }
+        } catch { /* ignore */ }
+
+        const stepData = {
+          number: stepNum,
+          name: stepParsed.name || `Step ${stepNum}`,
+          status: 'completed',
+          duration: stepParsed.duration || 0,
+          cost: stepParsed.costUSD || 0,
+          attempts: stepParsed.attempts || 1,
+          summary: stepParsed.output || null,
+          filesChanged,
+        };
+
+        info(`  ✓ Step ${stepNum} "${stepData.name}" passed`);
+        runProgress.completedCount++;
+        runProgress.totalCost += stepData.cost;
+        runProgress.currentStepNum = null;
+        const ci = runProgress.stepList.findIndex(s => s.number === stepNum);
+        if (ci >= 0) Object.assign(runProgress.stepList[ci], { status: 'completed', ...stepData });
+
+        wsServer.broadcast({ type: 'step-completed', runId: interrupted.id, step: stepData, cost: stepData.cost });
+
+        requestTokenRefreshIfNeeded();
+        const endpoints = [...(project.webhooks || [])];
+        if (firebaseAuth.isAuthenticated()) {
+          endpoints.push({ url: 'https://webhookingest-24h6taciuq-uc.a.run.app', label: 'nightytidy.com', headers: firebaseAuth.getAuthHeader() });
+        }
+        webhookDispatcher.dispatch('step_completed', {
+          project: project.name, projectId: project.id, step: stepData,
+          run: { id: interrupted.id, costSoFar: stepData.cost, elapsedMs: stepData.duration },
+        }, endpoints);
+      } else if (stepParsed.errorType === 'rate_limit') {
+        const waitMs = stepParsed.retryAfterMs || 120000;
+        info(`  ⏸ Rate limited — waiting ${Math.round(waitMs / 1000)}s`);
+        wsServer.broadcast({ type: 'rate-limit', runId: interrupted.id, retryAfterMs: waitMs, step: { number: stepNum } });
+        await new Promise(r => setTimeout(r, waitMs));
+        wsServer.broadcast({ type: 'rate-limit-resumed', runId: interrupted.id });
+        // Retry by re-adding to remaining (loop will naturally continue)
+        continue;
+      } else {
+        info(`  ✗ Step ${stepNum} failed: ${stepParsed.error || 'unknown'}`);
+        runProgress.failedCount++;
+        runProgress.currentStepNum = null;
+        const fi = runProgress.stepList.findIndex(s => s.number === stepNum);
+        if (fi >= 0) Object.assign(runProgress.stepList[fi], {
+          status: 'failed', duration: stepParsed.duration || 0, cost: stepParsed.costUSD || 0,
+          error: stepParsed.error || stepResult.stderr,
+        });
+        wsServer.broadcast({ type: 'step-failed', runId: interrupted.id, step: { number: stepNum }, error: stepParsed.error || stepResult.stderr });
+      }
+    }
+
+    // Finish the run
+    stopHeartbeat();
+    info(`  Finishing resumed run (report + merge)...`);
+    await bridge.finishRun();
+    projectManager.updateProject(interrupted.projectId, { lastRunAt: Date.now() });
+
+    wsServer.broadcast({ type: 'run-completed', runId: interrupted.id, results: {} });
+
+    requestTokenRefreshIfNeeded();
+    if (firebaseAuth.isAuthenticated()) {
+      webhookDispatcher.dispatch('run_completed', {
+        project: project.name, projectId: project.id,
+        run: { id: interrupted.id, totalSteps: interrupted.steps.length, completedSteps: runProgress.completedCount, elapsedMs: Date.now() - interrupted.startedAt },
+      }, [{ url: 'https://webhookingest-24h6taciuq-uc.a.run.app', label: 'nightytidy.com', headers: firebaseAuth.getAuthHeader() }]);
+    }
+
+    activeBridge = null;
+    runQueue.completeCurrent({ success: true });
+    info(`━━━ Resumed run complete: ${project.name} ━━━\n`);
+    processQueue();
+  }
+
+  /**
+   * Finish an interrupted run without resuming remaining steps.
+   * Calls --finish-run to generate a partial report from completed steps.
+   */
+  async function finishInterruptedRun(interrupted, project) {
+    const bridge = new CliBridge(project.path);
+    activeBridge = bridge;
+
+    info(`  Finishing interrupted run with partial results...`);
+    interrupted.status = 'running';
+    runQueue._save();
+
+    try {
+      await bridge.finishRun();
+    } catch (err) {
+      warn(`  finishRun failed: ${err.message}`);
+    }
+
+    projectManager.updateProject(interrupted.projectId, { lastRunAt: Date.now() });
+    wsServer.broadcast({ type: 'run-completed', runId: interrupted.id, status: 'completed', results: {} });
+
+    requestTokenRefreshIfNeeded();
+    if (firebaseAuth.isAuthenticated()) {
+      webhookDispatcher.dispatch('run_completed', {
+        project: project.name, projectId: project.id,
+        run: { id: interrupted.id, totalSteps: interrupted.steps.length, completedSteps: interrupted.lastProgress?.completedCount || 0, elapsedMs: Date.now() - interrupted.startedAt },
+      }, [{ url: 'https://webhookingest-24h6taciuq-uc.a.run.app', label: 'nightytidy.com', headers: firebaseAuth.getAuthHeader() }]);
+    }
+
+    activeBridge = null;
+    runQueue.completeCurrent({ success: true });
+    info(`━━━ Partial finish complete: ${project.name} ━━━\n`);
+    processQueue();
+  }
+
+  // Heartbeat interval for Firestore liveness detection
+  let heartbeatInterval = null;
+  let currentRunId = null;
+  let currentProjectId = null;
+
+  function startHeartbeat(runId, projectId) {
+    currentRunId = runId;
+    currentProjectId = projectId;
+    heartbeatInterval = setInterval(() => {
+      if (!firebaseAuth.isAuthenticated()) return;
+      const endpoints = [{
+        url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
+        label: 'nightytidy.com',
+        headers: firebaseAuth.getAuthHeader(),
+      }];
+      webhookDispatcher.dispatch('heartbeat', {
+        projectId: currentProjectId,
+        run: { id: currentRunId },
+      }, endpoints);
+    }, 60_000);
+  }
+
+  function stopHeartbeat() {
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
+    currentRunId = null;
+    currentProjectId = null;
+  }
+
+  // Preserve interrupted run state on shutdown
+  function saveInterruptedState() {
+    const current = runQueue.getCurrent();
+    if (current && current.status === 'running' && activeBridge) {
+      activeBridge.kill();
+      activeBridge = null;
+      runQueue.markInterrupted(runProgress);
+
+      // Best-effort: notify Firestore (may not complete before exit)
+      if (firebaseAuth.isAuthenticated()) {
+        const endpoints = [{
+          url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
+          label: 'nightytidy.com',
+          headers: firebaseAuth.getAuthHeader(),
+        }];
+        webhookDispatcher.dispatch('run_interrupted', {
+          projectId: current.projectId,
+          run: {
+            id: current.id,
+            completedSteps: runProgress.completedCount,
+            failedSteps: runProgress.failedCount,
+            totalCost: runProgress.totalCost,
+          },
+        }, endpoints);
+      }
+
+      // Notify connected clients
+      wsServer.broadcast({
+        type: 'run-interrupted',
+        runId: current.id,
+        completedSteps: runProgress.completedCount,
+        failedSteps: runProgress.failedCount,
+        totalCost: runProgress.totalCost,
+      });
+    }
+    stopHeartbeat();
+  }
+
   // Graceful shutdown
   const shutdown = async () => {
     info('Agent shutting down...');
+    saveInterruptedState();
     scheduler.stopAll();
     await wsServer.stop();
     info('Agent stopped');
@@ -621,10 +1002,64 @@ export async function startAgent() {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
+  // Catch unexpected crashes — save state before dying
+  process.on('uncaughtException', (err) => {
+    warn(`Uncaught exception: ${err.message}`);
+    saveInterruptedState();
+    process.exit(1);
+  });
+  process.on('unhandledRejection', (reason) => {
+    warn(`Unhandled rejection: ${reason}`);
+    saveInterruptedState();
+    process.exit(1);
+  });
+
+  // Check for interrupted run from previous session
+  const interrupted = runQueue.getInterrupted();
+  if (interrupted) {
+    const proj = projectManager.getProject(interrupted.projectId);
+    const projName = proj?.name ?? interrupted.projectId;
+    const progress = interrupted.lastProgress || {};
+    const completed = progress.completedCount || 0;
+    const total = interrupted.steps?.length || 0;
+    info(`Found interrupted run: ${projName} (${completed}/${total} steps completed)`);
+    info(`  Run ID: ${interrupted.id}`);
+    info(`  Use the web app to Resume, Finish with Partial Results, or Discard`);
+
+    // Best-effort: notify Firestore that this run is interrupted
+    // (in case the shutdown webhook didn't make it)
+    if (firebaseAuth.isAuthenticated() && proj) {
+      webhookDispatcher.dispatch('run_interrupted', {
+        projectId: proj.id,
+        run: {
+          id: interrupted.id,
+          completedSteps: completed,
+          failedSteps: progress.failedCount || 0,
+          totalCost: progress.totalCost || 0,
+        },
+      }, [{
+        url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
+        label: 'nightytidy.com',
+        headers: firebaseAuth.getAuthHeader(),
+      }]);
+    }
+  }
+
+  // Also handle case where queue has a "running" entry from a crash
+  // (agent died without graceful shutdown, so markInterrupted was never called)
+  const current = runQueue.getCurrent();
+  if (current && current.status === 'running' && !activeBridge) {
+    info(`Found orphaned running run: ${current.id} — marking as interrupted`);
+    runQueue.markInterrupted({ completedCount: 0, failedCount: 0, totalCost: 0, stepList: [], currentStepNum: null });
+  }
+
   // Print startup info
   console.log(`\nNightyTidy Agent v1.0.0`);
   console.log(`WebSocket: ws://127.0.0.1:${actualPort}`);
   console.log(`Token: ${config.token.slice(0, 6)}...(see ~/.nightytidy/config.json)`);
+  if (interrupted) {
+    console.log(`\n⚠ Interrupted run detected — open nightytidy.com to resume or finish.\n`);
+  }
   console.log(`\nOpen nightytidy.com to connect.\n`);
 
   return { wsServer, scheduler, projectManager, runQueue };
