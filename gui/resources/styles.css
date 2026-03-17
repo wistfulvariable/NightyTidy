@@ -878,6 +878,69 @@ body {
   50% { opacity: 0.6; }
 }
 
+/* ── Onboarding (first-run walkthrough) ── */
+.modal-onboarding {
+  max-width: 480px;
+  text-align: center;
+  padding: 36px 32px 24px;
+}
+.onboarding-icon {
+  font-size: 2.8rem;
+  margin-bottom: 16px;
+  line-height: 1;
+}
+.onboarding-slide {
+  display: none;
+}
+.onboarding-slide.active {
+  display: block;
+  animation: onboarding-fade 0.25s ease-out;
+}
+@keyframes onboarding-fade {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.onboarding-slide h2 {
+  font-size: 1.15rem;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+.onboarding-slide p {
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  line-height: 1.6;
+  margin: 0;
+}
+.onboarding-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 28px;
+  gap: 12px;
+}
+.onboarding-dots {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.onboarding-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+}
+.onboarding-dot:hover {
+  background: var(--text-dim);
+}
+.onboarding-dot.active {
+  background: var(--cyan);
+  transform: scale(1.25);
+}
+
 /* ── Side Drawer (step output / report viewer) ── */
 .step-drawer {
   position: fixed;

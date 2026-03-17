@@ -118,7 +118,7 @@ describe('runPrompt', () => {
       expect(result.duration).toBeTypeOf('number');
     });
 
-    it('passes the prompt via -p flag for short prompts', async () => {
+    it('always delivers prompt via stdin pipe (never -p flag)', async () => {
       setupSpawnSequence((child) => {
         child.emitStdout('ok');
         child.emitClose(0);
@@ -128,9 +128,14 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'short prompt', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
-        expect.objectContaining({ cwd: '/tmp' }),
+        ['--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
+        expect.objectContaining({ cwd: '/tmp', stdio: ['pipe', 'pipe', 'pipe'] }),
       );
+
+      // Verify prompt was written to stdin
+      const child = spawn.mock.results[0].value;
+      expect(child.stdin.write).toHaveBeenCalledWith('short prompt');
+      expect(child.stdin.end).toHaveBeenCalled();
     });
   });
 
@@ -587,7 +592,7 @@ describe('runPrompt', () => {
       expect(result.output).toBe('chunk1 chunk2 chunk3');
     });
 
-    it('uses stdin for prompts exceeding the threshold (8000 chars)', async () => {
+    it('delivers long prompts via stdin pipe (same as short prompts)', async () => {
       const longPrompt = 'x'.repeat(9000);
 
       setupSpawnSequence((child) => {
@@ -597,12 +602,16 @@ describe('runPrompt', () => {
 
       await runPrompt(longPrompt, '/tmp', FAST_OPTIONS);
 
-      // When using stdin mode, args should only contain output-format + permission flag (no -p flag)
+      // All prompts use stdin — no -p flag regardless of length
       expect(spawn).toHaveBeenCalledWith(
         'claude',
         ['--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
         expect.objectContaining({ stdio: ['pipe', 'pipe', 'pipe'] }),
       );
+
+      const child = spawn.mock.results[0].value;
+      expect(child.stdin.write).toHaveBeenCalledWith(longPrompt);
+      expect(child.stdin.end).toHaveBeenCalled();
     });
 
     it('returns zero retries when retries option is 0 and first attempt fails', async () => {
@@ -638,8 +647,8 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'test', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
-        expect.objectContaining({ shell: true }),
+        ['--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
+        expect.objectContaining({ shell: true, stdio: ['pipe', 'pipe', 'pipe'] }),
       );
     });
 
@@ -655,8 +664,8 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'test', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
-        expect.objectContaining({ shell: false }),
+        ['--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
+        expect.objectContaining({ shell: false, stdio: ['pipe', 'pipe', 'pipe'] }),
       );
     });
 

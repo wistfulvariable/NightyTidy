@@ -86,6 +86,76 @@ let lastRenderedOutput = '';
 let lastOutputChangeTime = 0;
 const WORKING_INDICATOR_DELAY_MS = 8000; // Show after 8s of no output change
 
+// ── Onboarding (first-run walkthrough) ──────────────────────────────
+
+const ONBOARDING_STORAGE_KEY = 'nightytidy-onboarding-seen';
+const ONBOARDING_SLIDE_COUNT = 6;
+let onboardingSlide = 0;
+let onboardingFocusTrapCleanup = null;
+
+function shouldShowOnboarding() {
+  try {
+    return !localStorage.getItem(ONBOARDING_STORAGE_KEY);
+  } catch {
+    return false; // localStorage unavailable — skip onboarding
+  }
+}
+
+function markOnboardingSeen() {
+  try {
+    localStorage.setItem(ONBOARDING_STORAGE_KEY, '1');
+  } catch { /* ignore */ }
+}
+
+function showOnboarding() {
+  onboardingSlide = 0;
+  renderOnboardingSlide();
+  const overlay = document.getElementById('onboarding-overlay');
+  overlay.classList.remove('hidden');
+  onboardingFocusTrapCleanup = trapFocus(overlay.querySelector('.modal'));
+  document.getElementById('btn-onboarding-next').focus();
+}
+
+function dismissOnboarding() {
+  markOnboardingSeen();
+  const overlay = document.getElementById('onboarding-overlay');
+  overlay.classList.add('hidden');
+  if (onboardingFocusTrapCleanup) {
+    onboardingFocusTrapCleanup();
+    onboardingFocusTrapCleanup = null;
+  }
+  document.getElementById('btn-select-folder').focus();
+}
+
+function nextOnboardingSlide() {
+  if (onboardingSlide >= ONBOARDING_SLIDE_COUNT - 1) {
+    dismissOnboarding();
+    return;
+  }
+  onboardingSlide++;
+  renderOnboardingSlide();
+}
+
+function goToOnboardingSlide(index) {
+  if (index < 0 || index >= ONBOARDING_SLIDE_COUNT) return;
+  onboardingSlide = index;
+  renderOnboardingSlide();
+}
+
+function renderOnboardingSlide() {
+  const slides = document.querySelectorAll('.onboarding-slide');
+  slides.forEach((s, i) => {
+    s.classList.toggle('active', i === onboardingSlide);
+  });
+  const dots = document.querySelectorAll('.onboarding-dot');
+  dots.forEach((d, i) => {
+    d.classList.toggle('active', i === onboardingSlide);
+    d.setAttribute('aria-selected', i === onboardingSlide ? 'true' : 'false');
+  });
+  const nextBtn = document.getElementById('btn-onboarding-next');
+  nextBtn.textContent = onboardingSlide === ONBOARDING_SLIDE_COUNT - 1 ? 'Get Started' : 'Next';
+}
+
 // ── State ──────────────────────────────────────────────────────────
 
 const SCREENS = {
@@ -2141,9 +2211,24 @@ function bindEvents() {
     window.close();
   });
 
+  // Onboarding
+  document.getElementById('btn-onboarding-skip').addEventListener('click', dismissOnboarding);
+  document.getElementById('btn-onboarding-next').addEventListener('click', nextOnboardingSlide);
+  document.querySelectorAll('.onboarding-dot').forEach(dot => {
+    dot.addEventListener('click', () => {
+      goToOnboardingSlide(parseInt(dot.dataset.dot, 10));
+    });
+  });
+
   // Keyboard accessibility — Escape key to close drawer and modals
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      // Onboarding overlay — Escape dismisses
+      const onboardingOverlay = document.getElementById('onboarding-overlay');
+      if (!onboardingOverlay.classList.contains('hidden')) {
+        dismissOnboarding();
+        return;
+      }
       const confirmOverlay = document.getElementById('confirm-stop-overlay');
       if (!confirmOverlay.classList.contains('hidden')) {
         cancelStopRun();
@@ -2157,7 +2242,12 @@ function bindEvents() {
     }
   });
 
-  // Click outside modal to close (confirm dialog only)
+  // Click outside modal to close
+  document.getElementById('onboarding-overlay').addEventListener('click', (e) => {
+    if (e.target.id === 'onboarding-overlay') {
+      dismissOnboarding();
+    }
+  });
   document.getElementById('confirm-stop-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'confirm-stop-overlay') {
       cancelStopRun();
@@ -2356,6 +2446,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Show the UI immediately for instant perceived startup
   bindEvents();
   showScreen(SCREENS.SETUP);
+
+  // Show first-run onboarding (before user can interact with setup)
+  if (shouldShowOnboarding()) {
+    showOnboarding();
+  }
 
   // Start heartbeat systems immediately (fire-and-forget)
   initHeartbeat();

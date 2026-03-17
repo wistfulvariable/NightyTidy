@@ -52,7 +52,6 @@ import { cleanEnv } from './env.js';
 const DEFAULT_TIMEOUT = 45 * 60 * 1000; // 45 minutes
 const DEFAULT_RETRIES = 3;
 const RETRY_DELAY = 10000; // 10 seconds
-const STDIN_THRESHOLD = 8000; // chars
 const SIGKILL_DELAY = 5000; // grace period before SIGKILL after initial kill
 export const INACTIVITY_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes — no stdout or stderr data
 
@@ -186,35 +185,25 @@ export function sleep(ms, signal) {
  * @returns {import('child_process').ChildProcess} The spawned child process
  */
 function spawnClaude(prompt, cwd, useShell = false, continueSession = false) {
-  const useStdin = prompt.length > STDIN_THRESHOLD;
-
-  // --dangerously-skip-permissions: required for non-interactive mode.
-  // Without it, Claude Code blocks on tool permission prompts (Bash, Edit, etc.)
-  // that cannot be approved without a TTY. NightyTidy is the permission layer —
-  // it controls what prompts are sent and operates on a safety branch.
-  // --output-format stream-json: streams NDJSON events in real-time as the
-  // conversation progresses. Each line is a JSON object (assistant message,
-  // tool use, etc.). The final line is a `result` event with total_cost_usd,
-  // num_turns, duration_api_ms, and the response text in the `result` field.
-  const args = useStdin
-    ? ['--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions']
-    : ['-p', prompt, '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
+  // Always deliver prompts via stdin pipe. The previous approach used the -p flag
+  // for short prompts, but on Windows (shell: true), cmd.exe silently mangles
+  // special characters (|, &, (, ), <, >) in the command string, causing Claude
+  // Code to receive a garbled or empty prompt and fall back to a generic greeting.
+  // Stdin is binary-safe and immune to shell escaping issues on all platforms.
+  const args = ['--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'];
   if (continueSession) args.push('--continue');
-  const stdinMode = useStdin ? 'pipe' : 'ignore';
 
-  debug(`Spawn mode: ${useStdin ? 'stdin' : '-p flag'}, prompt length: ${prompt.length} chars`);
+  debug(`Spawn: stdin pipe, prompt length: ${prompt.length} chars`);
 
   const child = spawn('claude', args, {
     cwd,
-    stdio: [stdinMode, 'pipe', 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe'],
     shell: useShell,
     env: cleanEnv(),
   });
 
-  if (useStdin) {
-    child.stdin.write(prompt);
-    child.stdin.end();
-  }
+  child.stdin.write(prompt);
+  child.stdin.end();
 
   return child;
 }

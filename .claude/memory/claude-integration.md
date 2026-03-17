@@ -9,12 +9,9 @@ Assumes CLAUDE.md loaded. Subprocess wrapper in `src/claude.js`.
 | `DEFAULT_TIMEOUT` | 45 min (2,700,000 ms) — overridable via `--timeout` |
 | `DEFAULT_RETRIES` | 3 (total attempts = 4) |
 | `RETRY_DELAY` | 10,000 ms between retries |
-| `STDIN_THRESHOLD` | 8,000 chars → switches to stdin pipe mode |
+## Prompt Delivery
 
-## Spawn Modes
-
-- **Short** (< 8000 chars): `-p "prompt"` flag, stdin `'ignore'`
-- **Long** (≥ 8000 chars): stdin `'pipe'`, write prompt + end
+All prompts delivered via **stdin pipe** (never `-p` flag). On Windows, `shell: true` causes `cmd.exe` to silently mangle special characters in `-p` arguments. Stdin is binary-safe on all platforms.
 
 ## Platform Rules
 

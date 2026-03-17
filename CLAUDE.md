@@ -106,7 +106,7 @@ test/
 gui/
   server.js                  # Node.js HTTP server + Chrome app-mode launcher
   resources/
-    index.html               # Single-page app with 5 screen sections
+    index.html               # Single-page app with 5 screen sections + first-run onboarding overlay
     styles.css               # Dark theme CSS (extracted from dashboard-html.js)
     logic.js                 # Pure functions (buildCommand, parseCliOutput, formatMs, etc.)
     app.js                   # State machine + fetch API calls to server.js endpoints
@@ -265,7 +265,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **Usage-limit resume**: When a rate limit is detected during an interactive CLI run, state is saved to `nightytidy-run-state.json` (same format as orchestrator mode). The user can close the terminal and resume later with `--resume`. The backoff schedule covers ~9.9 hours total (2min → 5min → 15min → 30min → 1hr → 2hr × 4). GUI's pause overlay includes a "Save & Close" button that exits cleanly for later resume.
 - **Prompt integrity check**: `executor.js` computes SHA-256 of all step prompts and compares against `STEPS_HASH`. After editing any markdown file in `src/prompts/steps/` or `src/prompts/specials/`, recompute and update the hash in `executor.js`. Warns but does not block (user may have legitimate prompt changes).
 - **`--dangerously-skip-permissions`**: Required for non-interactive Claude Code subprocess calls. NightyTidy is the permission layer — it controls what prompts are sent and operates on a safety branch.
-- **Prompt delivery threshold**: Prompts longer than 8000 chars (`STDIN_THRESHOLD` in `claude.js`) are piped via stdin instead of passed as a `-p` argument. This avoids OS command-line length limits. If prompts fail with argument-too-long errors, check this threshold.
+- **Prompt delivery via stdin**: All prompts are piped to Claude Code via stdin (never the `-p` flag). On Windows, `shell: true` causes Node.js to embed `-p` arguments directly in the `cmd.exe` command string, where special characters (`|`, `&`, `(`, `)`, `<`, `>`) get silently mangled. Stdin is binary-safe and immune to shell escaping on all platforms.
 - **Env var allowlist**: `cleanEnv()` in `env.js` uses an explicit allowlist (system paths, locale, Anthropic/Claude/Git prefixes) instead of a blocklist. Unknown env vars are filtered out and logged via `debug()`. `CLAUDECODE` is explicitly blocked. Tests in `env.test.js`.
 - **Branch guard**: `ensureOnBranch()` in `git.js` is called before and after every step execution in `runStep()`. If Claude Code switched to a different branch during a step, it commits any uncommitted work, checks out the run branch, and merges the stray branch back. On merge conflict, the merge is aborted (step work preserved on the stray branch). This prevents the "branch drift" problem where Claude Code creates its own branches, scattering commits across multiple branches.
 - **Gitleaks CI scan**: `.github/workflows/ci.yml` runs `gitleaks/gitleaks-action@v2` on every push/PR to detect committed secrets.

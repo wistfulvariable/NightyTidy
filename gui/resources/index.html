@@ -218,6 +218,60 @@
     </div>
   </div>
 
+  <!-- ═══ Onboarding Overlay (first-run only) ═══ -->
+  <div class="modal-overlay hidden" id="onboarding-overlay" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+    <div class="modal modal-onboarding">
+      <div class="onboarding-slide active" data-slide="0">
+        <div class="onboarding-icon" aria-hidden="true">&#9790;</div>
+        <h2 id="onboarding-title">Welcome to NightyTidy</h2>
+        <p>AI-powered overnight codebase improvement. Pick what to improve, let Claude Code do the work, wake up to cleaner code.</p>
+      </div>
+
+      <div class="onboarding-slide" data-slide="1">
+        <div class="onboarding-icon" aria-hidden="true">&#9881;</div>
+        <h2>How It Works</h2>
+        <p>Choose from 33 improvement steps &mdash; documentation, testing, security, performance, and more. NightyTidy runs each one through Claude Code and generates a detailed report of everything that changed.</p>
+      </div>
+
+      <div class="onboarding-slide" data-slide="2">
+        <div class="onboarding-icon" aria-hidden="true">&#128274;</div>
+        <h2>Built-In Safety Net</h2>
+        <p>Every run creates a git branch and a safety tag before touching your code. If you don't like the changes, one command undoes everything. Your main branch stays untouched until you're ready to merge.</p>
+      </div>
+
+      <div class="onboarding-slide" data-slide="3">
+        <div class="onboarding-icon" aria-hidden="true">&#128736;</div>
+        <h2>One Project at a Time</h2>
+        <p>NightyTidy runs one session at a time &mdash; don't open multiple windows for different repos. Finish one run before starting the next. This prevents conflicts and keeps everything clean.</p>
+      </div>
+
+      <div class="onboarding-slide" data-slide="4">
+        <div class="onboarding-icon" aria-hidden="true">&#9889;</div>
+        <h2>Token Usage</h2>
+        <p>A full 33-step run is very token-heavy. You'll almost certainly need the <strong>Max plan</strong> with plenty of usage left. If you're not on Max, run 8&ndash;10 steps at a time and wait for your limits to reset between batches.</p>
+      </div>
+
+      <div class="onboarding-slide" data-slide="5">
+        <div class="onboarding-icon" aria-hidden="true">&#127769;</div>
+        <h2>Ready to Go</h2>
+        <p>Select a project folder, pick your steps, and let NightyTidy work overnight. If you hit a rate limit mid-run, it pauses automatically &mdash; you can resume later right where you left off.</p>
+      </div>
+
+      <div class="onboarding-nav">
+        <button class="link-btn" id="btn-onboarding-skip" type="button">Skip</button>
+        <div class="onboarding-dots" id="onboarding-dots" role="tablist" aria-label="Onboarding slides">
+          <button class="onboarding-dot active" data-dot="0" role="tab" aria-selected="true" aria-label="Slide 1" type="button"></button>
+          <button class="onboarding-dot" data-dot="1" role="tab" aria-selected="false" aria-label="Slide 2" type="button"></button>
+          <button class="onboarding-dot" data-dot="2" role="tab" aria-selected="false" aria-label="Slide 3" type="button"></button>
+          <button class="onboarding-dot" data-dot="3" role="tab" aria-selected="false" aria-label="Slide 4" type="button"></button>
+          <button class="onboarding-dot" data-dot="4" role="tab" aria-selected="false" aria-label="Slide 5" type="button"></button>
+          <button class="onboarding-dot" data-dot="5" role="tab" aria-selected="false" aria-label="Slide 6" type="button"></button>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-onboarding-next" type="button">Next</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/marked.umd.js"></script>
   <script src="/logic.js"></script>
   <script src="/app.js"></script>

@@ -50,6 +50,15 @@ A full 33-step run is a serious workload — expect **6 to 8 hours** with Claude
 
 Running fewer steps per session is a perfectly valid workflow — you'll get the same results, just spread over multiple nights.
 
+## One Session at a Time
+
+NightyTidy enforces single-session execution — only one improvement run can be active at a time, whether through the GUI or CLI. This is by design: running multiple concurrent AI sessions against the same codebase would create conflicting changes, broken merges, and unreliable results.
+
+- **GUI**: A singleton guard ensures only one NightyTidy window can be open. Launching again focuses the existing window.
+- **CLI**: An atomic lock file (`nightytidy.lock`) prevents concurrent runs. If a previous run was interrupted, you'll be prompted to override or resume.
+
+If you need to run against multiple projects, use separate terminal sessions — the lock is per-project, not global.
+
 ## Desktop GUI
 
 The GUI is the primary way to use NightyTidy. It wraps the CLI orchestrator in a five-screen visual workflow.

@@ -814,6 +814,7 @@ describe('singleton guard', () => {
     expect(result.exited).toBe(true);
     expect(result.code).toBe(0);
     expect(result.stdout).toContain('already running');
+    expect(result.stdout).toContain('one project at a time');
 
     // Clean up first server
     first.child.kill();

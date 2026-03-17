@@ -785,8 +785,18 @@ function cleanup() {
   // Singleton check — exit early if another GUI is already running
   const existingUrl = await checkExistingInstance();
   if (existingUrl) {
-    console.log(`NightyTidy GUI is already running at ${existingUrl}`);
-    console.log('Opening existing window...');
+    console.log('');
+    console.log('  ⚠  NightyTidy GUI is already running!');
+    console.log('');
+    console.log('  NightyTidy is designed to work on one project at a time.');
+    console.log('  Running multiple instances can cause conflicts and broken runs.');
+    console.log('');
+    console.log('  If you need to work on a different project, close the existing');
+    console.log('  window first, then start the GUI again.');
+    console.log('');
+    console.log(`  Existing instance: ${existingUrl}`);
+    console.log('  Focusing existing window...');
+    console.log('');
     launchChrome(existingUrl);
     process.exit(0);
   }
