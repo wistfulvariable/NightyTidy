@@ -127,6 +127,7 @@ export const SAFETY_PREAMBLE =
   '- Do NOT create, switch, or merge git branches. The orchestrator manages all branching.\n' +
   '- Do NOT run destructive git commands (reset, clean, checkout, rm).\n' +
   '- Commit your changes with a descriptive message when done.\n' +
+  '- IGNORE the `audit-reports/refactor-prompts/` directory — it contains internal artifacts from the NightyTidy analysis tool, not part of this project\'s codebase. Do not read, analyze, or reference any files in that subdirectory. Other files in `audit-reports/` (step reports) ARE part of your output.\n' +
   '---\n\n';
 
 /**
