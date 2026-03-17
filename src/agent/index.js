@@ -791,12 +791,13 @@ export async function startAgent() {
 
     startHeartbeat(interrupted.id, project.id);
 
-    // Notify Firestore the run is active again
+    // Notify Firestore the run is active again (use run_resumed, NOT run_started
+    // which would reset completedSteps/totalCost counters to 0)
     if (firebaseAuth.isAuthenticated()) {
-      webhookDispatcher.dispatch('run_started', {
+      webhookDispatcher.dispatch('run_resumed', {
         project: project.name,
         projectId: project.id,
-        run: { id: interrupted.id, startedAt: interrupted.startedAt, selectedSteps: interrupted.steps },
+        run: { id: interrupted.id, startedAt: interrupted.startedAt },
       }, [{
         url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
         label: 'nightytidy.com',
