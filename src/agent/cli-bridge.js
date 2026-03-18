@@ -1,6 +1,9 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { debug, error as logError } from '../logger.js';
+import { debug, warn, error as logError } from '../logger.js';
+
+const INIT_TIMEOUT_MS = 5 * 60_000;   // 5 minutes — init should never take this long
+const FINISH_TIMEOUT_MS = 10 * 60_000; // 10 minutes — finish includes report generation
 
 export class CliBridge {
   constructor(projectDir) {
@@ -9,19 +12,20 @@ export class CliBridge {
   }
 
   async listSteps() {
-    return this._run(CliBridge.buildArgs({ list: true }));
+    return this._run(CliBridge.buildArgs({ list: true }), null, { timeout: 30_000 });
   }
 
   async initRun(steps, timeout) {
-    return this._run(CliBridge.buildArgs({ initRun: true, steps, timeout }));
+    return this._run(CliBridge.buildArgs({ initRun: true, steps, timeout }), null, { timeout: INIT_TIMEOUT_MS });
   }
 
   async runStep(stepNum, onOutput) {
+    // No timeout on steps — they have their own per-step timeout via the CLI
     return this._run(CliBridge.buildArgs({ runStep: stepNum }), onOutput);
   }
 
   async finishRun() {
-    return this._run(CliBridge.buildArgs({ finishRun: true }));
+    return this._run(CliBridge.buildArgs({ finishRun: true }), null, { timeout: FINISH_TIMEOUT_MS });
   }
 
   kill() {
@@ -71,7 +75,7 @@ export class CliBridge {
     return null;
   }
 
-  _run(args, onOutput) {
+  _run(args, onOutput, opts = {}) {
     return new Promise((resolve, reject) => {
       const binPath = path.resolve(import.meta.dirname, '../../bin/nightytidy.js');
       const proc = spawn('node', [binPath, ...args], {
@@ -82,6 +86,18 @@ export class CliBridge {
 
       let stdout = '';
       let stderr = '';
+      let killed = false;
+
+      // Timeout — kill the process if it takes too long
+      let timer = null;
+      if (opts.timeout) {
+        timer = setTimeout(() => {
+          killed = true;
+          const timeoutSec = Math.round(opts.timeout / 1000);
+          warn(`CLI process timed out after ${timeoutSec}s: ${args.join(' ')}`);
+          this.kill();
+        }, opts.timeout);
+      }
 
       proc.stdout.on('data', (data) => {
         const text = data.toString();
@@ -111,18 +127,23 @@ export class CliBridge {
       });
 
       proc.on('close', (code) => {
+        if (timer) clearTimeout(timer);
         this.activeProcess = null;
         const parsed = CliBridge.parseOutput(stdout);
         resolve({
-          success: code === 0,
+          success: code === 0 && !killed,
           exitCode: code,
           stdout,
-          stderr,
+          stderr: killed
+            ? `Process timed out after ${Math.round(opts.timeout / 1000)}s — Claude Code may be unavailable`
+            : stderr,
           parsed,
+          timedOut: killed,
         });
       });
 
       proc.on('error', (err) => {
+        if (timer) clearTimeout(timer);
         this.activeProcess = null;
         logError(`CLI process error: ${err.message}`);
         resolve({
@@ -131,6 +152,7 @@ export class CliBridge {
           stdout,
           stderr: err.message,
           parsed: null,
+          timedOut: false,
         });
       });
     });

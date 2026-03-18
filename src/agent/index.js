@@ -514,9 +514,12 @@ export async function startAgent() {
     }
 
     wsServer.broadcast({ type: 'run-started', runId: run.id, projectId: run.projectId, projectName: project.name, branch: '' });
+    wsServer.broadcast({ type: 'run-status', runId: run.id, status: 'initializing', message: 'Running pre-checks and setting up git branch...' });
     const initResult = await bridge.initRun(run.steps, run.timeout);
     if (!initResult.success) {
-      const errorMsg = initResult.parsed?.error || initResult.stderr || 'Unknown init error';
+      const errorMsg = initResult.timedOut
+        ? 'Initialization timed out — Claude Code may be unavailable. Restart the agent to retry.'
+        : (initResult.parsed?.error || initResult.stderr || 'Unknown init error');
       info(`  ✗ Init failed: ${errorMsg}`);
       wsServer.broadcast({ type: 'run-failed', runId: run.id, error: errorMsg });
       dispatchWithQueue('run_failed', {
