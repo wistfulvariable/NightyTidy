@@ -26,6 +26,8 @@ Automated overnight codebase improvement through Claude Code. NightyTidy is an o
 | Notifications | node-notifier | v10 |
 | GUI Markdown | marked (vendored UMD) | v17 |
 | Testing | Vitest | v3 |
+| WebSocket | ws | v8 |
+| Scheduling | node-cron | v4 |
 
 ## Project Structure
 
@@ -51,6 +53,17 @@ src/
   consolidation.js         # Post-run action plan — consolidates step recommendations for inline report embedding
   setup.js                 # --setup command: generates CLAUDE.md integration snippet for target projects
   sync.js                  # Google Doc prompt sync — fetches, parses, diffs, updates local prompt files
+  agent/
+    index.js               # Agent orchestrator — WebSocket command handler, run queue processor, step loop, interrupted run recovery, heartbeat, webhook dispatch
+    config.js              # Agent config — reads/writes ~/.nightytidy/config.json (port, token, machine name)
+    project-manager.js     # Project registry — add/remove/list projects, track lastRunAt, schedules, webhooks
+    run-queue.js           # Persistent run queue — enqueue/dequeue/reorder, mark interrupted, resume tracking
+    scheduler.js           # Cron-based run scheduling via node-cron
+    cli-bridge.js          # Spawns nightytidy CLI subprocess — --init-run, --run-step, --finish-run, --list --json
+    git-integration.js     # Git operations for web app — diff, diffstat, merge, rollback, PR creation, report retrieval
+    websocket-server.js    # WebSocket + HTTP server at 127.0.0.1:48372 — auth token handshake, rate limiting, broadcast
+    webhook-dispatcher.js  # Sends webhooks to user endpoints + Firebase Cloud Function (Slack/Discord formatting, 3x retry)
+    firebase-auth.js       # Firebase JWT token management — parses exp claim, refresh retry with backoff, webhook queue for replay
   prompts/
     manifest.json          # Step ordering + display names + sourceUrl (33 entries)
     loader.js              # Reads manifest + markdown files, exports STEPS/DOC_UPDATE_PROMPT/CHANGELOG_PROMPT
@@ -97,6 +110,15 @@ test/
   lock-edge-cases.test.js  # 6 tests — lock file edge cases (EEXIST, stale, invalid)
   mutation-testing.test.js  # 16 tests — mutation testing across multiple modules
   report-edge-cases.test.js # 10 tests — report generation edge cases
+  agent-index.test.js        # 2 tests — startAgent exports and return value
+  agent-config.test.js       # 4 tests — config persistence, version migration
+  agent-project-manager.test.js # 9 tests — project CRUD, pruning stale entries
+  agent-run-queue.test.js    # 9 tests — queue operations, interrupted state, resume
+  agent-scheduler.test.js    # 5 tests — cron scheduling, trigger callbacks
+  agent-cli-bridge.test.js   # 7 tests — CLI subprocess spawning, output parsing
+  agent-websocket-server.test.js # 5 tests — WebSocket auth, rate limiting, broadcast
+  agent-webhook-dispatcher.test.js # 6 tests — webhook formatting (Slack/Discord), retry logic
+  agent-firebase-auth.test.js # 24 tests — JWT parsing, token expiry, refresh backoff, webhook queue/replay
   fixtures/
     google-doc-sample.html # Representative Google Doc HTML for deterministic sync testing
   helpers/
@@ -148,6 +170,16 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `gui/server.js` | Desktop GUI backend — HTTP server + native folder dialog + Chrome launcher + session logging | node:http, node:fs, node:child_process |
 | `gui/resources/logic.js` | GUI pure logic — command building, JSON parsing, formatting, rate-limit detection | none (browser + Node.js dual) |
 | `gui/resources/app.js` | GUI state machine — screen transitions, process spawning, progress polling, rate-limit pause/resume overlay | logic.js, marked, server.js (via fetch) |
+| `src/agent/index.js` | Agent orchestrator — command handler (30+ commands), run queue processing, step execution loop, interrupted run recovery, heartbeat, `dispatchWithQueue()` Firebase webhook helper. Reads version from package.json. | fs, path, url, logger, config, project-manager, run-queue, scheduler, websocket-server, webhook-dispatcher, cli-bridge, git-integration, firebase-auth |
+| `src/agent/config.js` | Agent config persistence — `getConfigDir()` → `~/.nightytidy/`, `readConfig()`/`writeConfig()`, auto-generates port (48372) + auth token on first run, `CONFIG_VERSION` for migrations | fs, path, os, crypto |
+| `src/agent/project-manager.js` | Project registry — CRUD for projects stored in `~/.nightytidy/projects.json`, each project has `{ id, path, name, addedAt, lastRunAt, schedule, webhooks }`, `pruneStaleProjects()` removes entries whose paths no longer exist | fs, path, crypto |
+| `src/agent/run-queue.js` | Persistent run queue — `~/.nightytidy/queue.json`, `enqueue()`/`dequeue()`/`reorder()`/`cancel()`, `markInterrupted(progress)` saves step state on crash, `getInterrupted()` returns interrupted run for resume/finish/discard, `completeCurrent()`/`clearInterrupted()` | fs, path, crypto |
+| `src/agent/scheduler.js` | Cron scheduler — wraps `node-cron`, `addSchedule(projectId, cronExpr)` triggers callback, `removeSchedule()`, `stopAll()`, `isValidCron()` static helper | node-cron |
+| `src/agent/cli-bridge.js` | CLI bridge — spawns `npx nightytidy` as subprocess with `--init-run`, `--run-step N`, `--finish-run`, `--list --json`. Streams stdout for live output. `kill()` sends SIGTERM. Parses JSON from stdout/stderr. | child_process, path |
+| `src/agent/git-integration.js` | Git integration — `getDiff(base, branch)`, `getDiffStat(base, branch)`, `countFilesChanged(tag, branch)`, `merge(runBranch, targetBranch)`, `rollback(tag)`, `createPr(branch, title, body)` via `gh`, `getReport(branch)` reads NIGHTYTIDY-REPORT from git | child_process |
+| `src/agent/websocket-server.js` | WebSocket + HTTP server — binds `127.0.0.1:48372`, token-based auth handshake, `broadcast()` to all clients, rate limit (10 msg/sec per client), HTTP endpoints: `GET /auth-info` (localhost only), `POST /auth-callback` (receives Firebase tokens from web app). CORS headers for nightytidy.com. | http, ws, os, logger |
+| `src/agent/webhook-dispatcher.js` | Webhook dispatch — sends events to multiple endpoints via `Promise.allSettled()`, 3 retries with delays [1s, 5s, 15s], auto-formats for Slack (blocks), Discord (embeds), or generic JSON. Fire-and-forget — failures logged but never block runs. | logger |
+| `src/agent/firebase-auth.js` | Firebase auth — `parseJwtExpiry()` decodes real token expiry from JWT `exp` claim (no crypto needed), `setToken(token)` auto-parses expiry, `needsRefresh()` with 15-min buffer, `markRefreshRequested()` with exponential backoff retry (30s→60s→120s→4min cap), webhook queue (`queueWebhook()`/`onTokenRefresh()`) replays missed webhooks when fresh token arrives, capped at 200 entries | logger |
 
 ## Build & Run Commands
 
@@ -170,6 +202,7 @@ npx nightytidy --resume      # Resume a previously paused run (usage limit / man
 npx nightytidy --sync           # Sync prompts from the published Google Doc
 npx nightytidy --sync-dry-run   # Preview what --sync would change without writing files
 npx nightytidy --sync --sync-url <url>  # Sync from a custom Google Doc URL
+npx nightytidy agent      # Start the agent (WebSocket server for nightytidy.com web app)
 npm run gui               # Launch desktop GUI (Node.js server + Chrome app mode)
 npm test                  # Vitest — single pass (all 30 files)
 npm run test:fast         # Vitest — excludes slow integration/git tests (~6s vs ~10s)
@@ -250,6 +283,11 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **Don't use raw `child_process.exec`** — use `spawn` for streaming stdout and timeout control
 - **Don't commit `nightytidy-run.log`** — it's per-run ephemeral output
 - **Don't use raw `rm()` in tests** — use `robustCleanup()` from `test/helpers/cleanup.js` for temp directory cleanup (prevents EBUSY flakiness on Windows)
+- **Don't hardcode version strings** in agent modules — read from `package.json` via `AGENT_VERSION` constant in `index.js`
+- **Don't import core modules from agent** — agent uses `CliBridge` to spawn CLI as subprocess, not direct imports
+- **Don't hardcode the Firebase webhook URL** — use `FIREBASE_WEBHOOK_URL` constant in `index.js`
+- **Don't assume Firebase tokens last 1 hour** — tokens expire based on the JWT `exp` claim, which reflects when Firebase *minted* the token, not when the agent received it
+- **Don't skip the `dispatchWithQueue()` helper** — all Firestore webhook dispatches must go through it to ensure queuing when unauthenticated
 
 ## Security
 
@@ -351,7 +389,7 @@ Each command is a separate process invocation. State persists via `nightytidy-ru
 ## Testing
 
 - **Framework**: Vitest v3, `vitest.config.js` for coverage thresholds + strip-shebang plugin
-- **Tests** across 40 files — `npm test` to run, `npm run test:ci` for coverage enforcement
+- **Tests** across 50 files (987 tests) — `npm test` to run, `npm run test:ci` for coverage enforcement
 - **Coverage thresholds**: 90% statements, 80% branches, 80% functions — enforced by `test:ci`
 - **Philosophy**: Mock Claude Code subprocess, use real git against temp directories. Test failure paths harder than success paths
 - **Universal mock**: All test files mock `../src/logger.js` to prevent file I/O during tests (exception: `logger.test.js` tests the real logger)
@@ -395,6 +433,290 @@ When you learn something worth preserving, put it in the right place:
 | `dashboard.md` | Changing progress display (HTTP, TUI, SSE) |
 | `report-generation.md` | Changing report format or CLAUDE.md auto-update |
 | `pitfalls.md` | Debugging platform-specific or subprocess issues |
+
+## Agent Mode (Web App Backend)
+
+The agent is a persistent local process that serves as the backend for nightytidy.com. It runs as a WebSocket server on `127.0.0.1:48372`, receiving commands from the web app and executing NightyTidy runs against local git repositories.
+
+### Three Execution Modes
+
+NightyTidy has three ways to run, all in the same npm package:
+
+| Mode | Entry | UI | State |
+|------|-------|-----|-------|
+| **CLI** | `npx nightytidy [--all\|--steps]` | Terminal (interactive or headless) | Per-run only |
+| **Desktop GUI** | `npm run gui` | Chrome app-mode window | Per-session (server.js) |
+| **Agent** | `npx nightytidy agent` | nightytidy.com web app | Persistent (`~/.nightytidy/`) |
+
+The agent mode is the newest and most feature-rich. It uses the CLI bridge to spawn `npx nightytidy --init-run` / `--run-step` / `--finish-run` as subprocesses, giving it all CLI capabilities while adding persistent state, scheduling, and web-based monitoring.
+
+### Agent Architecture
+
+```
+nightytidy.com (web app)
+    │
+    │  WebSocket (ws://127.0.0.1:48372)
+    │  + HTTP POST /auth-callback (Firebase token)
+    │
+    ▼
+┌─────────────────────────────────────────────────┐
+│  AgentWebSocketServer (websocket-server.js)      │
+│  - Token-based auth handshake                    │
+│  - Rate limiting (10 msg/sec per client)         │
+│  - Broadcast events to all connected clients     │
+│  - HTTP /auth-callback receives Firebase tokens  │
+└──────────────┬──────────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────────┐
+│  Command Handler (index.js — 30+ commands)       │
+│  - Project CRUD (add/remove/list)                │
+│  - Queue operations (enqueue/reorder/cancel)     │
+│  - Run control (start/stop/pause/resume/skip)    │
+│  - Git operations (diff/merge/rollback/PR)       │
+│  - Scheduling (set/remove/list)                  │
+│  - Interrupted run recovery (resume/finish)      │
+│  - Auth refresh (token management)               │
+└──────────────┬──────────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────────┐
+│  Run Queue Processor (index.js processQueue)     │
+│  - Dequeues runs sequentially                    │
+│  - Spawns CliBridge for each run                 │
+│  - Streams stdout to web app via WebSocket       │
+│  - Tracks per-step progress (stepList)           │
+│  - Handles rate limits, pause/resume, skip       │
+│  - Saves state on crash for interrupted recovery │
+└──────────────┬──────────────────────────────────┘
+               │
+               ▼
+┌─────────────────────────────────────────────────┐
+│  CliBridge (cli-bridge.js)                       │
+│  - npx nightytidy --init-run --steps 1,5,...     │
+│  - npx nightytidy --run-step N  (per step)       │
+│  - npx nightytidy --finish-run                   │
+│  - npx nightytidy --list --json                  │
+│  Output streamed via callback for live display   │
+└─────────────────────────────────────────────────┘
+```
+
+### Agent State Files
+
+All agent state persists in `~/.nightytidy/` (cross-session):
+
+| File | Structure | Purpose |
+|------|-----------|---------|
+| `config.json` | `{ version, port, token, machine }` | Server config. Port defaults to 48372. Token is a random 32-byte hex string generated on first run. Machine is `os.hostname()`. `CONFIG_VERSION` tracks schema migrations. |
+| `projects.json` | `[{ id, path, name, addedAt, lastRunAt, schedule, webhooks }]` | Project registry. `id` is a SHA-256 hash of the path. `schedule` has `{ cron, enabled, steps }`. `webhooks` is an array of `{ url, label, headers }`. `pruneStaleProjects()` removes entries whose paths no longer exist on disk. |
+| `queue.json` | `{ queue: [...], current: {...}, interrupted: {...} }` | Run queue. `queue` holds pending runs. `current` is the active run (or null). `interrupted` holds crash-recovered state with `lastProgress` containing `{ stepList, completedCount, failedCount, totalCost }`. |
+
+### WebSocket Protocol
+
+**Authentication**: Client sends `{ type: 'auth', token: '<token>' }` → server replies `{ type: 'connected', machine, version, startedAt }`. Unauthenticated messages are rejected.
+
+**Command/Reply**: Client sends `{ type: '<command>', ...params }` → server calls `handleCommand()` → reply sent back to the requesting client only.
+
+**Broadcasts**: Server sends to ALL connected clients. Used for live state updates:
+
+| Broadcast Event | When | Data |
+|----------------|------|------|
+| `run-started` | Run begins | `{ runId, projectId, projectName, branch }` |
+| `run-init` | After --init-run | `{ runId, projectName, totalSteps, startedAt, steps[] }` |
+| `step-started` | Step begins | `{ runId, step: { number } }` |
+| `step-output` | Live stdout | `{ runId, text, mode: 'raw' }` |
+| `step-completed` | Step passes | `{ runId, step: { number, name, status, duration, cost, ... }, cost }` |
+| `step-failed` | Step fails | `{ runId, step: { number, name }, error, duration, cost }` |
+| `step-skipped` | User skips step | `{ runId, step: { number } }` |
+| `run-completed` | All steps done | `{ runId, results }` |
+| `run-failed` | Run stopped/error | `{ runId, error }` |
+| `run-paused` | User pauses | `{ runId }` |
+| `run-resumed` | User resumes | `{ runId }` |
+| `run-interrupted` | Agent crash/shutdown | `{ runId, completedSteps, failedSteps, totalCost }` |
+| `rate-limit` | API rate limited | `{ runId, retryAfterMs, step: { number } }` |
+| `rate-limit-resumed` | Rate limit cleared | `{ runId }` |
+| `queue-updated` | Queue changes | `{ queue: [...] }` |
+| `token-refresh-needed` | Token expiring | `{}` — web app should respond with `auth-refresh` command |
+
+### WebSocket Command API
+
+| Command | Parameters | Reply | Description |
+|---------|-----------|-------|-------------|
+| `list-projects` | — | `{ type: 'projects', projects[] }` | List all registered projects |
+| `add-project` | `{ path }` | `{ type: 'projects', projects[] }` | Register a git repo |
+| `remove-project` | `{ projectId }` | `{ type: 'projects', projects[] }` | Remove a project |
+| `start-run` | `{ projectId, steps[], timeout? }` | `{ type: 'run-started', runId, projectId }` | Enqueue a run |
+| `stop-run` | `{ runId }` | `{ type: 'run-failed', runId }` | Kill active run |
+| `pause-run` | `{ runId }` | `{ type: 'run-paused', runId }` | Pause step loop |
+| `resume-run` | `{ runId }` | `{ type: 'run-resumed', runId }` | Resume step loop |
+| `skip-step` | `{ runId, step }` | `{ type: 'step-skipped', runId, step }` | Skip current step |
+| `get-run` | `{ runId? }` | `{ type: 'run-state', ... }` | Fetch current run state (supports page refresh recovery) |
+| `get-queue` | — | `{ type: 'queue-updated', queue[], current }` | Fetch queue state |
+| `get-diff` | `{ projectId, baseBranch, runBranch }` | `{ type: 'diff', diff, stat }` | Git diff for a run |
+| `get-report` | `{ projectId, runBranch }` | `{ type: 'report', filename, content }` | Read NIGHTYTIDY-REPORT from branch |
+| `merge` | `{ projectId, runBranch, targetBranch }` | `{ type: 'merge-result', ... }` | Merge run branch |
+| `rollback` | `{ projectId, tag }` | `{ type: 'rollback-result', success }` | Reset to safety tag |
+| `create-pr` | `{ projectId, branch, title, body }` | `{ type: 'pr-result', ... }` | Create GitHub PR |
+| `retry-step` | `{ projectId, step, timeout? }` | `{ type: 'retry-queued', runId }` | Re-run a single step |
+| `reorder-queue` | `{ order[] }` | `{ type: 'queue-updated', queue[] }` | Reorder pending runs |
+| `resume-interrupted` | — | `{ type: 'resume-started', runId }` | Resume crash-recovered run |
+| `finish-interrupted` | — | `{ type: 'finish-started', runId }` | Finish with partial results |
+| `discard-interrupted` | — | `{ type: 'interrupted-discarded', runId }` | Discard interrupted run |
+| `get-schedules` | — | `{ type: 'schedules', schedules[] }` | List cron schedules |
+| `set-schedule` | `{ projectId, cron, steps? }` | `{ type: 'schedule-updated' }` | Set cron schedule |
+| `remove-schedule` | `{ projectId }` | `{ type: 'schedule-removed' }` | Remove schedule |
+| `auth-refresh` | `{ token }` | `{ type: 'auth-refresh-ack' }` | Update Firebase token |
+| `select-folder` | `{ path }` | `{ type: 'folder-selected', path }` | Passthrough for native dialog |
+
+### Firebase Integration
+
+The agent communicates with Firestore via webhooks to a Cloud Function at `https://webhookingest-24h6taciuq-uc.a.run.app`. The web app provides Firebase ID tokens so the Cloud Function can verify the user.
+
+**Token lifecycle**:
+1. User opens nightytidy.com → web app's `AgentAuthSync` component sends Firebase ID token via `POST /auth-callback` on the agent's HTTP server
+2. Agent calls `firebaseAuth.setToken(token)` which parses the JWT `exp` claim to set the real expiry (not a hardcoded 1 hour)
+3. Before each step, `requestTokenRefreshIfNeeded()` checks if token is within 15 minutes of expiry
+4. If refresh needed, broadcasts `{ type: 'token-refresh-needed' }` via WebSocket
+5. Web app's `AgentProvider` receives event, calls `user.getIdToken(true)` (force refresh), sends back via `auth-refresh` command
+6. If web app doesn't respond, the refresh request retries with exponential backoff (30s → 60s → 120s → 4min cap)
+
+**Webhook events sent to Firestore**:
+- `run_started` — creates run document with status, selectedSteps, gitBranch, gitTag
+- `step_completed` — increments completedSteps, writes step subdocument
+- `step_failed` — increments failedSteps, writes step subdocument
+- `run_completed` — sets status='completed', finishedAt
+- `run_failed` — sets status='failed', finishedAt
+- `run_interrupted` — sets status='interrupted', interruptedAt
+- `run_resumed` — sets status='running' (preserves counters)
+- `heartbeat` — updates lastHeartbeat field (every 60 seconds during a run)
+
+**Webhook queue**: When `isAuthenticated()` returns false (token expired), webhook payloads are queued (up to 200 entries). When `setToken()` receives a fresh token, queued webhooks are replayed via the `onTokenRefresh` callback. This prevents data loss during extended token gaps. Heartbeats are NOT queued (they're liveness pings, only useful in real-time).
+
+**`dispatchWithQueue()` helper** (in index.js): Replaces all inline webhook dispatch patterns. Always sends to user webhooks (Slack/Discord) immediately. Sends to Firestore endpoint if authenticated, otherwise queues for replay.
+
+### Agent Error Contracts
+
+| Module | Contract |
+|--------|----------|
+| `agent/index.js` | **Never throws** — errors sent as `{ type: 'error', message, code }` replies. Run failures broadcast as `run-failed`. |
+| `agent/config.js` | **Throws** on filesystem errors (first-run config creation). Caught by `startAgent()`. |
+| `agent/project-manager.js` | **Throws** on invalid path. Caught by command handler. |
+| `agent/run-queue.js` | **Swallows errors** — queue operations always succeed (dequeue returns null if empty). |
+| `agent/scheduler.js` | **Throws** on invalid cron. Validated before calling via `Scheduler.isValidCron()`. |
+| `agent/cli-bridge.js` | **Never throws** — returns `{ success, parsed, stderr }`. Non-zero exit codes are failures, not exceptions. |
+| `agent/git-integration.js` | **Throws** on git errors. Caught by command handler with error code classification. |
+| `agent/websocket-server.js` | **Swallows errors** — WebSocket errors logged, never crash the server. |
+| `agent/webhook-dispatcher.js` | **Swallows errors** — webhook failures logged as warnings, never block runs. Uses `Promise.allSettled()`. |
+| `agent/firebase-auth.js` | **Never throws** — token operations always succeed (return null/false/empty on failure). |
+
+### Agent Dependency Graph
+
+```
+npx nightytidy agent
+  └── src/agent/index.js
+        ├── src/logger.js              (universal dependency)
+        ├── src/agent/config.js        → fs, path, os, crypto
+        ├── src/agent/project-manager.js → fs, path, crypto
+        ├── src/agent/run-queue.js     → fs, path, crypto
+        ├── src/agent/scheduler.js     → node-cron
+        ├── src/agent/websocket-server.js → http, ws, os, logger
+        ├── src/agent/webhook-dispatcher.js → logger
+        ├── src/agent/cli-bridge.js    → child_process, path
+        ├── src/agent/git-integration.js → child_process
+        └── src/agent/firebase-auth.js → logger
+```
+
+The agent imports ONLY its own modules + logger. It does NOT import cli.js, executor.js, orchestrator.js, or any other core module directly — it uses CliBridge to spawn those as subprocesses.
+
+### Agent Lifecycle
+
+```
+1. Read/create config (~/.nightytidy/config.json)
+2. Initialize components (ProjectManager, RunQueue, Scheduler, FirebaseAuth, WebhookDispatcher)
+3. Wire up Firebase onTokenRefresh callback (webhook queue replay)
+4. Start WebSocket server on 127.0.0.1:{port}
+5. Register scheduler callbacks for all enabled project schedules
+6. Check for interrupted runs from previous crashes
+   - If found: log it, notify Firestore, wait for user action via web app
+   - Also detect orphaned "running" entries (crash without graceful shutdown)
+7. Print startup banner with version, WebSocket URL, and token preview
+8. Wait for WebSocket commands from web app
+```
+
+**Graceful shutdown** (SIGINT/SIGTERM):
+1. Save interrupted state if a run is active (`markInterrupted(runProgress)`)
+2. Best-effort notify Firestore (`run_interrupted` webhook via `dispatchWithQueue`)
+3. Broadcast `run-interrupted` to connected web app clients
+4. Stop heartbeat
+5. Stop all cron schedulers
+6. Close WebSocket server
+7. Exit
+
+**Crash recovery** (uncaughtException/unhandledRejection):
+1. Same as graceful shutdown (save state, notify, exit with code 1)
+2. On next startup, `getInterrupted()` returns the saved state
+3. Web app can choose: Resume (re-run remaining steps), Finish (generate partial report), or Discard
+
+### Interrupted Run Recovery
+
+When the agent crashes or is killed mid-run, state is saved to `queue.json` with `lastProgress`:
+
+```json
+{
+  "interrupted": {
+    "id": "run-1773800339596-78266b69",
+    "projectId": "8da06f19b3751553",
+    "steps": [1, 2, 3, ...],
+    "startedAt": 1773800339596,
+    "interruptedAt": 1773804030000,
+    "lastProgress": {
+      "stepList": [{ "number": 1, "name": "Documentation", "status": "completed" }, ...],
+      "completedCount": 5,
+      "failedCount": 0,
+      "totalCost": 12.50,
+      "currentStepNum": 6
+    }
+  }
+}
+```
+
+**Resume flow** (`resume-interrupted` command):
+1. Read CLI state file (`nightytidy-run-state.json`) for completed steps
+2. Calculate remaining steps
+3. Transition queue entry back to "running"
+4. Send `run_resumed` webhook to Firestore (NOT `run_started` — preserves counters)
+5. Re-enter step loop for remaining steps only
+6. Finish normally (report + merge)
+
+**Finish flow** (`finish-interrupted` command):
+1. Call `--finish-run` to generate partial report from completed steps
+2. Send `run_completed` webhook
+
+### Versioning & Publishing
+
+The agent is bundled in the `nightytidy` npm package (not a separate package). Version is read from `package.json` at startup and displayed in:
+- Console startup banner: `NightyTidy Agent v{version}`
+- WebSocket `connected` reply: `{ version }`
+- Webhook payloads: `{ agent: { version } }`
+
+**Publishing workflow**:
+1. Make changes on `feature/agent-module` branch
+2. Bump version in `package.json`
+3. `npm test` to verify
+4. `git commit` and `git push origin feature/agent-module`
+5. `npm publish` (requires `npm login` first)
+6. Restart agent to pick up new version
+
+**Version convention**: `0.x.y` — major bump reserved for stable release. Patch bumps for bug fixes, minor bumps for features.
+
+### Agent Security
+
+- **WebSocket auth**: Token-based handshake required before any commands. Token stored in `~/.nightytidy/config.json`.
+- **Localhost only**: WebSocket and HTTP server bind to `127.0.0.1` — not accessible from network.
+- **Rate limiting**: 10 messages per second per WebSocket client.
+- **CORS**: HTTP endpoints include `Access-Control-Allow-Origin` for nightytidy.com.
+- **Firebase token handling**: JWT `exp` claim parsed from token payload (base64url decode, no crypto). Never stored on disk — in-memory only.
+- **Webhook auth**: Firebase bearer token included in webhook headers. Expired tokens detected via `isAuthenticated()` check against parsed JWT expiry.
 
 ## NightyTidy — Last Run
 
