@@ -181,10 +181,17 @@ describe('integration: report generation with real files', () => {
 
     await generateReport(results, 'A narrated summary of changes.', metadata);
 
-    // Verify NIGHTYTIDY-REPORT.md was created
-    const reportPath = path.join(tempDir, 'NIGHTYTIDY-REPORT.md');
-    expect(existsSync(reportPath)).toBe(true);
+    // Verify report was created in audit-reports/ directory
+    const auditDir = path.join(tempDir, 'audit-reports');
+    expect(existsSync(auditDir)).toBe(true);
 
+    // Find the report file (has 00_NIGHTYTIDY-REPORT prefix)
+    const { readdirSync } = await import('fs');
+    const files = readdirSync(auditDir);
+    const reportFile = files.find(f => f.startsWith('00_NIGHTYTIDY-REPORT'));
+    expect(reportFile).toBeDefined();
+
+    const reportPath = path.join(auditDir, reportFile);
     const reportContent = readFileSync(reportPath, 'utf8');
     expect(reportContent).toContain('# NightyTidy Report');
     expect(reportContent).toContain('A narrated summary');

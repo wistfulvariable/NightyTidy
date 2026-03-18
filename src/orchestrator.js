@@ -771,7 +771,8 @@ export async function finishRun(projectDir) {
     const stepsOutputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.outputTokens || 0), 0) || null;
 
     // Build unique report filename (numbered + timestamped)
-    const { reportFile } = buildReportNames(projectDir, state.startTime);
+    const { reportFile, reportDir } = buildReportNames(projectDir, state.startTime);
+    const reportPath = path.join(reportDir, reportFile);
 
     // ── Single AI call for report generation ──
     const finishStart = Date.now();
@@ -800,7 +801,7 @@ export async function finishRun(projectDir) {
 
     // Generate report in a single fresh Claude session (like other steps)
     info('Generating report (narration + action plan)...');
-    const reportPrompt = buildReportPrompt(executionResults, metadata, { reportFile });
+    const reportPrompt = buildReportPrompt(executionResults, metadata, { reportFile: reportPath });
     const reportResult = await runPrompt(SAFETY_PREAMBLE + reportPrompt, projectDir, {
       label: 'Report generation',
       timeout: state.timeout || undefined,
@@ -811,7 +812,6 @@ export async function finishRun(projectDir) {
     const finishDuration = Date.now() - finishStart;
 
     // Verify the report file was created correctly
-    const reportPath = path.join(projectDir, reportFile);
     let reportOk = false;
     try {
       if (existsSync(reportPath)) {
@@ -823,7 +823,7 @@ export async function finishRun(projectDir) {
     // Fallback: generate report via JS template if AI failed
     if (!reportOk) {
       warn('AI report generation failed or produced invalid output — using template fallback');
-      generateReport(executionResults, null, metadata, { reportFile, skipClaudeMdUpdate: true });
+      generateReport(executionResults, null, metadata, { reportFile, reportDir, skipClaudeMdUpdate: true });
     }
 
     // Update progress: mark finish step as completed
@@ -844,7 +844,7 @@ export async function finishRun(projectDir) {
     // Commit report + CLAUDE.md (if not already committed by Claude)
     const gitInstance = getGitInstance();
     try {
-      const filesToCommit = [reportFile, 'CLAUDE.md'];
+      const filesToCommit = [reportPath, 'CLAUDE.md'];
       await gitInstance.add(filesToCommit);
       await gitInstance.commit('NightyTidy: Add run report and update CLAUDE.md');
     } catch (err) {
@@ -853,7 +853,7 @@ export async function finishRun(projectDir) {
 
     // Read report content for embedding in response (avoids fragile file-read API in GUI)
     let reportContent = null;
-    try { reportContent = readFileSync(path.join(projectDir, reportFile), 'utf-8'); } catch { /* merge will bring file back */ }
+    try { reportContent = readFileSync(reportPath, 'utf-8'); } catch { /* merge will bring file back */ }
 
     // Merge
     const mergeResult = await mergeRunBranch(state.originalBranch, state.runBranch);
@@ -890,7 +890,7 @@ export async function finishRun(projectDir) {
       finishDuration,
       merged: mergeResult.success,
       mergeConflict: mergeResult.conflict || false,
-      reportPath: reportFile,
+      reportPath,
       reportContent,
       tagName: state.tagName,
       runBranch: state.runBranch,

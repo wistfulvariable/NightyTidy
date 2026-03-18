@@ -73,7 +73,7 @@ vi.mock('../src/report.js', () => ({
   updateClaudeMd: vi.fn(),
   formatDuration: vi.fn((ms) => `${Math.floor(ms / 60000)}m`),
   getVersion: vi.fn(() => '0.1.0'),
-  buildReportNames: vi.fn(() => ({ reportFile: 'NIGHTYTIDY-REPORT_01_2026-01-01-0000.md' })),
+  buildReportNames: vi.fn(() => ({ reportFile: '00_NIGHTYTIDY-REPORT_01_2026-01-01-0000.md', reportDir: '/fake/project/audit-reports' })),
 }));
 
 vi.mock('../src/lock.js', () => ({
@@ -585,7 +585,8 @@ describe('finishRun', () => {
     expect(result.completed).toBe(1);
     expect(result.failed).toBe(1);
     expect(result.merged).toBe(true);
-    expect(result.reportPath).toBe('NIGHTYTIDY-REPORT_01_2026-01-01-0000.md');
+    expect(result.reportPath).toContain('audit-reports');
+    expect(result.reportPath).toContain('00_NIGHTYTIDY-REPORT');
     expect(result.reportContent).toBeTypeOf('string');
     // AI report succeeded, so generateReport fallback should NOT be called
     expect(buildReportPrompt).toHaveBeenCalled();
@@ -602,7 +603,8 @@ describe('finishRun', () => {
     expect(executionResults.failedCount).toBe(1);
     expect(executionResults.results).toHaveLength(2);
     expect(metadata.branchName).toBe('nightytidy/run-2026-03-06-1430');
-    expect(options.reportFile).toBe('NIGHTYTIDY-REPORT_01_2026-01-01-0000.md');
+    expect(options.reportFile).toContain('audit-reports');
+    expect(options.reportFile).toContain('00_NIGHTYTIDY-REPORT');
   });
 
   it('passes totalInputTokens and totalOutputTokens in metadata to buildReportPrompt', async () => {
@@ -704,7 +706,9 @@ describe('finishRun', () => {
     await finishRun('/fake/project');
 
     const addedFiles = mockGit.add.mock.calls[0][0];
-    expect(addedFiles).toEqual(['NIGHTYTIDY-REPORT_01_2026-01-01-0000.md', 'CLAUDE.md']);
+    expect(addedFiles[0]).toContain('audit-reports');
+    expect(addedFiles[0]).toContain('00_NIGHTYTIDY-REPORT');
+    expect(addedFiles[1]).toBe('CLAUDE.md');
   });
 
   it('calls updateClaudeMd independently', async () => {

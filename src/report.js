@@ -8,41 +8,45 @@
  * Error contract: Warns but NEVER throws. Report failure must not crash a run.
  */
 
-import { writeFileSync, readFileSync, existsSync, readdirSync } from 'fs';
+import { writeFileSync, readFileSync, existsSync, readdirSync, mkdirSync } from 'fs';
 import path from 'path';
 import { info, warn } from './logger.js';
 import { REPORT_PROMPT } from './prompts/loader.js';
 
-const REPORT_PREFIX = 'NIGHTYTIDY-REPORT';
+const REPORT_PREFIX = '00_NIGHTYTIDY-REPORT';
+const REPORT_SUBDIR = 'audit-reports';
 
 /**
  * Build a unique, numbered + timestamped filename for the report.
- * Scans the project directory for existing reports to auto-increment the number.
+ * Scans the audit-reports/ directory for existing reports to auto-increment the number.
  * @param {string} projectDir - Target project directory
  * @param {number} [startTime] - Run start time (ms epoch); defaults to now
- * @returns {{ reportFile: string }}
+ * @returns {{ reportFile: string, reportDir: string }}
  */
 export function buildReportNames(projectDir, startTime = Date.now()) {
   const d = new Date(startTime);
   const pad2 = n => String(n).padStart(2, '0');
   const timestamp = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}-${pad2(d.getHours())}${pad2(d.getMinutes())}`;
 
-  // Find next available number by scanning existing report files
+  const reportDir = path.join(projectDir, REPORT_SUBDIR);
+
+  // Find next available number by scanning existing report files in audit-reports/
   let maxNum = 0;
   try {
-    const files = readdirSync(projectDir);
-    const pattern = /^NIGHTYTIDY-REPORT_(\d+)_/;
+    const files = readdirSync(reportDir);
+    const pattern = /^00_NIGHTYTIDY-REPORT_(\d+)_/;
     for (const f of files) {
       const m = f.match(pattern);
       if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
     }
-  } catch { /* directory unreadable — start at 1 */ }
+  } catch { /* directory unreadable or doesn't exist — start at 1 */ }
 
   const num = pad2(maxNum + 1);
   const suffix = `_${num}_${timestamp}`;
 
   return {
     reportFile: `${REPORT_PREFIX}${suffix}.md`,
+    reportDir,
   };
 }
 
@@ -68,6 +72,7 @@ export function buildReportNames(projectDir, startTime = Date.now()) {
  * @typedef {Object} ReportOptions
  * @property {string|null} [actionPlanText] - Inline action plan markdown (headings already downgraded)
  * @property {string} [reportFile] - Custom report filename
+ * @property {string} [reportDir] - Custom report directory (defaults to audit-reports/)
  */
 
 /** @type {string|undefined} */
@@ -449,7 +454,7 @@ export function verifyReportContent(content, metadata) {
  * @param {ReportOptions} [options] - Report options
  * @returns {string} The report filename (basename only, e.g. 'NIGHTYTIDY-REPORT_01_2026-03-10-1448.md')
  */
-export function generateReport(results, narration, metadata, { actionPlanText, reportFile, skipClaudeMdUpdate } = {}) {
+export function generateReport(results, narration, metadata, { actionPlanText, reportFile, reportDir, skipClaudeMdUpdate } = {}) {
   const date = formatDate(metadata.startTime);
 
   let report = `# NightyTidy Report \u2014 ${date}\n\n`;
@@ -474,8 +479,15 @@ export function generateReport(results, narration, metadata, { actionPlanText, r
 
   report += buildUndoSection(metadata);
 
-  const filename = reportFile || 'NIGHTYTIDY-REPORT.md';
-  const reportPath = path.join(metadata.projectDir, filename);
+  const filename = reportFile || '00_NIGHTYTIDY-REPORT.md';
+  const targetDir = reportDir || path.join(metadata.projectDir, REPORT_SUBDIR);
+
+  // Ensure the report directory exists
+  try {
+    mkdirSync(targetDir, { recursive: true });
+  } catch { /* directory already exists or can't be created — continue anyway */ }
+
+  const reportPath = path.join(targetDir, filename);
   writeFileSync(reportPath, report, 'utf8');
   info(`Report written to ${reportPath}`);
 

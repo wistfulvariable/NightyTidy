@@ -219,7 +219,7 @@ describe('buildReportPrompt', () => {
     const results = makeResults({ completedCount: 2, failedCount: 0 });
     const metadata = makeMetadata();
 
-    const prompt = buildReportPrompt(results, metadata, { reportFile: 'NIGHTYTIDY-REPORT_01_2026-02-28-0100.md' });
+    const prompt = buildReportPrompt(results, metadata, { reportFile: '00_NIGHTYTIDY-REPORT_01_2026-02-28-0100.md' });
 
     expect(typeof prompt).toBe('string');
     expect(prompt).toContain('mock report prompt template');
@@ -240,7 +240,7 @@ describe('buildReportPrompt', () => {
   it('includes the reportFile name in the prompt', () => {
     const results = makeResults({ completedCount: 1, failedCount: 0 });
     const metadata = makeMetadata();
-    const reportFile = 'NIGHTYTIDY-REPORT_05_2026-02-28-0100.md';
+    const reportFile = '00_NIGHTYTIDY-REPORT_05_2026-02-28-0100.md';
 
     const prompt = buildReportPrompt(results, metadata, { reportFile });
 

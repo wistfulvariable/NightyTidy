@@ -6,11 +6,11 @@ Assumes CLAUDE.md loaded. Report logic in `src/report.js`, action plan logic in 
 
 | Function | Purpose |
 |----------|---------|
-| `generateReport(results, narration, metadata, { actionPlanText, reportFile })` | Writes NIGHTYTIDY-REPORT.md (with inline action plan) + updates CLAUDE.md |
+| `generateReport(results, narration, metadata, { actionPlanText, reportFile, reportDir })` | Writes report to `audit-reports/00_NIGHTYTIDY-REPORT_*.md` (with inline action plan) + updates CLAUDE.md |
 | `cleanNarration(text)` | Strips conversational preamble from AI-generated narration (applied internally by `generateReport`) |
 | `formatDuration(ms)` | Format milliseconds to human-readable string |
 | `getVersion()` | Returns version from package.json (lazy-cached, defaults to '0.1.0' on error) |
-| `buildReportNames(projectDir, startTime)` | Returns `{ reportFile }` with auto-incremented number + timestamp |
+| `buildReportNames(projectDir, startTime)` | Returns `{ reportFile, reportDir }` — reportFile has `00_` prefix, reportDir is `audit-reports/` subdirectory |
 
 ## Report Structure (single file — no separate ACTIONS file)
 

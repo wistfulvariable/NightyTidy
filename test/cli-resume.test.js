@@ -117,7 +117,7 @@ vi.mock('../src/report.js', () => ({
   generateReport: vi.fn(),
   formatDuration: vi.fn((ms) => `${Math.round(ms / 1000)}s`),
   getVersion: vi.fn(() => '0.1.0'),
-  buildReportNames: vi.fn(() => ({ reportFile: 'NIGHTYTIDY-REPORT_01_2026-01-01-0000.md' })),
+  buildReportNames: vi.fn(() => ({ reportFile: '00_NIGHTYTIDY-REPORT_01_2026-01-01-0000.md', reportDir: '/fake/project/audit-reports' })),
   buildReportPrompt: vi.fn(() => 'mock report prompt'),
   verifyReportContent: vi.fn(() => true),
   updateClaudeMd: vi.fn(),

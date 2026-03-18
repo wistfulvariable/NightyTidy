@@ -108,11 +108,11 @@ describe('report.js edge cases', () => {
       const filename = reportModule.generateReport(results, narration, metadata);
 
       // Should return a filename
-      expect(filename).toMatch(/NIGHTYTIDY-REPORT.*\.md$/);
+      expect(filename).toMatch(/00_NIGHTYTIDY-REPORT.*\.md$/);
 
       // Check what was written - first call is the report, second is CLAUDE.md
       expect(writeFileSync).toHaveBeenCalled();
-      const reportCall = writeFileSync.mock.calls.find(c => c[0].includes('NIGHTYTIDY-REPORT'));
+      const reportCall = writeFileSync.mock.calls.find(c => c[0].includes('00_NIGHTYTIDY-REPORT'));
       expect(reportCall).toBeDefined();
       const writtenContent = reportCall[1];
       expect(writtenContent).toContain('Step1');
@@ -144,11 +144,11 @@ describe('report.js edge cases', () => {
       const filename = reportModule.generateReport(results, narration, metadata);
 
       // Should return a filename
-      expect(filename).toMatch(/NIGHTYTIDY-REPORT.*\.md$/);
+      expect(filename).toMatch(/00_NIGHTYTIDY-REPORT.*\.md$/);
 
       // Check the written content contains M suffix
       expect(writeFileSync).toHaveBeenCalled();
-      const reportCall = writeFileSync.mock.calls.find(c => c[0].includes('NIGHTYTIDY-REPORT'));
+      const reportCall = writeFileSync.mock.calls.find(c => c[0].includes('00_NIGHTYTIDY-REPORT'));
       expect(reportCall).toBeDefined();
       const writtenContent = reportCall[1];
       expect(writtenContent).toContain('Step1');

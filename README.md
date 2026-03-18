@@ -229,7 +229,7 @@ Changes are always on the run branch — your original branch is safe.
 
 After all steps complete, NightyTidy generates:
 
-- **NIGHTYTIDY-REPORT.md** — AI-narrated run summary with per-step results, costs, token usage, duration, and a prioritized action plan
+- **`audit-reports/00_NIGHTYTIDY-REPORT_*.md`** — AI-narrated run summary with per-step results, costs, token usage, duration, and a prioritized action plan (the `00_` prefix ensures reports sort to the top of the audit-reports folder)
 - **CLAUDE.md update** — Appends a "Last Run" section with the run date and undo instructions
 - **Audit trail** — All 33 step prompts are copied to `audit-reports/refactor-prompts/` so you can see exactly what was asked
 
@@ -239,7 +239,7 @@ If the AI report fails verification (junk detection), NightyTidy falls back to a
 
 | File | Committed? | Purpose |
 |------|-----------|---------|
-| `NIGHTYTIDY-REPORT_NN_YYYY-MM-DD-HHMM.md` | Yes | Run summary with step results + action plan |
+| `audit-reports/00_NIGHTYTIDY-REPORT_NN_YYYY-MM-DD-HHMM.md` | Yes | Run summary with step results + action plan |
 | `CLAUDE.md` (appended section) | Yes | "NightyTidy — Last Run" with undo tag |
 | `audit-reports/refactor-prompts/*.md` | Yes | All 33 prompts for audit trail |
 | `nightytidy-before-*` git tag | Yes (tag) | Safety snapshot for rollback |

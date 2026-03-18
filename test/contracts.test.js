@@ -633,8 +633,9 @@ describe('contract: report.js — getVersion and side effects', () => {
     expect(version.length).toBeGreaterThan(0);
   });
 
-  it('generateReport writes NIGHTYTIDY-REPORT.md to disk', async () => {
+  it('generateReport writes report to audit-reports/ directory', async () => {
     const { generateReport } = await import('../src/report.js');
+    const { readdirSync } = await import('fs');
 
     const results = {
       results: [{ step: { number: 1, name: 'Lint' }, status: 'completed', output: 'ok', duration: 1000, attempts: 1, error: null }],
@@ -652,7 +653,11 @@ describe('contract: report.js — getVersion and side effects', () => {
 
     generateReport(results, null, metadata);
 
-    expect(existsSync(path.join(tempDir, 'NIGHTYTIDY-REPORT.md'))).toBe(true);
+    const auditDir = path.join(tempDir, 'audit-reports');
+    expect(existsSync(auditDir)).toBe(true);
+    const files = readdirSync(auditDir);
+    const reportFile = files.find(f => f.startsWith('00_NIGHTYTIDY-REPORT'));
+    expect(reportFile).toBeDefined();
   });
 
   it('generateReport also writes/updates CLAUDE.md', async () => {
@@ -937,7 +942,7 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
     vi.doMock('../src/report.js', () => ({
       generateReport: vi.fn(),
       formatDuration: vi.fn(() => '0m'),
-      buildReportNames: vi.fn(() => ({ reportFile: 'NIGHTYTIDY-REPORT_01_2026-01-01-0000.md' })),
+      buildReportNames: vi.fn(() => ({ reportFile: '00_NIGHTYTIDY-REPORT_01_2026-01-01-0000.md', reportDir: '/fake/project/audit-reports' })),
       buildReportPrompt: vi.fn(() => 'mock report prompt'),
       verifyReportContent: vi.fn(() => true),
       updateClaudeMd: vi.fn(),

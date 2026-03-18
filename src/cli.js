@@ -195,7 +195,7 @@ function saveRunState(projectDir, ctx, snapshot) {
 
 async function handleAbortedRun(executionResults, { projectDir, runBranch, tagName, originalBranch }) {
   info('Run interrupted by user');
-  const { reportFile } = buildReportNames(projectDir, Date.now() - executionResults.totalDuration);
+  const { reportFile, reportDir } = buildReportNames(projectDir, Date.now() - executionResults.totalDuration);
   const totalInputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.inputTokens || 0), 0) || null;
   const totalOutputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.outputTokens || 0), 0) || null;
   generateReport(executionResults, null, {
@@ -207,11 +207,12 @@ async function handleAbortedRun(executionResults, { projectDir, runBranch, tagNa
     endTime: Date.now(),
     totalInputTokens,
     totalOutputTokens,
-  }, { reportFile });
+  }, { reportFile, reportDir });
 
   const gitInstance = getGitInstance();
+  const reportPath = path.join(reportDir, reportFile);
   try {
-    await gitInstance.add([reportFile]);
+    await gitInstance.add([reportPath]);
     await gitInstance.commit('NightyTidy: Add partial run report');
   } catch (err) { debug(`Could not commit partial report: ${err.message}`); }
 
@@ -718,7 +719,8 @@ async function finalizeRun(executionResults, projectDir, ctx) {
 
   // Build unique report filename (numbered + timestamped)
   const startTime = Date.now() - executionResults.totalDuration;
-  const { reportFile } = buildReportNames(projectDir, startTime);
+  const { reportFile, reportDir } = buildReportNames(projectDir, startTime);
+  const reportPath = path.join(reportDir, reportFile);
 
   const totalInputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.inputTokens || 0), 0) || null;
   const totalOutputTokens = executionResults.results.reduce((sum, r) => sum + (r.cost?.outputTokens || 0), 0) || null;
@@ -738,7 +740,7 @@ async function finalizeRun(executionResults, projectDir, ctx) {
   info('Generating report...');
   ctx.spinner = ora({ text: 'Generating report...', color: 'cyan' }).start();
 
-  const reportPrompt = buildReportPrompt(executionResults, metadata, { reportFile });
+  const reportPrompt = buildReportPrompt(executionResults, metadata, { reportFile: reportPath });
   const reportResult = await runPrompt(SAFETY_PREAMBLE + reportPrompt, projectDir, {
     label: 'Report generation',
     timeout: ctx.timeoutMs,
@@ -747,7 +749,6 @@ async function finalizeRun(executionResults, projectDir, ctx) {
   ctx.spinner.stop();
 
   // Verify the report file was created correctly
-  const reportPath = path.join(projectDir, reportFile);
   let reportOk = false;
   try {
     if (existsSync(reportPath)) {
@@ -758,7 +759,7 @@ async function finalizeRun(executionResults, projectDir, ctx) {
 
   if (!reportOk) {
     warn('AI report generation failed — using template fallback');
-    generateReport(executionResults, null, metadata, { reportFile, skipClaudeMdUpdate: true });
+    generateReport(executionResults, null, metadata, { reportFile, reportDir, skipClaudeMdUpdate: true });
     console.log(chalk.dim('Report generated with fallback template.'));
   } else {
     console.log(chalk.green('Report generated successfully.'));
@@ -770,7 +771,7 @@ async function finalizeRun(executionResults, projectDir, ctx) {
   // Commit report + CLAUDE.md (if not already committed by Claude)
   const gitInstance = getGitInstance();
   try {
-    const filesToCommit = [reportFile, 'CLAUDE.md'];
+    const filesToCommit = [reportPath, 'CLAUDE.md'];
     await gitInstance.add(filesToCommit);
     await gitInstance.commit('NightyTidy: Add run report and update CLAUDE.md');
   } catch (err) {
@@ -781,7 +782,7 @@ async function finalizeRun(executionResults, projectDir, ctx) {
   const mergeResult = await mergeRunBranch(ctx.originalBranch, ctx.runBranch);
 
   // Completion notification + terminal summary
-  printCompletionSummary(executionResults, mergeResult, { runBranch: ctx.runBranch, tagName: ctx.tagName, reportFile });
+  printCompletionSummary(executionResults, mergeResult, { runBranch: ctx.runBranch, tagName: ctx.tagName, reportFile: reportPath });
 
   // Update dashboard to completed and schedule shutdown
   if (ctx.dashState) {

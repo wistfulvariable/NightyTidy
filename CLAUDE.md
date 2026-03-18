@@ -47,7 +47,7 @@ src/
   dashboard-tui.js         # Standalone TUI progress display (spawned in separate terminal window)
   lock.js                  # Atomic lock file to prevent concurrent runs (async with TTY prompt)
   logger.js                # File + stdout logger with chalk coloring
-  report.js                # NIGHTYTIDY-REPORT.md generation + CLAUDE.md update
+  report.js                # Report generation (audit-reports/00_NIGHTYTIDY-REPORT_*.md) + CLAUDE.md update
   consolidation.js         # Post-run action plan — consolidates step recommendations for inline report embedding
   setup.js                 # --setup command: generates CLAUDE.md integration snippet for target projects
   sync.js                  # Google Doc prompt sync — fetches, parses, diffs, updates local prompt files
@@ -230,7 +230,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | `nightytidy-run.log` | Full run log (timestamped) | No |
 | `nightytidy-progress.json` | Live progress state (read by TUI window) | No (deleted on stop) |
 | `nightytidy-dashboard.url` | Dashboard URL — Claude reads this and shares with user | No (deleted on stop) |
-| `NIGHTYTIDY-REPORT_NN_YYYY-MM-DD-HHMM.md` | Run summary with step results + inline action plan (numbered + timestamped) | Yes (on run branch) |
+| `audit-reports/00_NIGHTYTIDY-REPORT_NN_YYYY-MM-DD-HHMM.md` | Run summary with step results + inline action plan (numbered + timestamped) | Yes (on run branch) |
 | `CLAUDE.md` (appended section) | "NightyTidy — Last Run" with undo tag | Yes (on run branch) |
 | `nightytidy.lock` | Prevents concurrent runs (PID + timestamp) | No (auto-removed on exit; persistent in orchestrator mode) |
 | `nightytidy-gui.log` | GUI session log (startup, API requests, errors, shutdown) | No |
@@ -332,7 +332,7 @@ bin/nightytidy.js
 5. **Execution**: Run each step (improvement + doc update in same session via `--continue`), with fallback commits
 6. **Rate-limit handling**: If a step hits a rate limit, the run pauses with exponential backoff (2min → 2hr cap). API is probed periodically; on success the failed step is retried. SIGINT during pause stops the run and gets partial results. GUI mode shows a pause overlay with countdown, "Resume Now", and "Finish with Partial Results" buttons.
 7. **Abort handling**: SIGINT generates partial report; second SIGINT force-exits
-8. **Reporting**: Changelog → action plan → NIGHTYTIDY-REPORT.md (with inline action plan) → commit → merge back to original branch
+8. **Reporting**: Changelog → action plan → audit-reports/00_NIGHTYTIDY-REPORT_*.md (with inline action plan) → commit → merge back to original branch
 9. **Notifications**: Desktop notifications at start, on step failure, and on completion
 
 ### Orchestrator Mode (Claude Code)
