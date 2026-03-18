@@ -25,12 +25,20 @@ Instead of technical terms, describe what the change DOES for the person: "I mad
 
 ## Part 2: Action Plan
 
-Review the step outputs provided below to extract actionable recommendations that still need to be done.
+Review the step outputs provided below to extract actionable recommendations that still need to be done. Split them into two categories:
+
+1. **Recommended Refactors** — improvements with clear implementations that can be automated
+2. **Requires Human Review** — features, UI/UX changes, and product decisions needing human input
+
+### Instructions
 
 1. Review each step's output to extract actionable recommendations, suggestions, and identified issues.
 2. **Check the current codebase** — read the relevant files to determine which recommendations have ALREADY been implemented by previous steps in this run.
 3. **Deduplicate** — if multiple steps flagged the same issue, consolidate into one recommendation.
-4. **Tier** the remaining (not-yet-implemented) items by importance.
+4. **Categorize** each item:
+   - **Refactors**: Code cleanup, bug fixes, security patches, performance improvements, test additions, error handling, architectural improvements — anything with a clear "right answer" that can be implemented without product decisions.
+   - **Human Review**: New features, UI/UX changes, workflow modifications, user-facing behavior changes, product strategy suggestions — anything requiring understanding user needs or making trade-offs.
+5. **Prioritize** refactors by importance (Critical → High → Medium → Low). Order human review items by potential value.
 
 Structure the action plan as:
 
@@ -39,33 +47,50 @@ Structure the action plan as:
 
 > Generated from a {N}-step improvement run. Items below have been verified as **not yet implemented** in the current codebase.
 
-### Critical
-<!-- Security vulnerabilities, data loss risks, breaking bugs, blocking issues -->
+### Recommended Refactors
+
+These improvements have clear implementations and can be done automatically in a future run.
+
+#### Critical
+<!-- Security vulnerabilities, data loss risks, breaking bugs -->
 (items or "No items at this priority level.")
 
-### High
-<!-- Reliability, performance, error handling, significant code quality gaps -->
+#### High
+<!-- Reliability, performance, error handling, code quality gaps -->
 (items)
 
-### Medium
-<!-- Maintainability, test coverage gaps, refactoring opportunities, minor UX issues -->
+#### Medium
+<!-- Maintainability, test coverage, architectural improvements -->
 (items)
 
-### Low
-<!-- Polish, style improvements, nice-to-haves, minor optimizations -->
+#### Low
+<!-- Polish, style, minor optimizations -->
 (items)
+
+---
+
+### Requires Human Review
+
+These suggestions involve product decisions, user experience changes, or feature additions that need human judgment.
+
+(items ordered by potential value)
+
+---
 
 ### Summary
-[One sentence on overall codebase health. One sentence on the single highest-value next action.]
+[One sentence on overall codebase health. One sentence on the top refactor priority. One sentence on the most valuable human-review item.]
 ```
 
-Each item uses this format:
+**Refactor item format:**
 - **[Short, specific title]**: [Concrete action — reference specific files, functions, or patterns]. Value: [Why this matters]. Impact: [Which areas affected]. Risk: [Low/Medium/High].
+
+**Human Review item format:**
+- **[Short, specific title]**: [Concrete suggestion]. Why: [Problem or opportunity]. Trade-offs: [Decisions involved]. Effort: [Small/Medium/Large].
 
 Rules:
 - Do NOT include anything already implemented — verify by reading files
 - Be specific — reference files, functions, patterns. No vague advice like "add more tests"
-- Maximum 5 items per tier (20 total)
+- Include ALL items — no limits. The human needs the complete list for easy copy-paste
 - Deduplicate ruthlessly
 
 ## Part 3: Write the Report File

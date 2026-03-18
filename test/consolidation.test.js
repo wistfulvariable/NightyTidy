@@ -15,7 +15,7 @@ vi.mock('../src/executor.js', () => ({
 }));
 
 vi.mock('../src/prompts/loader.js', () => ({
-  CONSOLIDATION_PROMPT: 'Mock consolidation prompt template with Critical High Medium Low tiers and consolidated, prioritized action plan instructions.',
+  CONSOLIDATION_PROMPT: 'Mock consolidation prompt template with Recommended Refactors (Critical High Medium Low tiers) and Requires Human Review sections for consolidated, prioritized action plan instructions.',
   reloadSteps: vi.fn(),
 }));
 
@@ -87,10 +87,8 @@ describe('buildConsolidationPrompt', () => {
     const prompt = buildConsolidationPrompt(results);
 
     expect(prompt).toContain('consolidated, prioritized action plan');
-    expect(prompt).toContain('Critical');
-    expect(prompt).toContain('High');
-    expect(prompt).toContain('Medium');
-    expect(prompt).toContain('Low');
+    expect(prompt).toContain('Recommended Refactors');
+    expect(prompt).toContain('Human Review');
   });
 
   it('handles null/undefined output gracefully', () => {
@@ -110,7 +108,7 @@ describe('generateActionPlan', () => {
     const mockCost = { costUSD: 0.05, inputTokens: 1000, outputTokens: 500 };
     runPrompt.mockResolvedValue({
       success: true,
-      output: '# NightyTidy Action Plan\n\n## Critical\n\nNo items.',
+      output: '# NightyTidy Action Plan\n\n## Recommended Refactors\n\nNo items.',
       cost: mockCost,
     });
 
@@ -118,7 +116,7 @@ describe('generateActionPlan', () => {
     const { text, cost } = await generateActionPlan(results, '/fake/project', {});
 
     expect(text).toContain('## NightyTidy Action Plan');
-    expect(text).toContain('### Critical');
+    expect(text).toContain('### Recommended Refactors');
     expect(text).toContain('No items.');
     expect(cost).toEqual(mockCost);
   });
@@ -126,14 +124,14 @@ describe('generateActionPlan', () => {
   it('downgrades heading levels in returned text', async () => {
     runPrompt.mockResolvedValue({
       success: true,
-      output: '# NightyTidy Action Plan\n\n## Critical\n\n### 1. Some item',
+      output: '# NightyTidy Action Plan\n\n## Recommended Refactors\n\n### Critical',
       cost: null,
     });
 
     const results = makeResults({ completedCount: 1, failedCount: 0 });
     const { text } = await generateActionPlan(results, '/fake/project', {});
 
-    expect(text).toBe('## NightyTidy Action Plan\n\n### Critical\n\n#### 1. Some item');
+    expect(text).toBe('## NightyTidy Action Plan\n\n### Recommended Refactors\n\n#### Critical');
   });
 
   it('returns null text when Claude returns failure', async () => {

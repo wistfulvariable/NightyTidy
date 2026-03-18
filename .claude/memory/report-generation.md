@@ -32,7 +32,8 @@ Assumes CLAUDE.md loaded. Report logic in `src/report.js`, action plan logic in 
 - Error, Attempts, Suggestion
 
 ## NightyTidy Action Plan ← Inline, only if generated (headings downgraded from consolidation.js output)
-### Critical / High / Medium / Low
+### Recommended Refactors (Critical / High / Medium / Low tiers)
+### Requires Human Review (features, UI/UX changes needing human judgment)
 
 ## How to Undo This Run
 - Claude Code instruction + git command
