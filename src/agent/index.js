@@ -483,6 +483,10 @@ export async function startAgent() {
 
     const project = projectManager.getProject(run.projectId);
     if (!project) {
+      dispatchWithQueue('run_failed', {
+        projectId: run.projectId,
+        run: { id: run.id },
+      }, []);
       runQueue.completeCurrent({ success: false });
       processQueue();
       return;
@@ -502,6 +506,11 @@ export async function startAgent() {
     if (!initResult.success) {
       info(`  ✗ Init failed: ${initResult.stderr}`);
       wsServer.broadcast({ type: 'run-failed', runId: run.id, error: initResult.stderr });
+      dispatchWithQueue('run_failed', {
+        project: project.name,
+        projectId: project.id,
+        run: { id: run.id },
+      }, project.webhooks);
       runQueue.completeCurrent({ success: false });
       processQueue();
       return;
@@ -719,8 +728,14 @@ export async function startAgent() {
         activeBridge.kill();
         activeBridge = null;
       }
+      const project = projectManager.getProject(current.projectId);
       runQueue.completeCurrent({ success: false });
       wsServer.broadcast({ type: 'run-failed', runId: msg.runId, error: 'Stopped by user' });
+      dispatchWithQueue('run_failed', {
+        project: project?.name,
+        projectId: current.projectId,
+        run: { id: msg.runId },
+      }, project?.webhooks || []);
       reply({ type: 'run-failed', runId: msg.runId, error: 'Stopped by user' });
       processQueue();
     } else {
