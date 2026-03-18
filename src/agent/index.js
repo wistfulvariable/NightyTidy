@@ -501,11 +501,24 @@ export async function startAgent() {
     info(`  Steps: [${run.steps.join(', ')}] (${run.steps.length} total)`);
     info(`  Project: ${project.path}`);
 
+    // Clean stale files from previous failed/abandoned runs
+    // so --init-run doesn't refuse to start
+    for (const staleFile of ['nightytidy-run-state.json', 'nightytidy.lock']) {
+      try {
+        const filePath = path.join(project.path, staleFile);
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+          debug(`Removed stale ${staleFile}`);
+        }
+      } catch { /* ignore — init-run will report if it's still a problem */ }
+    }
+
     wsServer.broadcast({ type: 'run-started', runId: run.id, projectId: run.projectId, projectName: project.name, branch: '' });
     const initResult = await bridge.initRun(run.steps, run.timeout);
     if (!initResult.success) {
-      info(`  ✗ Init failed: ${initResult.stderr}`);
-      wsServer.broadcast({ type: 'run-failed', runId: run.id, error: initResult.stderr });
+      const errorMsg = initResult.parsed?.error || initResult.stderr || 'Unknown init error';
+      info(`  ✗ Init failed: ${errorMsg}`);
+      wsServer.broadcast({ type: 'run-failed', runId: run.id, error: errorMsg });
       dispatchWithQueue('run_failed', {
         project: project.name,
         projectId: project.id,
