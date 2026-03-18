@@ -33,6 +33,7 @@ vi.mock('../src/agent/run-queue.js', () => ({
   RunQueue: vi.fn().mockImplementation(() => ({
     getQueue: vi.fn(() => []),
     getCurrent: vi.fn(() => null),
+    getInterrupted: vi.fn(() => null),
   })),
 }));
 
@@ -75,6 +76,10 @@ vi.mock('../src/agent/firebase-auth.js', () => ({
   FirebaseAuth: vi.fn().mockImplementation(() => ({
     isAuthenticated: vi.fn(() => false),
     getAuthHeader: vi.fn(() => ({})),
+    onTokenRefresh: vi.fn(),
+    queueWebhook: vi.fn(),
+    needsRefresh: vi.fn(() => false),
+    setToken: vi.fn(),
   })),
 }));
 

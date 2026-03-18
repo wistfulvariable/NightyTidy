@@ -6,14 +6,16 @@ import { info, debug, warn } from '../logger.js';
 const RATE_LIMIT_PER_SEC = 10;
 
 export class AgentWebSocketServer {
-  constructor({ port, token, onCommand, onAuthCallback }) {
+  constructor({ port, token, onCommand, onAuthCallback, version }) {
     this.port = port;
+    this.version = version || '0.0.0';
     this.token = token;
     this.onCommand = onCommand || (() => {});
     this.onAuthCallback = onAuthCallback || (() => {});
     this.wss = null;
     this.httpServer = null;
     this.clients = new Set();
+    this.startedAt = Date.now();
   }
 
   start() {
@@ -129,7 +131,8 @@ export class AgentWebSocketServer {
               ws.send(JSON.stringify({
                 type: 'connected',
                 machine: process.env.COMPUTERNAME || os.hostname(),
-                version: '1.0.0',
+                version: this.version,
+                startedAt: this.startedAt,
               }));
               debug('Client authenticated');
             } else {

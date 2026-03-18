@@ -1,6 +1,7 @@
 // src/agent/index.js
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { info, warn, debug } from '../logger.js';
 import { getConfigDir, readConfig, writeConfig, ensureConfigDir } from './config.js';
 import { ProjectManager } from './project-manager.js';
@@ -11,6 +12,13 @@ import { WebhookDispatcher } from './webhook-dispatcher.js';
 import { CliBridge } from './cli-bridge.js';
 import { AgentGit } from './git-integration.js';
 import { FirebaseAuth } from './firebase-auth.js';
+
+const FIREBASE_WEBHOOK_URL = 'https://webhookingest-24h6taciuq-uc.a.run.app';
+
+// Read version from package.json so it stays in sync with npm
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf-8'));
+const AGENT_VERSION = pkg.version;
 
 export async function startAgent() {
   const configDir = getConfigDir();
@@ -27,8 +35,43 @@ export async function startAgent() {
   const firebaseAuth = new FirebaseAuth(configDir);
   const webhookDispatcher = new WebhookDispatcher({
     machine: config.machine,
-    version: '1.0.0',
+    version: AGENT_VERSION,
   });
+
+  // Wire up webhook queue replay: when a fresh token arrives,
+  // re-dispatch any webhooks that failed due to expired auth.
+  firebaseAuth.onTokenRefresh((queue) => {
+    for (const { event, data } of queue) {
+      webhookDispatcher.dispatch(event, data, [{
+        url: FIREBASE_WEBHOOK_URL,
+        label: 'nightytidy.com',
+        headers: firebaseAuth.getAuthHeader(),
+      }]);
+    }
+  });
+
+  /**
+   * Dispatch a webhook to user endpoints + Firestore.
+   * If not authenticated, queues the Firestore payload for replay when a fresh token arrives.
+   * User webhooks (Slack/Discord) are always sent immediately.
+   */
+  function dispatchWithQueue(event, data, projectWebhooks) {
+    const userEndpoints = [...(projectWebhooks || [])];
+    if (firebaseAuth.isAuthenticated()) {
+      userEndpoints.push({
+        url: FIREBASE_WEBHOOK_URL,
+        label: 'nightytidy.com',
+        headers: firebaseAuth.getAuthHeader(),
+      });
+      webhookDispatcher.dispatch(event, data, userEndpoints);
+    } else {
+      if (userEndpoints.length > 0) {
+        webhookDispatcher.dispatch(event, data, userEndpoints);
+      }
+      firebaseAuth.queueWebhook(event, data);
+      warn(`Firebase webhook queued (not authenticated) — will replay when token arrives`);
+    }
+  }
 
   // Track the active CLI bridge so stop-run can kill it
   let activeBridge = null;
@@ -267,7 +310,7 @@ export async function startAgent() {
 
       case 'auth-refresh': {
         if (msg.token && typeof msg.token === 'string') {
-          firebaseAuth.setToken(msg.token, Date.now() + 3600_000);
+          firebaseAuth.setToken(msg.token);
           info('Firebase auth token refreshed by web app');
           reply({ type: 'auth-refresh-ack' });
         } else {
@@ -323,16 +366,10 @@ export async function startAgent() {
         }
         runQueue.clearInterrupted();
         // Notify Firestore
-        if (firebaseAuth.isAuthenticated()) {
-          webhookDispatcher.dispatch('run_failed', {
-            projectId: interrupted.projectId,
-            run: { id: interrupted.id },
-          }, [{
-            url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
-            label: 'nightytidy.com',
-            headers: firebaseAuth.getAuthHeader(),
-          }]);
-        }
+        dispatchWithQueue('run_failed', {
+          projectId: interrupted.projectId,
+          run: { id: interrupted.id },
+        }, []);
         reply({ type: 'interrupted-discarded', runId: interrupted.id });
         break;
       }
@@ -380,10 +417,10 @@ export async function startAgent() {
   const wsServer = new AgentWebSocketServer({
     port: config.port,
     token: config.token,
+    version: AGENT_VERSION,
     onCommand: handleCommand,
     onAuthCallback: ({ token }) => {
-      // Firebase ID tokens expire after 1 hour
-      firebaseAuth.setToken(token, Date.now() + 3600_000);
+      firebaseAuth.setToken(token);
       info('Firebase auth token received from web app');
     },
   });
@@ -500,15 +537,7 @@ export async function startAgent() {
     });
 
     // Send run_started webhook so Firestore run doc is created immediately
-    const startEndpoints = [...(project.webhooks || [])];
-    if (firebaseAuth.isAuthenticated()) {
-      startEndpoints.push({
-        url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
-        label: 'nightytidy.com',
-        headers: firebaseAuth.getAuthHeader(),
-      });
-    }
-    webhookDispatcher.dispatch('run_started', {
+    dispatchWithQueue('run_started', {
       project: project.name,
       projectId: project.id,
       run: {
@@ -518,7 +547,7 @@ export async function startAgent() {
         gitBranch: initResult.parsed?.runBranch || '',
         gitTag: initResult.parsed?.tagName || '',
       },
-    }, startEndpoints);
+    }, project.webhooks);
 
     startHeartbeat(run.id, project.id);
 
@@ -598,20 +627,12 @@ export async function startAgent() {
         });
 
         requestTokenRefreshIfNeeded();
-        const endpoints = [...(project.webhooks || [])];
-        if (firebaseAuth.isAuthenticated()) {
-          endpoints.push({
-            url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
-            label: 'nightytidy.com',
-            headers: firebaseAuth.getAuthHeader(),
-          });
-        }
-        webhookDispatcher.dispatch('step_completed', {
+        dispatchWithQueue('step_completed', {
           project: project.name,
           projectId: project.id,
           step: stepData,
           run: { id: run.id, progress: `${stepIndex + 1}/${totalSteps}`, costSoFar: stepData.cost, elapsedMs: stepData.duration },
-        }, endpoints);
+        }, project.webhooks);
         stepIndex++;
       } else {
         const errorType = stepParsed.errorType;
@@ -654,20 +675,12 @@ export async function startAgent() {
         });
 
         requestTokenRefreshIfNeeded();
-        const endpoints = [...(project.webhooks || [])];
-        if (firebaseAuth.isAuthenticated()) {
-          endpoints.push({
-            url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
-            label: 'nightytidy.com',
-            headers: firebaseAuth.getAuthHeader(),
-          });
-        }
-        webhookDispatcher.dispatch('step_failed', {
+        dispatchWithQueue('step_failed', {
           project: project.name,
           projectId: project.id,
           step: { number: stepNum, name: stepParsed.name || `Step ${stepNum}`, status: 'failed', duration: stepParsed.duration || 0, cost: stepParsed.costUSD || 0 },
           run: { id: run.id },
-        }, endpoints);
+        }, project.webhooks);
         stepIndex++;
       }
     }
@@ -686,19 +699,11 @@ export async function startAgent() {
     wsServer.broadcast({ type: 'run-completed', runId: run.id, results: {} });
 
     requestTokenRefreshIfNeeded();
-    const completionEndpoints = [...(project.webhooks || [])];
-    if (firebaseAuth.isAuthenticated()) {
-      completionEndpoints.push({
-        url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
-        label: 'nightytidy.com',
-        headers: firebaseAuth.getAuthHeader(),
-      });
-    }
-    webhookDispatcher.dispatch('run_completed', {
+    dispatchWithQueue('run_completed', {
       project: project.name,
       projectId: project.id,
       run: { id: run.id, totalSteps, completedSteps: run.steps.length, elapsedMs: Date.now() - run.startedAt },
-    }, completionEndpoints);
+    }, project.webhooks);
 
     activeBridge = null;
     runQueue.completeCurrent({ success: true });
@@ -793,17 +798,11 @@ export async function startAgent() {
 
     // Notify Firestore the run is active again (use run_resumed, NOT run_started
     // which would reset completedSteps/totalCost counters to 0)
-    if (firebaseAuth.isAuthenticated()) {
-      webhookDispatcher.dispatch('run_resumed', {
-        project: project.name,
-        projectId: project.id,
-        run: { id: interrupted.id, startedAt: interrupted.startedAt },
-      }, [{
-        url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
-        label: 'nightytidy.com',
-        headers: firebaseAuth.getAuthHeader(),
-      }]);
-    }
+    dispatchWithQueue('run_resumed', {
+      project: project.name,
+      projectId: project.id,
+      run: { id: interrupted.id, startedAt: interrupted.startedAt },
+    }, project.webhooks);
 
     // Run remaining steps (reuse the same step loop pattern)
     for (const stepNum of remainingSteps) {
@@ -856,14 +855,10 @@ export async function startAgent() {
         wsServer.broadcast({ type: 'step-completed', runId: interrupted.id, step: stepData, cost: stepData.cost });
 
         requestTokenRefreshIfNeeded();
-        const endpoints = [...(project.webhooks || [])];
-        if (firebaseAuth.isAuthenticated()) {
-          endpoints.push({ url: 'https://webhookingest-24h6taciuq-uc.a.run.app', label: 'nightytidy.com', headers: firebaseAuth.getAuthHeader() });
-        }
-        webhookDispatcher.dispatch('step_completed', {
+        dispatchWithQueue('step_completed', {
           project: project.name, projectId: project.id, step: stepData,
           run: { id: interrupted.id, costSoFar: stepData.cost, elapsedMs: stepData.duration },
-        }, endpoints);
+        }, project.webhooks);
       } else if (stepParsed.errorType === 'rate_limit') {
         const waitMs = stepParsed.retryAfterMs || 120000;
         info(`  ⏸ Rate limited — waiting ${Math.round(waitMs / 1000)}s`);
@@ -902,12 +897,10 @@ export async function startAgent() {
     wsServer.broadcast({ type: 'run-completed', runId: interrupted.id, results: {} });
 
     requestTokenRefreshIfNeeded();
-    if (firebaseAuth.isAuthenticated()) {
-      webhookDispatcher.dispatch('run_completed', {
-        project: project.name, projectId: project.id,
-        run: { id: interrupted.id, totalSteps: interrupted.steps.length, completedSteps: runProgress.completedCount, elapsedMs: Date.now() - interrupted.startedAt },
-      }, [{ url: 'https://webhookingest-24h6taciuq-uc.a.run.app', label: 'nightytidy.com', headers: firebaseAuth.getAuthHeader() }]);
-    }
+    dispatchWithQueue('run_completed', {
+      project: project.name, projectId: project.id,
+      run: { id: interrupted.id, totalSteps: interrupted.steps.length, completedSteps: runProgress.completedCount, elapsedMs: Date.now() - interrupted.startedAt },
+    }, project.webhooks);
 
     activeBridge = null;
     runQueue.completeCurrent({ success: true });
@@ -937,12 +930,10 @@ export async function startAgent() {
     wsServer.broadcast({ type: 'run-completed', runId: interrupted.id, status: 'completed', results: {} });
 
     requestTokenRefreshIfNeeded();
-    if (firebaseAuth.isAuthenticated()) {
-      webhookDispatcher.dispatch('run_completed', {
-        project: project.name, projectId: project.id,
-        run: { id: interrupted.id, totalSteps: interrupted.steps.length, completedSteps: interrupted.lastProgress?.completedCount || 0, elapsedMs: Date.now() - interrupted.startedAt },
-      }, [{ url: 'https://webhookingest-24h6taciuq-uc.a.run.app', label: 'nightytidy.com', headers: firebaseAuth.getAuthHeader() }]);
-    }
+    dispatchWithQueue('run_completed', {
+      project: project.name, projectId: project.id,
+      run: { id: interrupted.id, totalSteps: interrupted.steps.length, completedSteps: interrupted.lastProgress?.completedCount || 0, elapsedMs: Date.now() - interrupted.startedAt },
+    }, project.webhooks);
 
     activeBridge = null;
     runQueue.completeCurrent({ success: true });
@@ -960,15 +951,14 @@ export async function startAgent() {
     currentProjectId = projectId;
     heartbeatInterval = setInterval(() => {
       if (!firebaseAuth.isAuthenticated()) return;
-      const endpoints = [{
-        url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
-        label: 'nightytidy.com',
-        headers: firebaseAuth.getAuthHeader(),
-      }];
       webhookDispatcher.dispatch('heartbeat', {
         projectId: currentProjectId,
         run: { id: currentRunId },
-      }, endpoints);
+      }, [{
+        url: FIREBASE_WEBHOOK_URL,
+        label: 'nightytidy.com',
+        headers: firebaseAuth.getAuthHeader(),
+      }]);
     }, 60_000);
   }
 
@@ -990,22 +980,15 @@ export async function startAgent() {
       runQueue.markInterrupted(runProgress);
 
       // Best-effort: notify Firestore (may not complete before exit)
-      if (firebaseAuth.isAuthenticated()) {
-        const endpoints = [{
-          url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
-          label: 'nightytidy.com',
-          headers: firebaseAuth.getAuthHeader(),
-        }];
-        webhookDispatcher.dispatch('run_interrupted', {
-          projectId: current.projectId,
-          run: {
-            id: current.id,
-            completedSteps: runProgress.completedCount,
-            failedSteps: runProgress.failedCount,
-            totalCost: runProgress.totalCost,
-          },
-        }, endpoints);
-      }
+      dispatchWithQueue('run_interrupted', {
+        projectId: current.projectId,
+        run: {
+          id: current.id,
+          completedSteps: runProgress.completedCount,
+          failedSteps: runProgress.failedCount,
+          totalCost: runProgress.totalCost,
+        },
+      }, []);
 
       // Notify connected clients
       wsServer.broadcast({
@@ -1058,8 +1041,8 @@ export async function startAgent() {
 
     // Best-effort: notify Firestore that this run is interrupted
     // (in case the shutdown webhook didn't make it)
-    if (firebaseAuth.isAuthenticated() && proj) {
-      webhookDispatcher.dispatch('run_interrupted', {
+    if (proj) {
+      dispatchWithQueue('run_interrupted', {
         projectId: proj.id,
         run: {
           id: interrupted.id,
@@ -1067,11 +1050,7 @@ export async function startAgent() {
           failedSteps: progress.failedCount || 0,
           totalCost: progress.totalCost || 0,
         },
-      }, [{
-        url: 'https://webhookingest-24h6taciuq-uc.a.run.app',
-        label: 'nightytidy.com',
-        headers: firebaseAuth.getAuthHeader(),
-      }]);
+      }, []);
     }
   }
 
@@ -1084,7 +1063,7 @@ export async function startAgent() {
   }
 
   // Print startup info
-  console.log(`\nNightyTidy Agent v1.0.0`);
+  console.log(`\nNightyTidy Agent v${AGENT_VERSION}`);
   console.log(`WebSocket: ws://127.0.0.1:${actualPort}`);
   console.log(`Token: ${config.token.slice(0, 6)}...(see ~/.nightytidy/config.json)`);
   if (interrupted) {
