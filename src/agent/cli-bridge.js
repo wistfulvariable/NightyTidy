@@ -76,7 +76,7 @@ export class CliBridge {
   }
 
   _run(args, onOutput, opts = {}) {
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const binPath = path.resolve(import.meta.dirname, '../../bin/nightytidy.js');
       const proc = spawn('node', [binPath, ...args], {
         cwd: this.projectDir,
@@ -87,15 +87,40 @@ export class CliBridge {
       let stdout = '';
       let stderr = '';
       let killed = false;
+      let settled = false;
+
+      const settle = (result) => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        if (killTimer) clearTimeout(killTimer);
+        resolve(result);
+      };
 
       // Timeout — kill the process if it takes too long
       let timer = null;
+      let killTimer = null;
       if (opts.timeout) {
         timer = setTimeout(() => {
           killed = true;
           const timeoutSec = Math.round(opts.timeout / 1000);
           warn(`CLI process timed out after ${timeoutSec}s: ${args.join(' ')}`);
           this.kill();
+          // On Windows, taskkill is fire-and-forget — the 'close' event may
+          // never fire. Force-resolve after 5s to prevent the agent from
+          // hanging forever.
+          killTimer = setTimeout(() => {
+            warn(`CLI process did not exit within 5s after kill — force-resolving`);
+            this.activeProcess = null;
+            settle({
+              success: false,
+              exitCode: -1,
+              stdout,
+              stderr: `Process timed out after ${timeoutSec}s — Claude Code may be unavailable`,
+              parsed: CliBridge.parseOutput(stdout),
+              timedOut: true,
+            });
+          }, 5000);
         }, opts.timeout);
       }
 
@@ -127,26 +152,23 @@ export class CliBridge {
       });
 
       proc.on('close', (code) => {
-        if (timer) clearTimeout(timer);
         this.activeProcess = null;
-        const parsed = CliBridge.parseOutput(stdout);
-        resolve({
+        settle({
           success: code === 0 && !killed,
           exitCode: code,
           stdout,
           stderr: killed
             ? `Process timed out after ${Math.round(opts.timeout / 1000)}s — Claude Code may be unavailable`
             : stderr,
-          parsed,
+          parsed: CliBridge.parseOutput(stdout),
           timedOut: killed,
         });
       });
 
       proc.on('error', (err) => {
-        if (timer) clearTimeout(timer);
         this.activeProcess = null;
         logError(`CLI process error: ${err.message}`);
-        resolve({
+        settle({
           success: false,
           exitCode: -1,
           stdout,
