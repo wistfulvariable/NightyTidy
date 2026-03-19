@@ -378,6 +378,12 @@ export async function startAgent() {
 
       case 'cancel-queued': {
         runQueue.cancel(msg.runId);
+        // Also notify Firestore — the run may exist there even if not in local queue
+        // (e.g. orphaned after a timeout/crash where the agent already discarded it)
+        dispatchWithQueue('run_failed', {
+          projectId: msg.projectId || '',
+          run: { id: msg.runId },
+        }, []);
         wsServer.broadcast({ type: 'queue-updated', queue: runQueue.getQueue() });
         reply({ type: 'queue-updated', queue: runQueue.getQueue() });
         break;
@@ -1080,22 +1086,35 @@ export async function startAgent() {
     const progress = interrupted.lastProgress || {};
     const completed = progress.completedCount || 0;
     const total = interrupted.steps?.length || 0;
-    info(`Found interrupted run: ${projName} (${completed}/${total} steps completed)`);
-    info(`  Run ID: ${interrupted.id}`);
-    info(`  Use the web app to Resume, Finish with Partial Results, or Discard`);
 
-    // Best-effort: notify Firestore that this run is interrupted
-    // (in case the shutdown webhook didn't make it)
-    if (proj) {
-      dispatchWithQueue('run_interrupted', {
-        projectId: proj.id,
-        run: {
-          id: interrupted.id,
-          completedSteps: completed,
-          failedSteps: progress.failedCount || 0,
-          totalCost: progress.totalCost || 0,
-        },
+    if (completed === 0) {
+      // Run never actually started (init timed out or crashed before any steps).
+      // Auto-discard — there's nothing to resume or finish, and blocking the
+      // queue for user action is pointless.
+      info(`Auto-discarding interrupted run with 0 completed steps: ${projName} (${interrupted.id})`);
+      runQueue.clearInterrupted();
+      dispatchWithQueue('run_failed', {
+        projectId: proj?.id || interrupted.projectId,
+        run: { id: interrupted.id },
       }, []);
+    } else {
+      info(`Found interrupted run: ${projName} (${completed}/${total} steps completed)`);
+      info(`  Run ID: ${interrupted.id}`);
+      info(`  Use the web app to Resume, Finish with Partial Results, or Discard`);
+
+      // Best-effort: notify Firestore that this run is interrupted
+      // (in case the shutdown webhook didn't make it)
+      if (proj) {
+        dispatchWithQueue('run_interrupted', {
+          projectId: proj.id,
+          run: {
+            id: interrupted.id,
+            completedSteps: completed,
+            failedSteps: progress.failedCount || 0,
+            totalCost: progress.totalCost || 0,
+          },
+        }, []);
+      }
     }
   }
 
@@ -1103,8 +1122,13 @@ export async function startAgent() {
   // (agent died without graceful shutdown, so markInterrupted was never called)
   const current = runQueue.getCurrent();
   if (current && current.status === 'running' && !activeBridge) {
-    info(`Found orphaned running run: ${current.id} — marking as interrupted`);
-    runQueue.markInterrupted({ completedCount: 0, failedCount: 0, totalCost: 0, stepList: [], currentStepNum: null });
+    // Orphaned run with no progress — auto-discard instead of blocking the queue
+    info(`Found orphaned running run: ${current.id} — auto-discarding (0 steps completed)`);
+    runQueue.completeCurrent({ success: false });
+    dispatchWithQueue('run_failed', {
+      projectId: current.projectId,
+      run: { id: current.id },
+    }, []);
   }
 
   // Process any queued runs left from a previous session
