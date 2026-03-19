@@ -398,8 +398,8 @@ async function handleSelectFolder(res) {
 
 // ── API: Run Command ───────────────────────────────────────────────
 
-/** Process safety timeout (48 min) - exceeds step timeout (45 min) + overhead */
-const PROCESS_TIMEOUT_MS = 48 * 60_000;
+/** Process safety timeout (78 min) - exceeds step timeout (75 min) + overhead */
+const PROCESS_TIMEOUT_MS = 78 * 60_000;
 
 /**
  * Handle /api/run-command - spawn a shell command.
