@@ -533,6 +533,8 @@ export async function startAgent() {
         ? 'Initialization timed out — Claude Code may be unavailable. Restart the agent to retry.'
         : (initResult.parsed?.error || initResult.stderr || 'Unknown init error');
       info(`  ✗ Init failed: ${errorMsg}`);
+      if (initResult.stdout) debug(`  Init stdout: ${initResult.stdout.slice(-500)}`);
+      if (initResult.stderr) debug(`  Init stderr: ${initResult.stderr.slice(-500)}`);
       wsServer.broadcast({ type: 'run-failed', runId: run.id, error: errorMsg });
       dispatchWithQueue('run_failed', {
         project: project.name,
