@@ -79,6 +79,7 @@ export async function startAgent() {
   let pauseRequested = false;
   let skipCurrentStep = false;
   let runOutputBuffer = '';  // Accumulated raw output for the current run
+  const MAX_OUTPUT_BUFFER = 512_000;  // 512 KB cap — matches web app's RAW_OUTPUT_MAX_LENGTH
 
   // Accumulated run state — survives page refreshes via get-run
   let runProgress = {
@@ -615,6 +616,9 @@ export async function startAgent() {
 
       const stepResult = await bridge.runStep(stepNum, (text) => {
         runOutputBuffer += text;
+        if (runOutputBuffer.length > MAX_OUTPUT_BUFFER * 1.2) {
+          runOutputBuffer = runOutputBuffer.slice(-MAX_OUTPUT_BUFFER);
+        }
         wsServer.broadcast({ type: 'step-output', runId: run.id, text, mode: 'raw' });
       });
 
@@ -866,6 +870,9 @@ export async function startAgent() {
 
       const stepResult = await bridge.runStep(stepNum, (text) => {
         runOutputBuffer += text;
+        if (runOutputBuffer.length > MAX_OUTPUT_BUFFER * 1.2) {
+          runOutputBuffer = runOutputBuffer.slice(-MAX_OUTPUT_BUFFER);
+        }
         wsServer.broadcast({ type: 'step-output', runId: interrupted.id, text, mode: 'raw' });
       });
 
