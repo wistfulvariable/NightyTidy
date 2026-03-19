@@ -203,18 +203,19 @@ async function checkClaudeAuthenticated() {
 async function getFreeBytesWindows(projectDir) {
   const driveLetter = projectDir.charAt(0).toUpperCase();
   // Try PowerShell first (wmic is deprecated on newer Windows)
+  // 10s timeout — PowerShell can hang on OneDrive/network drive systems
   const psResult = await runCommand('powershell', [
     '-NoProfile', '-Command',
     `(Get-PSDrive ${driveLetter}).Free`,
-  ]);
+  ], { timeoutMs: 10_000 });
   const psMatch = psResult.stdout.trim().match(/^(\d+)$/);
   if (psResult.code === 0 && psMatch) {
     return parseInt(psMatch[1], 10);
   }
-  // Fallback to wmic for older Windows
+  // Fallback to wmic for older Windows (also with timeout)
   const result = await runCommand('wmic', [
     'logicaldisk', 'where', `DeviceID='${driveLetter}:'`, 'get', 'FreeSpace',
-  ]);
+  ], { timeoutMs: 10_000 });
   const match = result.stdout.match(/(\d+)/);
   return match ? parseInt(match[1], 10) : null;
 }

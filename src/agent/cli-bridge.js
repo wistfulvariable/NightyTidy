@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { debug, warn, error as logError } from '../logger.js';
 
-const INIT_TIMEOUT_MS = 15 * 60_000;  // 15 minutes — includes auth check + git ops (can be slow on OneDrive/network drives)
+const INIT_TIMEOUT_MS = 10 * 60_000;  // 10 minutes — generous but not infinite
 const FINISH_TIMEOUT_MS = 10 * 60_000; // 10 minutes — finish includes report generation
 
 export class CliBridge {
