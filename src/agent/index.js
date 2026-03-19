@@ -372,6 +372,7 @@ export async function startAgent() {
           run: { id: interrupted.id },
         }, []);
         reply({ type: 'interrupted-discarded', runId: interrupted.id });
+        if (!runQueue.getCurrent()) processQueue();
         break;
       }
 
@@ -717,7 +718,8 @@ export async function startAgent() {
 
     stopHeartbeat();
     info(`  Finishing run (report + merge)...`);
-    await bridge.finishRun();
+    const finishResult = await bridge.finishRun();
+    const reportMarkdown = finishResult?.parsed?.reportContent || null;
     projectManager.updateProject(run.projectId, { lastRunAt: Date.now() });
 
     const elapsedMs = Date.now() - run.startedAt;
@@ -733,6 +735,7 @@ export async function startAgent() {
       project: project.name,
       projectId: project.id,
       run: { id: run.id, totalSteps, completedSteps: run.steps.length, elapsedMs: Date.now() - run.startedAt },
+      reportMarkdown,
     }, project.webhooks);
 
     activeBridge = null;
@@ -927,7 +930,8 @@ export async function startAgent() {
     // Finish the run
     stopHeartbeat();
     info(`  Finishing resumed run (report + merge)...`);
-    await bridge.finishRun();
+    const finishResult = await bridge.finishRun();
+    const reportMarkdown = finishResult?.parsed?.reportContent || null;
     projectManager.updateProject(interrupted.projectId, { lastRunAt: Date.now() });
 
     wsServer.broadcast({ type: 'run-completed', runId: interrupted.id, results: {} });
@@ -936,6 +940,7 @@ export async function startAgent() {
     dispatchWithQueue('run_completed', {
       project: project.name, projectId: project.id,
       run: { id: interrupted.id, totalSteps: interrupted.steps.length, completedSteps: runProgress.completedCount, elapsedMs: Date.now() - interrupted.startedAt },
+      reportMarkdown,
     }, project.webhooks);
 
     activeBridge = null;
@@ -956,11 +961,13 @@ export async function startAgent() {
     interrupted.status = 'running';
     runQueue._save();
 
+    let finishResult = null;
     try {
-      await bridge.finishRun();
+      finishResult = await bridge.finishRun();
     } catch (err) {
       warn(`  finishRun failed: ${err.message}`);
     }
+    const reportMarkdown = finishResult?.parsed?.reportContent || null;
 
     projectManager.updateProject(interrupted.projectId, { lastRunAt: Date.now() });
     wsServer.broadcast({ type: 'run-completed', runId: interrupted.id, status: 'completed', results: {} });
@@ -969,6 +976,7 @@ export async function startAgent() {
     dispatchWithQueue('run_completed', {
       project: project.name, projectId: project.id,
       run: { id: interrupted.id, totalSteps: interrupted.steps.length, completedSteps: interrupted.lastProgress?.completedCount || 0, elapsedMs: Date.now() - interrupted.startedAt },
+      reportMarkdown,
     }, project.webhooks);
 
     activeBridge = null;
@@ -1097,6 +1105,15 @@ export async function startAgent() {
   if (current && current.status === 'running' && !activeBridge) {
     info(`Found orphaned running run: ${current.id} — marking as interrupted`);
     runQueue.markInterrupted({ completedCount: 0, failedCount: 0, totalCost: 0, stepList: [], currentStepNum: null });
+  }
+
+  // Process any queued runs left from a previous session
+  if (!runQueue.getInterrupted() && !runQueue.getCurrent()) {
+    const pending = runQueue.getQueue();
+    if (pending.length > 0) {
+      info(`Found ${pending.length} queued run(s) — starting queue processing`);
+      processQueue();
+    }
   }
 
   // Print startup info
