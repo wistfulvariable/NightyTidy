@@ -12,6 +12,7 @@ import { WebhookDispatcher } from './webhook-dispatcher.js';
 import { CliBridge } from './cli-bridge.js';
 import { AgentGit } from './git-integration.js';
 import { FirebaseAuth } from './firebase-auth.js';
+import { acquireKeepAwake, releaseKeepAwake } from './keep-awake.js';
 
 const FIREBASE_WEBHOOK_URL = 'https://webhookingest-24h6taciuq-uc.a.run.app';
 
@@ -479,7 +480,10 @@ export async function startAgent() {
 
   async function processQueue() {
     const run = runQueue.dequeue();
-    if (!run) return;
+    if (!run) {
+      releaseKeepAwake();
+      return;
+    }
 
     const project = projectManager.getProject(run.projectId);
     if (!project) {
@@ -497,6 +501,7 @@ export async function startAgent() {
     runOutputBuffer = '';
     runProgress = { stepList: [], completedCount: 0, failedCount: 0, totalCost: 0, currentStepNum: null };
 
+    acquireKeepAwake();
     info(`\n━━━ Run started: ${project.name} ━━━`);
     info(`  Steps: [${run.steps.join(', ')}] (${run.steps.length} total)`);
     info(`  Project: ${project.path}`);
@@ -1036,6 +1041,7 @@ export async function startAgent() {
   // Graceful shutdown
   const shutdown = async () => {
     info('Agent shutting down...');
+    releaseKeepAwake();
     saveInterruptedState();
     scheduler.stopAll();
     await wsServer.stop();
