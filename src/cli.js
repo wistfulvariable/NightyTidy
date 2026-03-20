@@ -814,6 +814,16 @@ export async function run() {
     .option('--skip-dashboard', 'Skip launching the standalone dashboard server (used by GUI)')
     .option('--resume', 'Resume a previously paused run (usage limit / manual restart)');
 
+  // Handle 'setup-agent' before 'agent' — process.argv.includes('agent') would
+  // also match 'setup-agent', so this check must come first.
+  if (process.argv.includes('setup-agent')) {
+    const { initLogger } = await import('./logger.js');
+    initLogger(process.cwd());
+    const { setupAgent } = await import('./agent/setup-flow.js');
+    await setupAgent();
+    return;
+  }
+
   // Handle 'agent' subcommand before Commander parses — avoids breaking
   // Commander's option-only routing when a .command() subcommand is registered.
   if (process.argv.includes('agent')) {
