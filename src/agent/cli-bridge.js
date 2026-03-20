@@ -78,11 +78,17 @@ export class CliBridge {
   _run(args, onOutput, opts = {}) {
     return new Promise((resolve) => {
       const binPath = path.resolve(import.meta.dirname, '../../bin/nightytidy.js');
-      const proc = spawn('node', [binPath, ...args], {
+      const spawnOpts = {
         cwd: this.projectDir,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
-      });
+      };
+      // On Windows, use shell mode to prevent a visible console window.
+      // cmd.exe inherits the parent's hidden console instead of creating a new one.
+      if (process.platform === 'win32') {
+        spawnOpts.shell = true;
+      }
+      const proc = spawn('node', [binPath, ...args], spawnOpts);
       this.activeProcess = proc;
 
       let stdout = '';

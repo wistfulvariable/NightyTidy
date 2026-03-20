@@ -176,7 +176,12 @@ export async function setupAgent() {
 
   console.log(chalk.bold('\nStep 4: Start agent'));
 
-  spawn(process.execPath, [BIN_PATH, 'agent'], { detached: true, stdio: 'ignore' }).unref();
+  spawn(process.execPath, [BIN_PATH, 'agent'], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+    shell: process.platform === 'win32',
+  }).unref();
   console.log(chalk.green('  Agent started'));
 
   // ── Done ──────────────────────────────────────────────────────────────────

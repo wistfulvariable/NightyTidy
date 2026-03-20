@@ -25,7 +25,7 @@ export function acquireKeepAwake() {
       keepAwakeProcess = spawn('powershell', [
         '-NoProfile', '-WindowStyle', 'Hidden', '-Command',
         `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class SleepPreventer { [DllImport("kernel32.dll")] public static extern uint SetThreadExecutionState(uint esFlags); }'; [SleepPreventer]::SetThreadExecutionState(0x80000001); while($true) { Start-Sleep -Seconds 3600 }`,
-      ], { stdio: 'ignore', detached: false });
+      ], { stdio: 'ignore', detached: false, windowsHide: true });
       keepAwakeProcess.unref();
       keepAwakeProcess.on('error', () => { keepAwakeProcess = null; });
       debug('Sleep prevention acquired (Windows SetThreadExecutionState)');
