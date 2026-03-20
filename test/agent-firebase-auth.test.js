@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { FirebaseAuth } from '../src/agent/firebase-auth.js';
 
 vi.mock('../src/logger.js', () => ({
@@ -259,6 +262,85 @@ describe('FirebaseAuth', () => {
       const before = Date.now();
       auth.queueWebhook('step_completed', { step: 1 });
       expect(auth._pendingWebhooks[0].queuedAt).toBeGreaterThanOrEqual(before);
+    });
+  });
+
+  describe('token persistence', () => {
+    let tmpDir;
+
+    beforeEach(() => {
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nt-auth-test-'));
+    });
+
+    afterEach(() => {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    });
+
+    it('saveTokenToDisk writes JSON file to configDir', () => {
+      const auth = new FirebaseAuth(tmpDir);
+      const expSec = Math.floor(Date.now() / 1000) + 3600;
+      const token = fakeJwt(expSec);
+      auth.saveTokenToDisk(token);
+      const tokenPath = path.join(tmpDir, 'firebase-token.json');
+      expect(fs.existsSync(tokenPath)).toBe(true);
+      const data = JSON.parse(fs.readFileSync(tokenPath, 'utf-8'));
+      expect(data.token).toBe(token);
+      expect(typeof data.savedAt).toBe('number');
+    });
+
+    it('loadTokenFromDisk returns token when file exists and is valid', () => {
+      const auth = new FirebaseAuth(tmpDir);
+      const expSec = Math.floor(Date.now() / 1000) + 3600;
+      const token = fakeJwt(expSec);
+      auth.saveTokenToDisk(token);
+      expect(auth.loadTokenFromDisk()).toBe(token);
+    });
+
+    it('loadTokenFromDisk returns null when file is missing', () => {
+      const auth = new FirebaseAuth(tmpDir);
+      expect(auth.loadTokenFromDisk()).toBeNull();
+    });
+
+    it('loadTokenFromDisk returns null and deletes file when token is expired', () => {
+      const auth = new FirebaseAuth(tmpDir);
+      const expSec = Math.floor(Date.now() / 1000) - 60; // expired 1 min ago
+      const token = fakeJwt(expSec);
+      // Write the file directly (bypassing setToken's validity check isn't needed — saveTokenToDisk is unconditional)
+      const tokenPath = path.join(tmpDir, 'firebase-token.json');
+      fs.writeFileSync(tokenPath, JSON.stringify({ token, savedAt: Date.now() }), 'utf-8');
+      expect(auth.loadTokenFromDisk()).toBeNull();
+      expect(fs.existsSync(tokenPath)).toBe(false);
+    });
+
+    it('restoreToken calls setToken and returns true when valid token on disk', () => {
+      const auth = new FirebaseAuth(tmpDir);
+      const expSec = Math.floor(Date.now() / 1000) + 3600;
+      const token = fakeJwt(expSec);
+      auth.saveTokenToDisk(token);
+
+      // Fresh instance to simulate restart
+      const auth2 = new FirebaseAuth(tmpDir);
+      const result = auth2.restoreToken();
+      expect(result).toBe(true);
+      expect(auth2.isAuthenticated()).toBe(true);
+      expect(auth2.getToken()).toBe(token);
+    });
+
+    it('restoreToken returns false when no token on disk', () => {
+      const auth = new FirebaseAuth(tmpDir);
+      expect(auth.restoreToken()).toBe(false);
+      expect(auth.isAuthenticated()).toBe(false);
+    });
+
+    it('setToken also saves to disk', () => {
+      const auth = new FirebaseAuth(tmpDir);
+      const expSec = Math.floor(Date.now() / 1000) + 3600;
+      const token = fakeJwt(expSec);
+      auth.setToken(token);
+      const tokenPath = path.join(tmpDir, 'firebase-token.json');
+      expect(fs.existsSync(tokenPath)).toBe(true);
+      const data = JSON.parse(fs.readFileSync(tokenPath, 'utf-8'));
+      expect(data.token).toBe(token);
     });
   });
 });

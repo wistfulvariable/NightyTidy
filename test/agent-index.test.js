@@ -93,6 +93,7 @@ vi.mock('../src/agent/firebase-auth.js', () => ({
     queueWebhook: vi.fn(),
     needsRefresh: vi.fn(() => false),
     setToken: vi.fn(),
+    restoreToken: vi.fn(() => false),
   })),
 }));
 

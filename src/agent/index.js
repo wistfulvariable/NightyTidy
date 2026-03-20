@@ -38,6 +38,14 @@ export async function startAgent() {
 
   const runQueue = new RunQueue(configDir);
   const firebaseAuth = new FirebaseAuth(configDir);
+
+  // Restore Firebase token from disk (survives reboots)
+  if (firebaseAuth.restoreToken()) {
+    debug('Restored Firebase token from disk');
+  } else {
+    debug('No stored Firebase token — waiting for web app to provide one');
+  }
+
   const webhookDispatcher = new WebhookDispatcher({
     machine: config.machine,
     version: AGENT_VERSION,

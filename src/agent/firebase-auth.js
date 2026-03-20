@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { debug, info, warn } from '../logger.js';
 
 const REFRESH_BUFFER_MS = 15 * 60_000; // Request refresh 15 min before expiry
@@ -58,6 +60,7 @@ export class FirebaseAuth {
     }
     const remainMin = Math.round((this.expiresAt - Date.now()) / 60_000);
     debug(`Firebase auth token updated (expires in ${remainMin}m)`);
+    this.saveTokenToDisk(token);
     this._replayQueue();
   }
 
@@ -126,6 +129,60 @@ export class FirebaseAuth {
     this._pendingWebhooks = [];
     info(`Replaying ${queue.length} queued webhook(s) with fresh token`);
     this._replayCallback(queue);
+  }
+
+  /**
+   * Persist the raw JWT token to `{configDir}/firebase-token.json`.
+   * Atomic write (temp file + rename). Best-effort — logs a warning on failure.
+   */
+  saveTokenToDisk(token) {
+    try {
+      const tokenPath = path.join(this.configDir, 'firebase-token.json');
+      const tmpPath = tokenPath + '.tmp';
+      const data = JSON.stringify({ token, savedAt: Date.now() });
+      fs.writeFileSync(tmpPath, data, 'utf-8');
+      fs.renameSync(tmpPath, tokenPath);
+      debug('Firebase token saved to disk');
+    } catch (err) {
+      warn(`Failed to save Firebase token to disk: ${err.message}`);
+    }
+  }
+
+  /**
+   * Load a previously saved Firebase token from `{configDir}/firebase-token.json`.
+   * Returns the token string, or null if missing, corrupt, or expired.
+   * Deletes the file if the token is expired.
+   */
+  loadTokenFromDisk() {
+    const tokenPath = path.join(this.configDir, 'firebase-token.json');
+    try {
+      const raw = fs.readFileSync(tokenPath, 'utf-8');
+      const { token } = JSON.parse(raw);
+      if (!token || typeof token !== 'string') return null;
+
+      const expiry = FirebaseAuth.parseJwtExpiry(token);
+      if (expiry !== null && expiry <= Date.now()) {
+        // Token is expired — clean up the file
+        try { fs.unlinkSync(tokenPath); } catch { /* ignore */ }
+        debug('Stored Firebase token is expired — removed from disk');
+        return null;
+      }
+      return token;
+    } catch {
+      // File missing or corrupt — not an error
+      return null;
+    }
+  }
+
+  /**
+   * Attempt to restore Firebase auth state from the on-disk token.
+   * Returns true if a valid token was found and restored, false otherwise.
+   */
+  restoreToken() {
+    const token = this.loadTokenFromDisk();
+    if (!token) return false;
+    this.setToken(token);
+    return true;
   }
 
   // Full OAuth flow will be implemented in integration phase
