@@ -1,10 +1,10 @@
 // test/agent-setup-flow.test.js
 //
-// Strategy: No node:http mock — use a real HTTP server so the callback
-// mechanism works end-to-end. We find the ephemeral port by intercepting the
-// console.log line that prints the auth URL (which contains the port).
+// Strategy: Full mocking — no real HTTP servers, no real browser launches.
+// We mock node:http createServer to capture the request handler, then drive
+// the OAuth callback by calling that handler directly with fake req/res objects.
+// This makes tests instant and reliable across all platforms.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import http from 'node:http';
 
 // ── Universal logger mock ──────────────────────────────────────────────────
 vi.mock('../src/logger.js', () => ({
@@ -38,121 +38,189 @@ vi.mock('../src/agent/firebase-auth.js', () => ({
 }));
 
 // ── node:child_process mock ────────────────────────────────────────────────
-// Use spawn: vi.fn() directly so we can inspect mockSpawn.mock.calls
 const mockSpawn = vi.fn(() => ({ unref: vi.fn() }));
 vi.mock('node:child_process', () => ({
   spawn: (...args) => mockSpawn(...args),
 }));
 
-// ── HTTP helpers ───────────────────────────────────────────────────────────
+// ── node:http mock — fake server that captures the request handler ──────────
+//
+// The fake server:
+//   - exposes `capturedHandler` so tests can invoke it directly
+//   - tracks its `listening` state
+//   - calls the 'listening' event immediately in listen()
+//   - provides address() returning a fixed port (48399)
+//
+let capturedHandler = null;
 
-function postCallback(port, payload) {
-  return new Promise((resolve, reject) => {
-    const body = JSON.stringify(payload);
-    const req = http.request(
-      {
-        host: '127.0.0.1',
-        port,
-        path: '/callback',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body),
-        },
-      },
-      (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => resolve({ status: res.statusCode, body: data }));
-      },
-    );
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
+const FAKE_PORT = 48399;
+
+function makeFakeServer() {
+  let listeningFired = false;
+  const server = {
+    capturedHandler: null,
+    _closed: false,
+    once(event, cb) {
+      if (event === 'listening') {
+        if (listeningFired) {
+          // listen() was already called — fire immediately
+          cb();
+        } else {
+          // Store for when listen() is called
+          server._listeningCb = cb;
+        }
+      }
+      return server;
+    },
+    address() {
+      return { port: FAKE_PORT };
+    },
+    listen(port, host) {
+      listeningFired = true;
+      if (server._listeningCb) {
+        server._listeningCb();
+        server._listeningCb = null;
+      }
+      return server;
+    },
+    close(cb) {
+      server._closed = true;
+      if (cb) cb();
+    },
+  };
+  return server;
 }
 
-function sendOptions(port) {
-  return new Promise((resolve, reject) => {
-    const req = http.request(
-      { host: '127.0.0.1', port, path: '/callback', method: 'OPTIONS' },
-      (res) => { let d = ''; res.on('data', (c) => { d += c; }); res.on('end', () => resolve(res)); },
-    );
-    req.on('error', reject);
-    req.end();
-  });
-}
+let fakeServer = null;
 
-function sendUnknown(port) {
-  return new Promise((resolve, reject) => {
-    const req = http.request(
-      { host: '127.0.0.1', port, path: '/other', method: 'GET' },
-      (res) => { let d = ''; res.on('data', (c) => { d += c; }); res.on('end', () => resolve(res)); },
-    );
-    req.on('error', reject);
-    req.end();
-  });
-}
+vi.mock('node:http', () => ({
+  default: {
+    createServer: (handler) => {
+      capturedHandler = handler;
+      fakeServer = makeFakeServer();
+      fakeServer.capturedHandler = handler;
+      return fakeServer;
+    },
+    request: vi.fn(),
+  },
+  createServer: (handler) => {
+    capturedHandler = handler;
+    fakeServer = makeFakeServer();
+    fakeServer.capturedHandler = handler;
+    return fakeServer;
+  },
+}));
 
-// ── driveFlow ─────────────────────────────────────────────────────────────
+// ── Fake req/res helpers ───────────────────────────────────────────────────
 
 /**
- * Run setupAgent() and drive the OAuth callback.
+ * Create a minimal fake IncomingMessage-like object.
+ * To simulate body data, call triggerData() then triggerEnd().
+ */
+function makeFakeReq({ method = 'POST', url = '/callback', body = null } = {}) {
+  const listeners = {};
+  const req = {
+    method,
+    url,
+    on(event, cb) {
+      listeners[event] = cb;
+      return req;
+    },
+    _emit(event, ...args) {
+      if (listeners[event]) listeners[event](...args);
+    },
+  };
+  return req;
+}
+
+/**
+ * Create a minimal fake ServerResponse-like object that captures written output.
+ */
+function makeFakeRes() {
+  const res = {
+    statusCode: null,
+    headers: {},
+    body: '',
+    writeHead(code, headers) {
+      res.statusCode = code;
+      if (headers) Object.assign(res.headers, headers);
+    },
+    end(data) {
+      if (data) res.body += data;
+    },
+  };
+  return res;
+}
+
+/**
+ * Simulate a full POST /callback request through the captured handler,
+ * delivering the given payload as JSON body.
+ */
+async function simulateCallback(payload) {
+  const req = makeFakeReq({ method: 'POST', url: '/callback' });
+  const res = makeFakeRes();
+  capturedHandler(req, res);
+  // Deliver body chunks
+  req._emit('data', JSON.stringify(payload));
+  req._emit('end');
+  return res;
+}
+
+/**
+ * Simulate an OPTIONS preflight request.
+ */
+async function simulateOptions() {
+  const req = makeFakeReq({ method: 'OPTIONS', url: '/callback' });
+  const res = makeFakeRes();
+  capturedHandler(req, res);
+  return res;
+}
+
+/**
+ * Simulate an unknown route request.
+ */
+async function simulateUnknown() {
+  const req = makeFakeReq({ method: 'GET', url: '/unknown-route' });
+  const res = makeFakeRes();
+  capturedHandler(req, res);
+  return res;
+}
+
+// ── driveFlow ──────────────────────────────────────────────────────────────
+
+/**
+ * Start setupAgent() and immediately drive the OAuth callback by invoking
+ * the captured request handler directly — no real HTTP, no real browser.
  *
- * We intercept the console.log that prints "Opening: <authUrl>" to extract
- * the ephemeral port, then POST the callback payload to that port.
- *
- * @param {object} payload
- * @param {{ beforeCallback?: (port: number) => Promise<void> }} [opts]
+ * @param {object} payload - OAuth callback payload
+ * @param {{ beforeCallback?: () => Promise<void> }} [opts]
  */
 async function driveFlow(payload, opts = {}) {
   const { setupAgent } = await import('../src/agent/setup-flow.js');
 
-  let resolvePort;
-  const portPromise = new Promise((r) => { resolvePort = r; });
-
-  // Intercept console.log to capture the "Opening: <url>" line.
-  // The callback URL is URL-encoded in authUrl, so the port appears as
-  // "127.0.0.1%3A<port>" (colon encoded). Match both raw and encoded forms.
-  const origLog = console.log;
-  console.log = (...args) => {
-    const line = args.map(String).join(' ');
-    // Raw form: http://127.0.0.1:<port>/callback
-    const rawMatch = line.match(/127\.0\.0\.1:(\d+)/);
-    // URL-encoded form: http%3A%2F%2F127.0.0.1%3A<port>%2Fcallback
-    const encodedMatch = line.match(/127\.0\.0\.1%3A(\d+)/i);
-    const match = rawMatch || encodedMatch;
-    if (match) {
-      resolvePort(parseInt(match[1], 10));
-    }
-    // Suppress terminal output during tests
-  };
-
+  // Start the flow — it creates the server, sets capturedHandler, then awaits
+  // the 'listening' event (which our fake server fires synchronously in listen()).
   const flowPromise = setupAgent();
-  // Attach an early no-op catch so that if setupAgent() rejects before we
-  // reach the .then() below (e.g. when process.exit(1) is called in the
-  // payload handler), the rejection does not become an unhandled rejection
-  // warning in the Vitest output.
+  // Silence unhandled-rejection warnings for flows that call process.exit(1)
   flowPromise.catch(() => {});
 
-  // Wait for the port (means the server is listening and browser has been opened)
-  const port = await portPromise;
-
-  // Restore console.log before doing anything else
-  console.log = origLog;
+  // Yield a microtask to let setupAgent() advance past the server.listen() call
+  // and reach the waitForCallback() await.
+  await Promise.resolve();
 
   if (opts.beforeCallback) {
-    await opts.beforeCallback(port);
+    await opts.beforeCallback();
   }
 
-  await postCallback(port, payload);
+  // Drive the callback through the captured handler
+  await simulateCallback(payload);
 
   const result = await flowPromise.then(
     (v) => ({ status: 'fulfilled', value: v }),
     (e) => ({ status: 'rejected', reason: e }),
   );
 
-  return { result, port };
+  return { result };
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────
@@ -164,7 +232,10 @@ describe('setupAgent()', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Reset the spawn mock implementation (clearAllMocks clears calls only)
+    capturedHandler = null;
+    fakeServer = null;
+
+    // Reset spawn mock
     mockSpawn.mockReturnValue({ unref: vi.fn() });
 
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -191,41 +262,41 @@ describe('setupAgent()', () => {
     const browserSpawnArgs = mockSpawn.mock.calls[0];
     const allArgs = browserSpawnArgs.flat(Infinity).join(' ');
     expect(allArgs).toMatch(/nightytidy\.com\/auth\/agent/);
-  }, 15000);
+  });
 
   it('includes the encoded callback address with the ephemeral port in the auth URL', async () => {
-    const { result, port } = await driveFlow({ token: 'tok-abc' });
+    const { result } = await driveFlow({ token: 'tok-abc' });
     expect(result.status).toBe('fulfilled');
 
     const allArgs = mockSpawn.mock.calls[0].flat(Infinity).join(' ');
     expect(allArgs).toContain('callback=');
     expect(allArgs).toContain('127.0.0.1');
-    expect(allArgs).toContain(String(port));
-  }, 15000);
+    expect(allArgs).toContain(String(FAKE_PORT));
+  });
 
   it('calls FirebaseAuth.setToken with the token field from the callback', async () => {
     const { result } = await driveFlow({ token: 'firebase-token-xyz' });
     expect(result.status).toBe('fulfilled');
     expect(mockSetToken).toHaveBeenCalledWith('firebase-token-xyz');
-  }, 15000);
+  });
 
   it('falls back to idToken when token field is absent', async () => {
     const { result } = await driveFlow({ idToken: 'id-token-fallback' });
     expect(result.status).toBe('fulfilled');
     expect(mockSetToken).toHaveBeenCalledWith('id-token-fallback');
-  }, 15000);
+  });
 
   it('creates FirebaseAuth with the configDir from getConfigDir()', async () => {
     const { result } = await driveFlow({ token: 'tok-abc' });
     expect(result.status).toBe('fulfilled');
     expect(MockFirebaseAuth).toHaveBeenCalledWith('/home/user/.nightytidy');
-  }, 15000);
+  });
 
   it('calls registerService()', async () => {
     const { result } = await driveFlow({ token: 'tok-abc' });
     expect(result.status).toBe('fulfilled');
     expect(mockRegisterService).toHaveBeenCalledTimes(1);
-  }, 15000);
+  });
 
   it('spawns the agent process detached with "agent" argument', async () => {
     const { result } = await driveFlow({ token: 'tok-abc' });
@@ -240,55 +311,36 @@ describe('setupAgent()', () => {
     // unref was called on the returned process
     const lastUnref = mockSpawn.mock.results[mockSpawn.mock.results.length - 1].value.unref;
     expect(lastUnref).toHaveBeenCalled();
-  }, 15000);
+  });
 
   it('prints a done message referencing nightytidy.com', async () => {
-    // We need to capture console.log output from the flow, but driveFlow
-    // already intercepts it to extract the port. Run a version that captures too.
+    // Capture console.log calls for this test
     const printedLines = [];
-    const { setupAgent } = await import('../src/agent/setup-flow.js');
+    consoleLogSpy.mockImplementation((...args) => {
+      printedLines.push(args.map(String).join(' '));
+    });
 
-    let resolvePort;
-    const portPromise = new Promise((r) => { resolvePort = r; });
-
-    const origLog = console.log;
-    console.log = (...args) => {
-      const line = args.map(String).join(' ');
-      printedLines.push(line);
-      const rawM = line.match(/127\.0\.0\.1:(\d+)/);
-      const encM = line.match(/127\.0\.0\.1%3A(\d+)/i);
-      const match = rawM || encM;
-      if (match) resolvePort(parseInt(match[1], 10));
-    };
-
-    const flowPromise = setupAgent();
-    const port = await portPromise;
-    await postCallback(port, { token: 'tok-abc' });
-    const result = await flowPromise.then(
-      (v) => ({ status: 'fulfilled', value: v }),
-      (e) => ({ status: 'rejected', reason: e }),
-    );
-    console.log = origLog;
-
+    const { result } = await driveFlow({ token: 'tok-abc' });
     expect(result.status).toBe('fulfilled');
+
     const allOutput = printedLines.join('\n');
     expect(allOutput.toLowerCase()).toMatch(/done/);
     expect(allOutput).toMatch(/nightytidy\.com/i);
-  }, 15000);
+  });
 
   it('exits with code 1 when the callback has an error field', async () => {
     const { result } = await driveFlow({ error: 'access_denied' });
     expect(result.status).toBe('rejected');
     expect(result.reason.message).toMatch(/process\.exit\(1\)/);
     expect(process.exit).toHaveBeenCalledWith(1);
-  }, 15000);
+  });
 
   it('exits with code 1 when the callback has neither token nor idToken', async () => {
     const { result } = await driveFlow({ uid: 'user-123' });
     expect(result.status).toBe('rejected');
     expect(result.reason.message).toMatch(/process\.exit\(1\)/);
     expect(process.exit).toHaveBeenCalledWith(1);
-  }, 15000);
+  });
 
   it('continues with a warning when registerService() fails', async () => {
     mockRegisterService.mockReturnValueOnce({
@@ -297,35 +349,16 @@ describe('setupAgent()', () => {
       fallbackInstructions: 'Add to startup manually',
     });
 
-    // Capture log output manually for this test
     const printedLines = [];
-    const { setupAgent } = await import('../src/agent/setup-flow.js');
+    consoleLogSpy.mockImplementation((...args) => {
+      printedLines.push(args.map(String).join(' '));
+    });
 
-    let resolvePort;
-    const portPromise = new Promise((r) => { resolvePort = r; });
-
-    const origLog = console.log;
-    console.log = (...args) => {
-      const line = args.map(String).join(' ');
-      printedLines.push(line);
-      const rawM = line.match(/127\.0\.0\.1:(\d+)/);
-      const encM = line.match(/127\.0\.0\.1%3A(\d+)/i);
-      const match = rawM || encM;
-      if (match) resolvePort(parseInt(match[1], 10));
-    };
-
-    const flowPromise = setupAgent();
-    const port = await portPromise;
-    await postCallback(port, { token: 'tok-abc' });
-    const result = await flowPromise.then(
-      (v) => ({ status: 'fulfilled', value: v }),
-      (e) => ({ status: 'rejected', reason: e }),
-    );
-    console.log = origLog;
-
+    const { result } = await driveFlow({ token: 'tok-abc' });
     expect(result.status).toBe('fulfilled');
     expect(mockSetToken).toHaveBeenCalledWith('tok-abc');
 
+    // Agent should still be spawned
     const agentSpawnCall = mockSpawn.mock.calls.find(
       ([execPath, args]) =>
         execPath === process.execPath && Array.isArray(args) && args.includes('agent'),
@@ -334,7 +367,7 @@ describe('setupAgent()', () => {
 
     const allOutput = printedLines.join('\n');
     expect(allOutput.toLowerCase()).toMatch(/warning/);
-  }, 15000);
+  });
 
   it('calls ensureConfigDir before creating FirebaseAuth', async () => {
     const callOrder = [];
@@ -348,28 +381,50 @@ describe('setupAgent()', () => {
     expect(result.status).toBe('fulfilled');
 
     expect(callOrder.indexOf('ensureConfigDir')).toBeLessThan(callOrder.indexOf('FirebaseAuth'));
-  }, 15000);
+  });
 
   it('responds 204 with CORS headers to OPTIONS preflight', async () => {
-    let optionsRes;
-    const { result } = await driveFlow({ token: 'tok-abc' }, {
-      beforeCallback: async (port) => {
-        optionsRes = await sendOptions(port);
-      },
-    });
-    expect(result.status).toBe('fulfilled');
+    const { setupAgent } = await import('../src/agent/setup-flow.js');
+    const flowPromise = setupAgent();
+    flowPromise.catch(() => {});
+
+    await Promise.resolve();
+
+    // Send OPTIONS before the real callback
+    const optionsRes = await simulateOptions();
     expect(optionsRes.statusCode).toBe(204);
-    expect(optionsRes.headers['access-control-allow-origin']).toBe('https://nightytidy.com');
-  }, 15000);
+    // The source uses 'Access-Control-Allow-Origin' (mixed case); check case-insensitively
+    const corsHeader =
+      optionsRes.headers['Access-Control-Allow-Origin'] ||
+      optionsRes.headers['access-control-allow-origin'];
+    expect(corsHeader).toBe('https://nightytidy.com');
+
+    // Complete the flow with a valid callback
+    await simulateCallback({ token: 'tok-abc' });
+    const result = await flowPromise.then(
+      (v) => ({ status: 'fulfilled', value: v }),
+      (e) => ({ status: 'rejected', reason: e }),
+    );
+    expect(result.status).toBe('fulfilled');
+  });
 
   it('responds 404 for unknown routes', async () => {
-    let unknownRes;
-    const { result } = await driveFlow({ token: 'tok-abc' }, {
-      beforeCallback: async (port) => {
-        unknownRes = await sendUnknown(port);
-      },
-    });
-    expect(result.status).toBe('fulfilled');
+    const { setupAgent } = await import('../src/agent/setup-flow.js');
+    const flowPromise = setupAgent();
+    flowPromise.catch(() => {});
+
+    await Promise.resolve();
+
+    // Send unknown route before the real callback
+    const unknownRes = await simulateUnknown();
     expect(unknownRes.statusCode).toBe(404);
-  }, 15000);
+
+    // Complete the flow
+    await simulateCallback({ token: 'tok-abc' });
+    const result = await flowPromise.then(
+      (v) => ({ status: 'fulfilled', value: v }),
+      (e) => ({ status: 'rejected', reason: e }),
+    );
+    expect(result.status).toBe('fulfilled');
+  });
 });
