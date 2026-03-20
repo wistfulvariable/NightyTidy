@@ -14,29 +14,56 @@ Built for vibe coders and small teams who want production-grade code quality wit
 ## Installation
 
 ```bash
-git clone https://github.com/dorianspitz23/NightyTidy.git
-cd NightyTidy
-npm install
+npx nightytidy
 ```
 
-No build step — plain JavaScript ESM, runs directly.
+No install needed — `npx` downloads and runs it directly.
 
 ## Quick Start
 
-Launch the desktop GUI:
+NightyTidy has three ways to run: the **web app**, the **desktop GUI**, and the **CLI**.
+
+### Web App (remote monitoring)
+
+The easiest way to get started. Connect to [nightytidy.com](https://nightytidy.com) for remote monitoring, scheduling, and analytics — from any browser, any device.
+
+1. Start the local agent on your machine:
+   ```bash
+   npx nightytidy agent
+   ```
+2. Open [nightytidy.com](https://nightytidy.com) and sign in with GitHub
+3. Add your project, pick steps, and start a run
+
+The agent runs locally at `127.0.0.1:48372`. The web app connects to it via WebSocket — **your code never leaves your machine**. You can monitor progress, view diffs, and manage runs from anywhere.
+
+### Desktop GUI (local)
+
+A Chrome app-mode window for fully local use — no account needed. Clone the repo and run:
 
 ```bash
 npm run gui
 ```
 
-This opens a Chrome app-mode window. From there:
+From there:
 
 1. **Select your project folder** using the native folder picker
 2. **Pick which steps to run** — or Select All for all 33
 3. **Set the timeout** per step (default: 45 minutes)
 4. **Click Start Run** and walk away
 
-NightyTidy handles everything from there: progress tracking, live Claude output, rate-limit pausing, report generation, and merging changes back to your branch.
+### CLI (terminal)
+
+For terminal users, scripting, or CI:
+
+```bash
+npx nightytidy --all
+```
+
+See [CLI Usage](#cli-usage) below for all options.
+
+---
+
+All three modes handle progress tracking, live Claude output, rate-limit pausing, report generation, and merging changes back to your branch.
 
 ## Run Duration and Token Usage
 
@@ -52,7 +79,7 @@ Running fewer steps per session is a perfectly valid workflow — you'll get the
 
 ## Desktop GUI
 
-The GUI is the primary way to use NightyTidy. It wraps the CLI orchestrator in a five-screen visual workflow.
+The desktop GUI wraps the CLI orchestrator in a five-screen visual workflow. No account needed — everything runs locally.
 
 ### Screens
 
@@ -311,15 +338,11 @@ GitHub Actions on every push/PR to master:
 
 ## Web App (nightytidy.com)
 
-NightyTidy has a web dashboard at [nightytidy.com](https://nightytidy.com) for remote monitoring, scheduling, and analytics. Start the local agent to connect:
+The web dashboard at [nightytidy.com](https://nightytidy.com) provides remote monitoring, scheduling, and analytics. See [Quick Start](#web-app-remote-monitoring) for setup.
 
-```bash
-npx nightytidy agent
-```
+**Features**: Real-time run monitoring, project management, run history, step analytics, cron scheduling, diff viewer, report viewer, merge/rollback controls, and GitHub PR creation — all from your browser.
 
-The agent runs on your machine at `127.0.0.1:48372`. The web app connects to it via WebSocket — your code never leaves your machine. Firebase handles authentication and stores run history so you can check status from any browser.
-
-**Source**: [nightytidy-web](https://github.com/dorianspitz23/nightytidy-web)
+**Architecture**: Your code never leaves your machine. The local agent (`npx nightytidy agent`) runs a WebSocket server at `127.0.0.1:48372`. The web app connects to it via WebSocket. Firebase handles authentication and stores run metadata so you can check status from any device.
 
 ## License
 
