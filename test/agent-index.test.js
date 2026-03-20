@@ -97,6 +97,14 @@ vi.mock('../src/agent/firebase-auth.js', () => ({
   })),
 }));
 
+vi.mock('../src/agent/firestore-poller.js', () => ({
+  FirestorePoller: vi.fn().mockImplementation(() => ({
+    start: vi.fn(),
+    stop: vi.fn(),
+    poll: vi.fn(),
+  })),
+}));
+
 describe('agent index', () => {
   it('exports startAgent function', async () => {
     const { startAgent } = await import('../src/agent/index.js');

@@ -12,9 +12,11 @@ import { WebhookDispatcher } from './webhook-dispatcher.js';
 import { CliBridge } from './cli-bridge.js';
 import { AgentGit } from './git-integration.js';
 import { FirebaseAuth } from './firebase-auth.js';
+import { FirestorePoller } from './firestore-poller.js';
 import { acquireKeepAwake, releaseKeepAwake } from './keep-awake.js';
 
 const FIREBASE_WEBHOOK_URL = 'https://webhookingest-24h6taciuq-uc.a.run.app';
+const FIREBASE_PROJECT_ID = process.env.NIGHTYTIDY_FIREBASE_PROJECT_ID || 'nightytidy-web';
 
 // Read version from package.json so it stays in sync with npm
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -475,6 +477,37 @@ export async function startAgent() {
       scheduler.addSchedule(project.id, project.schedule.cron);
     }
   }
+
+  // Start Firestore polling — secondary trigger for queued runs when no browser is connected.
+  // The poller is additive; WebSocket commands still work as the primary path.
+  const poller = new FirestorePoller({
+    firebaseAuth,
+    projectId: FIREBASE_PROJECT_ID,
+    onQueuedRunFound: (run) => {
+      // Check if this run's project is registered locally
+      const project = projectManager.getProject(run.projectId);
+      if (!project) {
+        debug(`Polled run ${run.runId} for unknown project ${run.projectId} — skipping`);
+        return;
+      }
+      // Check if already in local queue or currently running
+      const queue = runQueue.getQueue();
+      const isAlreadyQueued = queue.some(q => q.id === run.runId) ||
+                              (runQueue.getCurrent()?.id === run.runId);
+      if (isAlreadyQueued) return;
+
+      // Enqueue locally and process
+      debug(`Polled queued run ${run.runId} for ${project.name}`);
+      runQueue.enqueue({
+        projectId: run.projectId,
+        steps: run.selectedSteps,
+        timeout: run.timeout,
+      });
+      wsServer.broadcast({ type: 'queue-updated', queue: runQueue.getQueue() });
+      if (!runQueue.getCurrent()) processQueue();
+    },
+  });
+  poller.start(30_000);
 
   // Run execution handler
   async function handleStartRun(msg, reply) {
@@ -1078,6 +1111,7 @@ export async function startAgent() {
     info('Agent shutting down...');
     releaseKeepAwake();
     saveInterruptedState();
+    poller.stop();
     scheduler.stopAll();
     await wsServer.stop();
     // Remove PID file on clean exit
