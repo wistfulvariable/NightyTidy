@@ -12,6 +12,7 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import os from 'node:os';
 import chalk from 'chalk';
 import { getConfigDir, ensureConfigDir } from './config.js';
 import { registerService } from './service.js';
@@ -176,12 +177,21 @@ export async function setupAgent() {
 
   console.log(chalk.bold('\nStep 4: Start agent'));
 
-  spawn(process.execPath, [BIN_PATH, 'agent'], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-    shell: process.platform === 'win32',
-  }).unref();
+  if (process.platform === 'win32' && serviceResult.success) {
+    // On Windows, launch via the VBS script we just registered — this is the
+    // only way to start a Node.js process with NO visible console window.
+    const vbsPath = path.join(
+      os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows',
+      'Start Menu', 'Programs', 'Startup', 'NightyTidy Agent.vbs',
+    );
+    spawn('wscript', [vbsPath], { detached: true, stdio: 'ignore' }).unref();
+  } else {
+    // Unix or fallback: spawn directly (no console window issue on Unix)
+    spawn(process.execPath, [BIN_PATH, 'agent'], {
+      detached: true,
+      stdio: 'ignore',
+    }).unref();
+  }
   console.log(chalk.green('  Agent started'));
 
   // ── Done ──────────────────────────────────────────────────────────────────

@@ -298,14 +298,16 @@ describe('setupAgent()', () => {
     expect(mockRegisterService).toHaveBeenCalledTimes(1);
   });
 
-  it('spawns the agent process detached with "agent" argument', async () => {
+  it('spawns the agent process detached', async () => {
     const { result } = await driveFlow({ token: 'tok-abc' });
     expect(result.status).toBe('fulfilled');
 
-    // The last spawn call should be the agent start (browser is first)
+    // On Windows: spawns via wscript (VBS) for hidden window
+    // On Unix: spawns node directly with 'agent' argument
     const agentSpawnCall = mockSpawn.mock.calls.find(
       ([execPath, args]) =>
-        execPath === process.execPath && Array.isArray(args) && args.includes('agent'),
+        (execPath === process.execPath && Array.isArray(args) && args.includes('agent')) ||
+        (execPath === 'wscript' && Array.isArray(args) && args[0]?.includes('.vbs')),
     );
     expect(agentSpawnCall).toBeDefined();
     // unref was called on the returned process
