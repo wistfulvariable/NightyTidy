@@ -26,6 +26,10 @@ export async function startAgent() {
   ensureConfigDir(configDir);
   const config = readConfig(configDir);
 
+  // Write PID file so stop/status subcommands can find this process
+  const pidPath = path.join(configDir, 'agent.pid');
+  fs.writeFileSync(pidPath, String(process.pid));
+
   info(`NightyTidy Agent starting on ${config.machine}`);
 
   // Initialize components
@@ -1068,6 +1072,8 @@ export async function startAgent() {
     saveInterruptedState();
     scheduler.stopAll();
     await wsServer.stop();
+    // Remove PID file on clean exit
+    try { fs.unlinkSync(pidPath); } catch { /* ignore — may already be gone */ }
     info('Agent stopped');
     process.exit(0);
   };

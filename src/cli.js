@@ -819,6 +819,80 @@ export async function run() {
   if (process.argv.includes('agent')) {
     const { initLogger } = await import('./logger.js');
     initLogger(process.cwd());
+
+    // Determine the subcommand that follows 'agent' in argv
+    const agentIdx = process.argv.indexOf('agent');
+    const agentSub = process.argv[agentIdx + 1];
+
+    if (agentSub === 'stop') {
+      // Send SIGTERM to the running agent via its PID file
+      const { getConfigDir } = await import('./agent/config.js');
+      const fsModule = await import('node:fs');
+      const pathModule = await import('node:path');
+      const pidPath = pathModule.default.join(getConfigDir(), 'agent.pid');
+      try {
+        const pid = parseInt(fsModule.default.readFileSync(pidPath, 'utf-8').trim(), 10);
+        process.kill(pid, 'SIGTERM');
+        console.log(`Agent (PID ${pid}) signalled to stop.`);
+      } catch (err) {
+        console.error(`Could not stop agent: ${err.message}`);
+        console.error(`Is the agent running? Check with: nightytidy agent status`);
+        process.exitCode = 1;
+      }
+      return;
+    }
+
+    if (agentSub === 'status') {
+      const { getConfigDir } = await import('./agent/config.js');
+      const fsModule = await import('node:fs');
+      const pathModule = await import('node:path');
+      const pidPath = pathModule.default.join(getConfigDir(), 'agent.pid');
+      try {
+        const pid = parseInt(fsModule.default.readFileSync(pidPath, 'utf-8').trim(), 10);
+        process.kill(pid, 0); // signal 0 = check existence only
+        console.log(`Agent is running (PID ${pid}).`);
+      } catch {
+        console.log('Agent is not running.');
+      }
+      return;
+    }
+
+    if (agentSub === 'install-service') {
+      const { registerService } = await import('./agent/service.js');
+      const result = registerService();
+      if (result.success) {
+        console.log('NightyTidy Agent service installed. It will start automatically on login.');
+      } else {
+        console.error(`Failed to install service: ${result.error}`);
+        console.error(result.fallbackInstructions);
+        process.exitCode = 1;
+      }
+      return;
+    }
+
+    if (agentSub === 'uninstall-service') {
+      const { unregisterService } = await import('./agent/service.js');
+      // Stop the agent if it is running before removing the service
+      const { getConfigDir } = await import('./agent/config.js');
+      const fsModule = await import('node:fs');
+      const pathModule = await import('node:path');
+      const pidPath = pathModule.default.join(getConfigDir(), 'agent.pid');
+      try {
+        const pid = parseInt(fsModule.default.readFileSync(pidPath, 'utf-8').trim(), 10);
+        process.kill(pid, 'SIGTERM');
+      } catch { /* agent not running — that's fine */ }
+
+      const result = unregisterService();
+      if (result.success) {
+        console.log('NightyTidy Agent service uninstalled.');
+      } else {
+        console.error(`Failed to uninstall service: ${result.error}`);
+        process.exitCode = 1;
+      }
+      return;
+    }
+
+    // Default: no subcommand — start the agent
     const { startAgent } = await import('./agent/index.js');
     await startAgent();
     return;

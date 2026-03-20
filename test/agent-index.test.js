@@ -6,6 +6,19 @@ vi.mock('../src/logger.js', () => ({
   initLogger: vi.fn(),
 }));
 
+// Mock fs so PID file write/unlink in startAgent doesn't hit the real filesystem
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    default: {
+      ...actual.default,
+      writeFileSync: vi.fn(),
+      unlinkSync: vi.fn(),
+    },
+  };
+});
+
 vi.mock('../src/agent/websocket-server.js', () => ({
   AgentWebSocketServer: vi.fn().mockImplementation(() => ({
     start: vi.fn().mockResolvedValue(48372),
