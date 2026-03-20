@@ -1,6 +1,6 @@
 {
   "name": "nightytidy",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "description": "Automated overnight codebase improvement through Claude Code",
   "license": "MIT",
   "author": "Dorian Spitz",
