@@ -94,17 +94,34 @@ describe('agent service', () => {
       platformSpy.mockRestore();
     });
 
-    it('returns { success: false, error, fallbackInstructions } when execSync throws (win32)', async () => {
+    it('succeeds via Startup folder even when schtasks would fail (win32)', async () => {
       const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+      // Startup folder write succeeds — schtasks is never called
+      mockMkdirSync.mockReturnValue(undefined);
+      mockWriteFileSync.mockReturnValue(undefined);
+
+      const { registerService } = await import('../src/agent/service.js');
+      const result = registerService();
+
+      expect(result).toEqual({ success: true });
+      // Should have written a .vbs file
+      expect(mockWriteFileSync).toHaveBeenCalled();
+      const writtenPath = mockWriteFileSync.mock.calls[0][0];
+      expect(writtenPath).toContain('Startup');
+      expect(writtenPath).toContain('.vbs');
+      platformSpy.mockRestore();
+    });
+
+    it('returns { success: false } when both Startup folder and schtasks fail (win32)', async () => {
+      const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+      mockWriteFileSync.mockImplementation(() => { throw new Error('Startup folder failed'); });
       mockExecSync.mockImplementation(() => { throw new Error('Access denied'); });
 
       const { registerService } = await import('../src/agent/service.js');
       const result = registerService();
 
       expect(result.success).toBe(false);
-      expect(result.error).toBe('Access denied');
       expect(typeof result.fallbackInstructions).toBe('string');
-      expect(result.fallbackInstructions).toContain('nightytidy');
       platformSpy.mockRestore();
     });
 
@@ -161,15 +178,16 @@ describe('agent service', () => {
       platformSpy.mockRestore();
     });
 
-    it('returns { success: false, error } when execSync throws (win32)', async () => {
+    it('returns { success: true } even when schtasks fails (win32) — silently ignores', async () => {
       const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+      mockExistsSync.mockReturnValue(false); // no .vbs file
       mockExecSync.mockImplementation(() => { throw new Error('Task not found'); });
 
       const { unregisterService } = await import('../src/agent/service.js');
       const result = unregisterService();
 
-      expect(result.success).toBe(false);
-      expect(result.error).toBe('Task not found');
+      // Windows unregister silently ignores errors (may not have been registered)
+      expect(result).toEqual({ success: true });
       platformSpy.mockRestore();
     });
 

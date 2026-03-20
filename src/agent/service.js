@@ -87,7 +87,30 @@ export function unregisterService() {
 
 // --- Platform implementations ---
 
+/**
+ * Windows: Use the Startup folder (no admin needed).
+ * Writes a .vbs wrapper script that launches the agent hidden (no console window).
+ * Falls back to schtasks if Startup folder isn't writable.
+ */
+const STARTUP_DIR = process.platform === 'win32'
+  ? path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
+  : '';
+const STARTUP_VBS = path.join(STARTUP_DIR, 'NightyTidy Agent.vbs');
+
 function _registerWindows(cmd) {
+  // Primary: Startup folder (no admin required)
+  try {
+    // VBS wrapper runs the agent without showing a console window
+    const vbs = `' NightyTidy Agent — auto-start on login\r\nSet ws = CreateObject("WScript.Shell")\r\nws.Run ${JSON.stringify(cmd)}, 0, False\r\n`;
+    fs.mkdirSync(STARTUP_DIR, { recursive: true });
+    fs.writeFileSync(STARTUP_VBS, vbs, 'utf-8');
+    debug('Registered via Windows Startup folder');
+    return;
+  } catch (err) {
+    debug(`Startup folder failed: ${err.message}, trying schtasks`);
+  }
+
+  // Fallback: Task Scheduler (needs admin on some systems)
   execSync(
     `schtasks /create /tn "${SERVICE_NAME}" /tr "${cmd}" /sc onlogon /rl LIMITED /f`,
     { stdio: 'pipe' },
@@ -95,7 +118,19 @@ function _registerWindows(cmd) {
 }
 
 function _unregisterWindows() {
-  execSync(`schtasks /delete /tn "${SERVICE_NAME}" /f`, { stdio: 'pipe' });
+  // Remove Startup folder entry
+  try {
+    if (fs.existsSync(STARTUP_VBS)) {
+      fs.unlinkSync(STARTUP_VBS);
+      debug('Removed Startup folder entry');
+    }
+  } catch { /* ignore */ }
+
+  // Also try removing schtasks entry (may not exist)
+  try {
+    execSync(`schtasks /delete /tn "${SERVICE_NAME}" /f`, { stdio: 'pipe' });
+    debug('Removed Task Scheduler entry');
+  } catch { /* ignore — may not have been registered via schtasks */ }
 }
 
 function _registerMacOS(cmd) {
