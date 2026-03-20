@@ -71,7 +71,10 @@ export class AgentGit {
   }
 
   async _exec(cmd, args) {
-    const { stdout } = await execFileAsync(cmd, args, { cwd: this.projectDir });
+    const { stdout } = await execFileAsync(cmd, args, {
+      cwd: this.projectDir,
+      maxBuffer: 50 * 1024 * 1024, // 50 MB — large diffs from 33-step runs
+    });
     return stdout;
   }
 }
