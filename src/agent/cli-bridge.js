@@ -33,7 +33,7 @@ export class CliBridge {
       const pid = this.activeProcess.pid;
       debug(`Killing CLI process ${pid}`);
       if (process.platform === 'win32') {
-        spawn('taskkill', ['/F', '/T', '/PID', String(pid)]);
+        spawn('taskkill', ['/F', '/T', '/PID', String(pid)], { windowsHide: true });
       } else {
         this.activeProcess.kill('SIGTERM');
       }
@@ -81,6 +81,7 @@ export class CliBridge {
       const proc = spawn('node', [binPath, ...args], {
         cwd: this.projectDir,
         stdio: ['pipe', 'pipe', 'pipe'],
+        windowsHide: true,
       });
       this.activeProcess = proc;
 
