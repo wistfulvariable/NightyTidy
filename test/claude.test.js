@@ -118,7 +118,7 @@ describe('runPrompt', () => {
       expect(result.duration).toBeTypeOf('number');
     });
 
-    it('passes the prompt via -p flag for short prompts', async () => {
+    it('always pipes prompts via stdin (no -p flag — avoids Windows cmd.exe corruption)', async () => {
       setupSpawnSequence((child) => {
         child.emitStdout('ok');
         child.emitClose(0);
@@ -128,8 +128,8 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'short prompt', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
-        expect.objectContaining({ cwd: '/tmp' }),
+        ['--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
+        expect.objectContaining({ cwd: '/tmp', stdio: ['pipe', 'pipe', 'pipe'] }),
       );
     });
   });
@@ -587,7 +587,7 @@ describe('runPrompt', () => {
       expect(result.output).toBe('chunk1 chunk2 chunk3');
     });
 
-    it('uses stdin for prompts exceeding the threshold (8000 chars)', async () => {
+    it('uses stdin for long prompts (same as short — all prompts use stdin)', async () => {
       const longPrompt = 'x'.repeat(9000);
 
       setupSpawnSequence((child) => {
@@ -597,7 +597,7 @@ describe('runPrompt', () => {
 
       await runPrompt(longPrompt, '/tmp', FAST_OPTIONS);
 
-      // When using stdin mode, args should only contain output-format + permission flag (no -p flag)
+      // All prompts use stdin — no -p flag (avoids Windows cmd.exe corruption)
       expect(spawn).toHaveBeenCalledWith(
         'claude',
         ['--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
@@ -638,7 +638,7 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'test', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
+        ['--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
         expect.objectContaining({ shell: true }),
       );
     });
@@ -655,7 +655,7 @@ describe('runPrompt', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'claude',
-        ['-p', 'test', '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
+        ['--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions'],
         expect.objectContaining({ shell: false }),
       );
     });

@@ -77,18 +77,18 @@ test/
   checks.test.js           # 4 tests — mock subprocess, mock git
   checks-extended.test.js  # 23 tests — auth paths, disk space characterization, branch warnings, empty repo, dirty working tree
   claude.test.js           # 73 tests — fake child process, fake timers, abort signal, Windows shell mode, stream-json NDJSON parsing, classifyError, rate-limit retry skip, stderr capture, inactivity timeout
-  executor.test.js         # 51 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection, continueSession/promptOverride, rate-limit pause/resume, copyPromptsToProject
+  executor.test.js         # 57 tests — mocks claude, git, notifications, signal propagation, cost tracking, fast-completion detection, skip detection (fast + short output), continueSession/promptOverride, rate-limit pause/resume, copyPromptsToProject
   executor-extended.test.js # 13 tests — fallbackCommit error path, waitForRateLimit probe errors, empty steps, hash mismatch
   git.test.js              # 16 tests — real git against temp dirs (integration)
   git-extended.test.js     # 11 tests — getGitInstance, getHeadHash, tag/branch collision, ensureOnBranch recovery
   notifications.test.js    # 2 tests — mock node-notifier
-  report.test.js           # 43 tests — mock fs, verify report format, inline actionPlanText, cost column, cleanNarration, junk detection, token summary
+  report.test.js           # 44 tests — mock fs, verify report format, inline actionPlanText, cost column, cleanNarration, junk detection, token summary, skipped steps
   report-extended.test.js  # 19 tests — updateClaudeMd, formatDuration edge cases, cost rendering
   consolidation.test.js    # 15 tests — buildConsolidationPrompt, generateActionPlan, heading downgrade, error handling
   steps.test.js            # 12 tests — structural integrity of prompt data + manifest validation + reloadSteps
   integration.test.js      # 5 tests — multi-module integration with real git repos
   setup.test.js            # 7 tests — integration snippet generation, idempotent setup
-  dashboard-tui.test.js    # 29 tests — formatMs, progressBar, render with chalk proxy mock
+  dashboard-tui.test.js    # 30 tests — formatMs, progressBar, render with chalk proxy mock, skipped step icon
   cli-extended.test.js     # 31 tests — --list, --steps, --setup, --dry-run, locks, callbacks, progress summary
   cli-resume.test.js       # 23 tests — --resume flag, state save/restore, validation, SIGINT
   cli-sync.test.js         # 6 tests — --sync and --sync-dry-run command flow
@@ -149,7 +149,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 |------|---------------|-------------|
 | `bin/nightytidy.js` | Entry point — calls `run()` | cli |
 | `src/cli.js` | Commander + Inquirer + full lifecycle | all modules |
-| `src/executor.js` | Core step loop + single-step execution, prompt integrity check, fast-completion detection, rate-limit pause/resume with exponential backoff, `copyPromptsToProject()` syncs all prompts to target repo | crypto, fs, claude, git, notifications, prompts |
+| `src/executor.js` | Core step loop + single-step execution, prompt integrity check, fast-completion detection, skip detection (fast + short output → `skipped` status), rate-limit pause/resume with exponential backoff, `copyPromptsToProject()` syncs all prompts to target repo | crypto, fs, claude, git, notifications, prompts |
 | `src/orchestrator.js` | Claude Code orchestrator mode (JSON API for step-by-step runs) + dashboard; exports `readState`/`writeState`/`deleteState`/`STATE_VERSION` for resume support | logger, checks, git, claude, executor, lock, report, notifications, prompts, dashboard-standalone |
 | `src/claude.js` | Claude Code subprocess (spawn, retry, timeout, session continue, error classification via `classifyError`/`ERROR_TYPE`, exported `sleep`) | logger, env |
 | `src/git.js` | Git operations via simple-git + `ensureOnBranch()` branch guard | logger |
@@ -267,7 +267,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | `CLAUDE.md` (appended section) | "NightyTidy — Last Run" with undo tag | Yes (on run branch) |
 | `nightytidy.lock` | Prevents concurrent runs (PID + timestamp) | No (auto-removed on exit; persistent in orchestrator mode) |
 | `nightytidy-gui.log` | GUI session log (startup, API requests, errors, shutdown) | No |
-| `nightytidy-run-state.json` | Orchestrator run state (steps, results, branch info); also created during rate-limit pause in interactive mode for `--resume` | No (deleted by --finish-run / --resume completion) |
+| `nightytidy-run-state.json` | Orchestrator run state (steps, results incl. skippedSteps, branch info); also created during rate-limit pause in interactive mode for `--resume` | No (deleted by --finish-run / --resume completion) |
 | `nightytidy-before-*` git tag | Safety snapshot before run | Yes (tag) |
 | `nightytidy/run-*` git branch | All changes from this run | Yes (branch) |
 | `audit-reports/refactor-prompts/*.md` | All 33 step prompts synced for audit trail — stale files from renames auto-removed | Yes (on run branch) |
@@ -303,7 +303,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **Usage-limit resume**: When a rate limit is detected during an interactive CLI run, state is saved to `nightytidy-run-state.json` (same format as orchestrator mode). The user can close the terminal and resume later with `--resume`. The backoff schedule covers ~9.9 hours total (2min → 5min → 15min → 30min → 1hr → 2hr × 4). GUI's pause overlay includes a "Save & Close" button that exits cleanly for later resume.
 - **Prompt integrity check**: `executor.js` computes SHA-256 of all step prompts and compares against `STEPS_HASH`. After editing any markdown file in `src/prompts/steps/` or `src/prompts/specials/`, recompute and update the hash in `executor.js`. Warns but does not block (user may have legitimate prompt changes).
 - **`--dangerously-skip-permissions`**: Required for non-interactive Claude Code subprocess calls. NightyTidy is the permission layer — it controls what prompts are sent and operates on a safety branch.
-- **Prompt delivery threshold**: Prompts longer than 8000 chars (`STDIN_THRESHOLD` in `claude.js`) are piped via stdin instead of passed as a `-p` argument. This avoids OS command-line length limits. If prompts fail with argument-too-long errors, check this threshold.
+- **Prompt delivery**: All prompts are piped via stdin (`STDIN_THRESHOLD = 0` in `claude.js`). The `-p` flag is never used because `cmd.exe` on Windows corrupts prompt text containing special characters (quotes, pipes, em dashes), causing Claude Code to receive an empty/garbled prompt.
 - **Env var allowlist**: `cleanEnv()` in `env.js` uses an explicit allowlist (system paths, locale, Anthropic/Claude/Git prefixes) instead of a blocklist. Unknown env vars are filtered out and logged via `debug()`. `CLAUDECODE` is explicitly blocked. Tests in `env.test.js`.
 - **Branch guard**: `ensureOnBranch()` in `git.js` is called before and after every step execution in `runStep()`. If Claude Code switched to a different branch during a step, it commits any uncommitted work, checks out the run branch, and merges the stray branch back. On merge conflict, the merge is aborted (step work preserved on the stray branch). This prevents the "branch drift" problem where Claude Code creates its own branches, scattering commits across multiple branches.
 - **Gitleaks CI scan**: `.github/workflows/ci.yml` runs `gitleaks/gitleaks-action@v2` on every push/PR to detect committed secrets.
@@ -321,7 +321,7 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | `checks.js` | **Throws** with user-friendly messages → caught by cli.js |
 | `lock.js` | **Async, throws** with user-friendly messages → awaited + caught by cli.js. Prompts for override in TTY when lock appears active. |
 | `claude.js` | **Never throws** → returns `{ success, output, error, exitCode, duration, attempts, cost, errorType, retryAfterMs }`. `errorType` is `'rate_limit'` or `'unknown'`. Rate-limit errors skip retries. |
-| `executor.js` | **Never throws** → failed steps recorded. Rate-limit failures trigger pause/auto-resume (exponential backoff with API probes). |
+| `executor.js` | **Never throws** → failed steps recorded, skipped steps detected (fast completion + short output). Rate-limit failures trigger pause/auto-resume (exponential backoff with API probes). |
 | `git.js` `mergeRunBranch` | **Never throws** → returns `{ success: false, conflict: true }` on conflict |
 | `notifications.js` | **Swallows all errors** silently (try/catch in `notify()`) |
 | `dashboard.js` | **Swallows all errors** silently — dashboard failure must not crash a run |

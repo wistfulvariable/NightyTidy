@@ -52,7 +52,7 @@ import { cleanEnv } from './env.js';
 const DEFAULT_TIMEOUT = 45 * 60 * 1000; // 45 minutes
 const DEFAULT_RETRIES = 3;
 const RETRY_DELAY = 10000; // 10 seconds
-const STDIN_THRESHOLD = 8000; // chars
+const STDIN_THRESHOLD = 0; // Always pipe via stdin — cmd.exe on Windows corrupts -p prompts with special chars
 const SIGKILL_DELAY = 5000; // grace period before SIGKILL after initial kill
 export const INACTIVITY_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes — no stdout or stderr data
 
