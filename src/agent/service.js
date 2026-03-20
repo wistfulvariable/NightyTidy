@@ -100,8 +100,10 @@ const STARTUP_VBS = path.join(STARTUP_DIR, 'NightyTidy Agent.vbs');
 function _registerWindows(cmd) {
   // Primary: Startup folder (no admin required)
   try {
-    // VBS wrapper runs the agent without showing a console window
-    const vbs = `' NightyTidy Agent — auto-start on login\r\nSet ws = CreateObject("WScript.Shell")\r\nws.Run ${JSON.stringify(cmd)}, 0, False\r\n`;
+    // VBS wrapper runs the agent without showing a console window.
+    // In VBS, quotes inside strings are doubled: "" not \"
+    const vbsCmd = cmd.replace(/"/g, '""');
+    const vbs = `' NightyTidy Agent - auto-start on login\r\nSet ws = CreateObject("WScript.Shell")\r\nws.Run "${vbsCmd}", 0, False\r\n`;
     fs.mkdirSync(STARTUP_DIR, { recursive: true });
     fs.writeFileSync(STARTUP_VBS, vbs, 'utf-8');
     debug('Registered via Windows Startup folder');
