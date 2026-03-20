@@ -1151,6 +1151,18 @@ export async function startAgent() {
     releaseKeepAwake();
     stopIdleHeartbeat();
     saveInterruptedState();
+
+    // Notify Firestore immediately so the web app shows "Offline" without waiting
+    if (firebaseAuth.isAuthenticated()) {
+      try {
+        await webhookDispatcher.dispatch('agent_offline', {}, [{
+          url: FIREBASE_WEBHOOK_URL,
+          label: 'nightytidy.com',
+          headers: firebaseAuth.getAuthHeader(),
+        }]);
+      } catch { /* best effort — don't block shutdown */ }
+    }
+
     poller.stop();
     scheduler.stopAll();
     await wsServer.stop();
