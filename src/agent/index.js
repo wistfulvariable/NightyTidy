@@ -1,6 +1,7 @@
 // src/agent/index.js
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { info, warn, debug } from '../logger.js';
 import { getConfigDir, readConfig, writeConfig, ensureConfigDir } from './config.js';
@@ -1075,6 +1076,44 @@ export async function startAgent() {
     currentProjectId = null;
   }
 
+  // ── Idle heartbeat: keeps Firestore agentStatus/current fresh ──────────
+  // Sends agent_heartbeat to webhookIngest every 60s regardless of run state.
+  // This powers the "Agent online" badge in the web app.
+  let idleHeartbeatInterval = null;
+  const IDLE_HEARTBEAT_MS = 60_000;
+
+  function startIdleHeartbeat() {
+    // Send one immediately so the web app sees "online" within seconds
+    sendIdleHeartbeat();
+    idleHeartbeatInterval = setInterval(sendIdleHeartbeat, IDLE_HEARTBEAT_MS);
+  }
+
+  function sendIdleHeartbeat() {
+    if (!firebaseAuth.isAuthenticated()) return;
+    const projects = projectManager.listProjects().map(p => ({
+      id: p.id, name: p.name, path: p.path,
+    }));
+    const isRunning = !!activeBridge;
+    webhookDispatcher.dispatch('agent_heartbeat', {
+      machineName: os.hostname(),
+      version: AGENT_VERSION,
+      state: isRunning ? 'running' : 'idle',
+      agentStartedAt: Date.now() - (process.uptime() * 1000),
+      projects,
+    }, [{
+      url: FIREBASE_WEBHOOK_URL,
+      label: 'nightytidy.com',
+      headers: firebaseAuth.getAuthHeader(),
+    }]);
+  }
+
+  function stopIdleHeartbeat() {
+    if (idleHeartbeatInterval) {
+      clearInterval(idleHeartbeatInterval);
+      idleHeartbeatInterval = null;
+    }
+  }
+
   // Preserve interrupted run state on shutdown
   function saveInterruptedState() {
     const current = runQueue.getCurrent();
@@ -1110,6 +1149,7 @@ export async function startAgent() {
   const shutdown = async () => {
     info('Agent shutting down...');
     releaseKeepAwake();
+    stopIdleHeartbeat();
     saveInterruptedState();
     poller.stop();
     scheduler.stopAll();
@@ -1196,6 +1236,9 @@ export async function startAgent() {
       processQueue();
     }
   }
+
+  // Start idle heartbeat — keeps Firestore agentStatus/current fresh
+  startIdleHeartbeat();
 
   // Print startup info
   console.log(`\nNightyTidy Agent v${AGENT_VERSION}`);
