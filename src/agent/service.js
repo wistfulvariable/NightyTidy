@@ -88,51 +88,111 @@ export function unregisterService() {
 // --- Platform implementations ---
 
 /**
- * Windows: Use the Startup folder (no admin needed).
- * Writes a .vbs wrapper script that launches the agent hidden (no console window).
- * Falls back to schtasks if Startup folder isn't writable.
+ * Windows: Write a .cmd launcher to ~/.nightytidy/ and register it with
+ * Task Scheduler (ONLOGON trigger). Task Scheduler is reliable on Windows 11
+ * where VBS scripts in the Startup folder are silently blocked by SmartScreen.
+ *
+ * The .cmd file uses `start /min` to avoid a visible console window.
+ * Falls back to the Startup folder VBS approach if schtasks fails.
  */
 const STARTUP_DIR = process.platform === 'win32'
   ? path.join(os.homedir(), 'AppData', 'Roaming', 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
   : '';
 const STARTUP_VBS = path.join(STARTUP_DIR, 'NightyTidy Agent.vbs');
+const AGENT_CMD = process.platform === 'win32'
+  ? path.join(os.homedir(), '.nightytidy', 'start-agent.cmd')
+  : '';
 
 function _registerWindows(cmd) {
-  // Primary: Startup folder (no admin required)
+  // Write a .cmd launcher script to ~/.nightytidy/start-agent.cmd
+  // Avoids quoting issues when passing to Task Scheduler or Startup folder.
+  const cmdContent = `@echo off\r\nstart /min "" ${cmd}\r\n`;
+  const cmdDir = path.dirname(AGENT_CMD);
+  fs.mkdirSync(cmdDir, { recursive: true });
+  fs.writeFileSync(AGENT_CMD, cmdContent, 'utf-8');
+  debug(`Wrote launcher script: ${AGENT_CMD}`);
+
+  // Primary: Task Scheduler via PowerShell (no admin required for user-level
+  // logon triggers). schtasks.exe /sc onlogon needs admin, but PowerShell's
+  // Register-ScheduledTask with a LogonTrigger does not.
   try {
-    // VBS wrapper runs the agent without showing a console window.
-    // In VBS, quotes inside strings are doubled: "" not \"
-    const vbsCmd = cmd.replace(/"/g, '""');
-    const vbs = `' NightyTidy Agent - auto-start on login\r\nSet ws = CreateObject("WScript.Shell")\r\nws.Run "${vbsCmd}", 0, False\r\n`;
-    fs.mkdirSync(STARTUP_DIR, { recursive: true });
-    fs.writeFileSync(STARTUP_VBS, vbs, 'utf-8');
-    debug('Registered via Windows Startup folder');
+    const escapedPath = AGENT_CMD.replace(/'/g, "''");
+    const ps = [
+      `$action = New-ScheduledTaskAction -Execute '${escapedPath}'`,
+      `$trigger = New-ScheduledTaskTrigger -AtLogOn`,
+      `$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable`,
+      `Register-ScheduledTask -TaskName '${SERVICE_NAME}' -Action $action -Trigger $trigger -Settings $settings -Force`,
+    ].join('; ');
+    execSync(`powershell.exe -NoProfile -Command "${ps}"`, { stdio: 'pipe', timeout: 15000 });
+    debug('Registered via Task Scheduler (PowerShell)');
+    _removeStartupVbs();
     return;
   } catch (err) {
-    debug(`Startup folder failed: ${err.message}, trying schtasks`);
+    debug(`Task Scheduler failed: ${err.message}, trying Startup folder`);
   }
 
-  // Fallback: Task Scheduler (needs admin on some systems)
-  execSync(
-    `schtasks /create /tn "${SERVICE_NAME}" /tr "${cmd}" /sc onlogon /rl LIMITED /f`,
-    { stdio: 'pipe' },
-  );
+  // Fallback: Startup folder — place .cmd directly (less restricted than .vbs
+  // by Windows SmartScreen). The .cmd file runs the agent hidden via start /min.
+  try {
+    fs.mkdirSync(STARTUP_DIR, { recursive: true });
+    const startupCmd = path.join(STARTUP_DIR, 'NightyTidy Agent.cmd');
+    fs.copyFileSync(AGENT_CMD, startupCmd);
+    debug('Registered via Startup folder (.cmd)');
+    _removeStartupVbs();
+    return;
+  } catch (err) {
+    debug(`Startup folder .cmd failed: ${err.message}, trying VBS`);
+  }
+
+  // Last resort: Startup folder VBS wrapper
+  const vbsCmd = cmd.replace(/"/g, '""');
+  const vbs = `' NightyTidy Agent - auto-start on login\r\nSet ws = CreateObject("WScript.Shell")\r\nws.Run "${vbsCmd}", 0, False\r\n`;
+  fs.mkdirSync(STARTUP_DIR, { recursive: true });
+  fs.writeFileSync(STARTUP_VBS, vbs, 'utf-8');
+  debug('Registered via Windows Startup folder (VBS)');
 }
 
-function _unregisterWindows() {
-  // Remove Startup folder entry
+function _removeStartupVbs() {
   try {
     if (fs.existsSync(STARTUP_VBS)) {
       fs.unlinkSync(STARTUP_VBS);
-      debug('Removed Startup folder entry');
+      debug('Removed stale Startup folder VBS');
+    }
+  } catch { /* ignore */ }
+}
+
+function _unregisterWindows() {
+  // Remove Startup folder entries (VBS and .cmd)
+  _removeStartupVbs();
+  try {
+    const startupCmd = path.join(STARTUP_DIR, 'NightyTidy Agent.cmd');
+    if (fs.existsSync(startupCmd)) {
+      fs.unlinkSync(startupCmd);
+      debug('Removed Startup folder .cmd entry');
     }
   } catch { /* ignore */ }
 
-  // Also try removing schtasks entry (may not exist)
+  // Remove .cmd launcher script from ~/.nightytidy/
   try {
-    execSync(`schtasks /delete /tn "${SERVICE_NAME}" /f`, { stdio: 'pipe' });
+    if (fs.existsSync(AGENT_CMD)) {
+      fs.unlinkSync(AGENT_CMD);
+      debug('Removed launcher script');
+    }
+  } catch { /* ignore */ }
+
+  // Remove Task Scheduler entry (try both PowerShell and schtasks)
+  try {
+    execSync(
+      `powershell.exe -NoProfile -Command "Unregister-ScheduledTask -TaskName '${SERVICE_NAME}' -Confirm:\\$false"`,
+      { stdio: 'pipe', timeout: 15000 },
+    );
     debug('Removed Task Scheduler entry');
-  } catch { /* ignore — may not have been registered via schtasks */ }
+  } catch {
+    try {
+      execSync(`schtasks /delete /tn "${SERVICE_NAME}" /f`, { stdio: 'pipe' });
+      debug('Removed Task Scheduler entry (schtasks)');
+    } catch { /* ignore — may not have been registered */ }
+  }
 }
 
 function _registerMacOS(cmd) {

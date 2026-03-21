@@ -17,12 +17,14 @@ const mockWriteFileSync = vi.fn();
 const mockMkdirSync = vi.fn();
 const mockUnlinkSync = vi.fn();
 const mockExistsSync = vi.fn();
+const mockCopyFileSync = vi.fn();
 vi.mock('node:fs', () => ({
   default: {
     writeFileSync: (...args) => mockWriteFileSync(...args),
     mkdirSync: (...args) => mockMkdirSync(...args),
     unlinkSync: (...args) => mockUnlinkSync(...args),
     existsSync: (...args) => mockExistsSync(...args),
+    copyFileSync: (...args) => mockCopyFileSync(...args),
   },
 }));
 
@@ -33,6 +35,7 @@ describe('agent service', () => {
     mockMkdirSync.mockReset();
     mockUnlinkSync.mockReset();
     mockExistsSync.mockReset();
+    mockCopyFileSync.mockReset();
   });
 
   describe('getAgentStartCommand()', () => {
@@ -94,21 +97,28 @@ describe('agent service', () => {
       platformSpy.mockRestore();
     });
 
-    it('succeeds via Startup folder even when schtasks would fail (win32)', async () => {
+    it('succeeds via Startup .cmd copy when PowerShell schtasks fails (win32)', async () => {
       const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
-      // Startup folder write succeeds — schtasks is never called
+      // .cmd launcher write succeeds, PowerShell fails, .cmd copy to Startup succeeds
       mockMkdirSync.mockReturnValue(undefined);
       mockWriteFileSync.mockReturnValue(undefined);
+      mockExecSync.mockImplementation(() => { throw new Error('Access denied'); });
+      mockCopyFileSync.mockReturnValue(undefined);
+      mockExistsSync.mockReturnValue(false); // no stale VBS to clean up
 
       const { registerService } = await import('../src/agent/service.js');
       const result = registerService();
 
       expect(result).toEqual({ success: true });
-      // Should have written a .vbs file
+      // Should have written the .cmd launcher to ~/.nightytidy/
       expect(mockWriteFileSync).toHaveBeenCalled();
-      const writtenPath = mockWriteFileSync.mock.calls[0][0];
-      expect(writtenPath).toContain('Startup');
-      expect(writtenPath).toContain('.vbs');
+      const launcherPath = mockWriteFileSync.mock.calls[0][0];
+      expect(launcherPath).toContain('start-agent.cmd');
+      // Should have copied .cmd to Startup folder
+      expect(mockCopyFileSync).toHaveBeenCalled();
+      const copyDest = mockCopyFileSync.mock.calls[0][1];
+      expect(copyDest).toContain('Startup');
+      expect(copyDest).toContain('.cmd');
       platformSpy.mockRestore();
     });
 

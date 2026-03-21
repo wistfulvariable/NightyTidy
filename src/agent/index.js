@@ -723,6 +723,7 @@ export async function startAgent() {
           run: { id: run.id, progress: `${stepIndex + 1}/${totalSteps}`, costSoFar: stepData.cost, elapsedMs: stepData.duration },
         }, project.webhooks);
         stepIndex++;
+        runQueue.updateProgress({ ...runProgress });
       } else {
         const errorType = stepParsed.errorType;
         if (errorType === 'rate_limit') {
@@ -771,6 +772,7 @@ export async function startAgent() {
           run: { id: run.id },
         }, project.webhooks);
         stepIndex++;
+        runQueue.updateProgress({ ...runProgress });
       }
     }
 
@@ -959,6 +961,7 @@ export async function startAgent() {
           project: project.name, projectId: project.id, step: stepData,
           run: { id: interrupted.id, costSoFar: stepData.cost, elapsedMs: stepData.duration },
         }, project.webhooks);
+        runQueue.updateProgress({ ...runProgress });
       } else if (stepParsed.errorType === 'rate_limit') {
         const waitMs = stepParsed.retryAfterMs || 120000;
         info(`  ⏸ Rate limited — waiting ${Math.round(waitMs / 1000)}s`);
@@ -975,6 +978,7 @@ export async function startAgent() {
         const si = runProgress.stepList.findIndex(s => s.number === stepNum);
         if (si >= 0) Object.assign(runProgress.stepList[si], { status: 'completed' });
         wsServer.broadcast({ type: 'step-completed', runId: interrupted.id, step: { number: stepNum, status: 'completed', duration: 0, cost: 0 }, cost: 0 });
+        runQueue.updateProgress({ ...runProgress });
       } else {
         info(`  ✗ Step ${stepNum} failed: ${stepParsed.error || 'unknown'}`);
         runProgress.failedCount++;
@@ -985,6 +989,7 @@ export async function startAgent() {
           error: stepParsed.error || stepResult.stderr,
         });
         wsServer.broadcast({ type: 'step-failed', runId: interrupted.id, step: { number: stepNum }, error: stepParsed.error || stepResult.stderr });
+        runQueue.updateProgress({ ...runProgress });
       }
     }
 
@@ -1228,16 +1233,53 @@ export async function startAgent() {
   }
 
   // Also handle case where queue has a "running" entry from a crash
-  // (agent died without graceful shutdown, so markInterrupted was never called)
+  // (agent died without graceful shutdown, so markInterrupted was never called).
+  // Check for progress before discarding — force-kills may have left
+  // lastProgress from per-step updateProgress() calls, or the CLI state
+  // file may still exist in the target project.
   const current = runQueue.getCurrent();
   if (current && current.status === 'running' && !activeBridge) {
-    // Orphaned run with no progress — auto-discard instead of blocking the queue
-    info(`Found orphaned running run: ${current.id} — auto-discarding (0 steps completed)`);
-    runQueue.completeCurrent({ success: false });
-    dispatchWithQueue('run_failed', {
-      projectId: current.projectId,
-      run: { id: current.id },
-    }, []);
+    const savedProgress = current.lastProgress || {};
+    let completedFromQueue = savedProgress.completedCount || 0;
+
+    // Also check CLI state file as a fallback (belt + suspenders)
+    let completedFromCli = 0;
+    try {
+      const proj = projectManager.getProject(current.projectId);
+      if (proj) {
+        const stateFile = path.join(proj.path, 'nightytidy-run-state.json');
+        const state = JSON.parse(fs.readFileSync(stateFile, 'utf-8'));
+        completedFromCli = (state.completedSteps || []).length;
+      }
+    } catch { /* no state file — fine */ }
+
+    const totalCompleted = Math.max(completedFromQueue, completedFromCli);
+
+    if (totalCompleted === 0) {
+      // No work was done — safe to auto-discard
+      info(`Found orphaned running run: ${current.id} — auto-discarding (0 steps completed)`);
+      runQueue.completeCurrent({ success: false });
+      dispatchWithQueue('run_failed', {
+        projectId: current.projectId,
+        run: { id: current.id },
+      }, []);
+    } else {
+      // Has progress — transition to interrupted so user can resume/finish/discard
+      info(`Found orphaned running run: ${current.id} — transitioning to interrupted (${totalCompleted} steps completed)`);
+      const progress = Object.keys(savedProgress).length > 0
+        ? savedProgress
+        : { completedCount: completedFromCli, failedCount: 0, totalCost: 0 };
+      runQueue.markInterrupted(progress);
+      dispatchWithQueue('run_interrupted', {
+        projectId: current.projectId,
+        run: {
+          id: current.id,
+          totalSteps: current.steps?.length || 0,
+          completedSteps: totalCompleted,
+          elapsedMs: Date.now() - (current.startedAt || Date.now()),
+        },
+      }, []);
+    }
   }
 
   // Process any queued runs left from a previous session

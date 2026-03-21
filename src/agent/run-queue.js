@@ -57,6 +57,18 @@ export class RunQueue {
   }
 
   /**
+   * Persist run progress to disk so it survives force-kills and crashes.
+   * Called after each step completes/fails. The next startup can read
+   * current.lastProgress to recover the run.
+   */
+  updateProgress(progress) {
+    if (this.current) {
+      this.current.lastProgress = progress;
+      this._save();
+    }
+  }
+
+  /**
    * Mark the current run as interrupted (agent shutting down mid-run).
    * Preserves progress data so the run can be resumed on restart.
    */
