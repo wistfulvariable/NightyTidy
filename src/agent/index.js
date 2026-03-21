@@ -432,6 +432,31 @@ export async function startAgent() {
         break;
       }
 
+      case 'stop-agent': {
+        reply({ type: 'stop-agent-ack' });
+        info('Stop requested via web app — shutting down');
+        // Short delay so the reply reaches the client before we exit
+        setTimeout(() => process.exit(0), 200);
+        break;
+      }
+
+      case 'uninstall-agent': {
+        // Unregister the OS service, then stop the agent
+        try {
+          const { unregisterService } = await import('./service.js');
+          const result = unregisterService();
+          if (!result.success) {
+            warn(`Service unregistration issue: ${result.error}`);
+          }
+          reply({ type: 'uninstall-agent-ack' });
+          info('Uninstall requested via web app — service removed, shutting down');
+          setTimeout(() => process.exit(0), 200);
+        } catch (err) {
+          reply({ type: 'error', message: `Failed to uninstall: ${err.message}`, code: 'uninstall_failed' });
+        }
+        break;
+      }
+
       default:
         reply({ type: 'error', message: `Unknown command: ${msg.type}`, code: 'unknown_command' });
     }
