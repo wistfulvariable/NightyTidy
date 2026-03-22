@@ -626,6 +626,19 @@ body {
 
 .actions { margin-bottom: 8px; }
 
+/* Fit running screen to viewport — prevent unnecessary body scrollbar */
+#screen-running.active {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 32px);
+  overflow: hidden;
+}
+#screen-running .step-list,
+#screen-running .output-panel {
+  flex-shrink: 1;
+  min-height: 80px;
+}
+
 .elapsed { font-variant-numeric: tabular-nums; }
 
 .running-totals {
