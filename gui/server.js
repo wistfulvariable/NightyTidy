@@ -349,6 +349,7 @@ function handleCheckUpdate(res) {
     const remoteRef = execSync('git rev-parse origin/master', { ...opts, stdio: 'pipe' }).trim();
 
     if (localRef === remoteRef) {
+      lastHeartbeat = Date.now(); // Blocking execSync starved the event loop — refresh before watchdog fires
       return sendJson(res, { updateAvailable: false, behind: 0, localRef, remoteRef });
     }
 
@@ -356,8 +357,10 @@ function handleCheckUpdate(res) {
     const behind = parseInt(countStr, 10) || 0;
 
     guiLog('info', `Update available: ${behind} commit(s) behind origin/master`);
+    lastHeartbeat = Date.now(); // Blocking execSync starved the event loop — refresh before watchdog fires
     sendJson(res, { updateAvailable: true, behind, localRef, remoteRef });
   } catch {
+    lastHeartbeat = Date.now(); // Blocking execSync starved the event loop — refresh before watchdog fires
     sendJson(res, { updateAvailable: false });
   }
 }
@@ -370,10 +373,12 @@ function handleCheckUpdate(res) {
 function handlePullUpdate(res) {
   const opts = { cwd: NIGHTYTIDY_REPO_ROOT, encoding: 'utf-8', timeout: 30_000, windowsHide: true };
   try {
-    execSync('git pull origin master', { ...opts, stdio: 'pipe' });
+    execSync('git pull --ff-only origin master', { ...opts, stdio: 'pipe' });
     guiLog('info', 'Update pulled successfully');
+    lastHeartbeat = Date.now(); // Blocking execSync starved the event loop — refresh before watchdog fires
     sendJson(res, { ok: true });
   } catch (err) {
+    lastHeartbeat = Date.now(); // Blocking execSync starved the event loop — refresh before watchdog fires
     const msg = (err.stderr || err.message || 'Unknown error').trim();
     guiLog('warn', `Update pull failed: ${msg}`);
     sendJson(res, { ok: false, error: msg });
