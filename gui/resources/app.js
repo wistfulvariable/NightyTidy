@@ -2134,6 +2134,7 @@ function resetApp() {
   state.prodding = false;
   resetCachedTotals();
 
+  document.getElementById('update-banner').classList.add('hidden');
   clearError('setup');
   clearError('steps');
   clearError('running');
@@ -2523,13 +2524,18 @@ async function handleUpdateNow() {
   const text = document.getElementById('update-banner-text');
 
   btn.disabled = true;
-  text.innerHTML = '<span class="spinner" aria-hidden="true"></span> Updating...';
+  text.textContent = '';
+  const spinner = document.createElement('span');
+  spinner.className = 'spinner';
+  spinner.setAttribute('aria-hidden', 'true');
+  text.appendChild(spinner);
+  text.appendChild(document.createTextNode(' Updating...'));
 
   try {
     const data = await api('pull-update', {}, 35_000); // 35s timeout (pull takes up to 30s)
     if (data.ok) {
       text.textContent = 'Updated! Please close and relaunch NightyTidy.';
-      btn.style.display = 'none';
+      btn.hidden = true;
     } else {
       text.textContent = `Update failed: ${data.error || 'Unknown error'}`;
       btn.disabled = false;
