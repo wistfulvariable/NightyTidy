@@ -85,7 +85,7 @@ test/
   orchestrator.test.js     # 63 tests — initRun, runStep, finishRun (changelog + action plan + token passthrough), dashboard integration with mocked modules, cost tracking, suspiciousFast passthrough, rate-limit errorType propagation, auto-sync, 3-tier step recovery, inter-tier branch guard, init phase progress, failed-step retry + dedup
   contracts.test.js        # 40 tests — module API contract verification against CLAUDE.md
   gui-logic.test.js        # 145 tests — pure logic functions (buildCommand, parseCliOutput, formatMs, formatCost, formatTokens, formatTime, detectGitError, detectStaleState, detectRateLimit, formatCountdown, preprocessClaudeOutput, INIT_PHASES, getInitPhaseIndex, etc.)
-  gui-server.test.js       # 47 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, log-error, log-path, security headers, traversal, singleton guard
+  gui-server.test.js       # 54 tests — HTTP server, static files, config, run-command, kill-process, delete-file, heartbeat, log-error, log-path, security headers, traversal, singleton guard, update check
   lock.test.js             # 9 tests — acquireLock, releaseLock, stale lock removal, persistent mode
   lock-extended.test.js    # 6 tests — EEXIST retry, missing started field, invalid date in lock file
   orchestrator-extended.test.js # 11 tests — finishRun error paths, timeout propagation, state version checks

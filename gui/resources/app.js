@@ -2134,6 +2134,7 @@ function resetApp() {
   state.prodding = false;
   resetCachedTotals();
 
+  document.getElementById('update-banner').classList.add('hidden');
   clearError('setup');
   clearError('steps');
   clearError('running');
@@ -2252,6 +2253,11 @@ function bindEvents() {
     if (e.target.id === 'confirm-stop-overlay') {
       cancelStopRun();
     }
+  });
+
+  document.getElementById('btn-update-now').addEventListener('click', handleUpdateNow);
+  document.getElementById('btn-update-dismiss').addEventListener('click', () => {
+    document.getElementById('update-banner').classList.add('hidden');
   });
 }
 
@@ -2458,6 +2464,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load config in background (non-blocking)
   loadConfigAsync();
 
+  // Check for NightyTidy updates (non-blocking)
+  checkForUpdate();
+
   // Check for an active run (page-refresh recovery)
   checkForActiveRun().then(active => {
     if (active) reconnectToRun(active.runData, active.progress);
@@ -2493,4 +2502,59 @@ async function loadConfigAsync() {
     const config = await api('config');
     if (config.ok && config.bin) state.bin = config.bin;
   } catch { /* fallback to npx */ }
+}
+
+async function checkForUpdate() {
+  const text = document.getElementById('update-banner-text');
+  const banner = document.getElementById('update-banner');
+  const btn = document.getElementById('btn-update-now');
+
+  try {
+    // Show checking status so the user knows something is happening
+    text.textContent = 'Checking for updates...';
+    btn.hidden = true;
+    banner.classList.remove('hidden');
+
+    const data = await api('check-update', {}, 15_000); // 15s timeout (fetch takes up to 10s)
+    if (!data.updateAvailable) {
+      banner.classList.add('hidden');
+      return;
+    }
+
+    const count = data.behind === 1 ? '1 commit behind' : `${data.behind} commits behind`;
+    text.textContent = `Update available (${count})`;
+    btn.hidden = false;
+  } catch {
+    // Silent — update check is best-effort
+    banner.classList.add('hidden');
+  }
+}
+
+async function handleUpdateNow() {
+  const btn = document.getElementById('btn-update-now');
+  const text = document.getElementById('update-banner-text');
+
+  btn.disabled = true;
+  text.textContent = '';
+  const spinner = document.createElement('span');
+  spinner.className = 'spinner';
+  spinner.setAttribute('aria-hidden', 'true');
+  text.appendChild(spinner);
+  text.appendChild(document.createTextNode(' Pulling latest changes from GitHub...'));
+
+  try {
+    const data = await api('pull-update', {}, 35_000); // 35s timeout (pull takes up to 30s)
+    if (data.ok) {
+      text.textContent = 'Updated! Please close and relaunch NightyTidy.';
+      btn.hidden = true;
+    } else {
+      text.textContent = `Update failed: ${data.error || 'Unknown error'}`;
+      btn.disabled = false;
+      btn.textContent = 'Retry';
+    }
+  } catch {
+    text.textContent = 'Update failed: could not reach server.';
+    btn.disabled = false;
+    btn.textContent = 'Retry';
+  }
 }

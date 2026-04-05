@@ -72,12 +72,15 @@ function readBody(req) {
 function sendJson(res, data, status = 200) {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
+    ...SECURITY_HEADERS,
   });
   res.end(JSON.stringify(data));
 }
 
 let server;
 let baseUrl;
+let mockCheckUpdate = null;
+let mockPullUpdate = null;
 
 beforeAll(async () => {
   server = createServer(async (req, res) => {
@@ -211,6 +214,26 @@ beforeAll(async () => {
       return;
     }
 
+    // API: check-update — mirrors server.js handleCheckUpdate
+    if (url.pathname === '/api/check-update' && req.method === 'POST') {
+      if (mockCheckUpdate) {
+        sendJson(res, mockCheckUpdate());
+        return;
+      }
+      sendJson(res, { updateAvailable: false });
+      return;
+    }
+
+    // API: pull-update — mirrors server.js handlePullUpdate
+    if (url.pathname === '/api/pull-update' && req.method === 'POST') {
+      if (mockPullUpdate) {
+        sendJson(res, mockPullUpdate());
+        return;
+      }
+      sendJson(res, { ok: true });
+      return;
+    }
+
     // Static files
     const safePath = url.pathname === '/' ? '/index.html' : url.pathname;
     const filePath = join(RESOURCES_DIR, safePath);
@@ -247,6 +270,11 @@ afterAll(() => {
   }
   activeProcesses.clear();
   if (server) server.close();
+});
+
+afterEach(() => {
+  mockCheckUpdate = null;
+  mockPullUpdate = null;
 });
 
 // ── Static File Serving ────────────────────────────────────────────
@@ -818,5 +846,76 @@ describe('singleton guard', () => {
 
     // Clean up first server
     first.child.kill();
+  });
+});
+
+// ── Update Check & Pull ──────────────────────────────────────────
+
+describe('/api/check-update', () => {
+  it('returns updateAvailable: true when local is behind remote', async () => {
+    mockCheckUpdate = () => ({
+      updateAvailable: true,
+      behind: 3,
+      localRef: 'abc1234',
+      remoteRef: 'def5678',
+    });
+    const res = await fetch(`${baseUrl}/api/check-update`, { method: 'POST' });
+    const data = await res.json();
+    expect(data.updateAvailable).toBe(true);
+    expect(data.behind).toBe(3);
+    expect(data.localRef).toBe('abc1234');
+    expect(data.remoteRef).toBe('def5678');
+  });
+
+  it('returns updateAvailable: false when up to date', async () => {
+    mockCheckUpdate = () => ({
+      updateAvailable: false,
+      behind: 0,
+      localRef: 'abc1234',
+      remoteRef: 'abc1234',
+    });
+    const res = await fetch(`${baseUrl}/api/check-update`, { method: 'POST' });
+    const data = await res.json();
+    expect(data.updateAvailable).toBe(false);
+    expect(data.behind).toBe(0);
+  });
+
+  it('returns updateAvailable: false on git error (silent failure)', async () => {
+    mockCheckUpdate = () => ({ updateAvailable: false });
+    const res = await fetch(`${baseUrl}/api/check-update`, { method: 'POST' });
+    const data = await res.json();
+    expect(data.updateAvailable).toBe(false);
+  });
+
+  it('includes security headers', async () => {
+    const res = await fetch(`${baseUrl}/api/check-update`, { method: 'POST' });
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
+  });
+});
+
+describe('/api/pull-update', () => {
+  it('returns ok: true on successful pull', async () => {
+    mockPullUpdate = () => ({ ok: true });
+    const res = await fetch(`${baseUrl}/api/pull-update`, { method: 'POST' });
+    const data = await res.json();
+    expect(data.ok).toBe(true);
+  });
+
+  it('returns ok: false with error on pull failure', async () => {
+    mockPullUpdate = () => ({
+      ok: false,
+      error: 'error: Your local changes would be overwritten by merge.',
+    });
+    const res = await fetch(`${baseUrl}/api/pull-update`, { method: 'POST' });
+    const data = await res.json();
+    expect(data.ok).toBe(false);
+    expect(data.error).toContain('local changes');
+  });
+
+  it('includes security headers', async () => {
+    const res = await fetch(`${baseUrl}/api/pull-update`, { method: 'POST' });
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff');
+    expect(res.headers.get('x-frame-options')).toBe('DENY');
   });
 });
