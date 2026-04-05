@@ -1,6 +1,6 @@
 # NightyTidy — AI Codebase Guide
 
-Automated overnight codebase improvement through Claude Code. NightyTidy is an orchestration layer — it sequences 33 AI-driven improvement prompts against a target codebase, handling git branching, retries, notifications, and reporting. Claude Code (spawned as a subprocess) does the actual code changes. Targets vibe coders at small companies.
+Automated overnight codebase improvement through Claude Code. NightyTidy is an orchestration layer — it sequences 36 AI-driven improvement prompts against a target codebase, handling git branching, retries, notifications, and reporting. Claude Code (spawned as a subprocess) does the actual code changes. Targets vibe coders at small companies.
 
 ## Workflow Rules
 
@@ -52,9 +52,9 @@ src/
   setup.js                 # --setup command: generates CLAUDE.md integration snippet for target projects
   sync.js                  # Google Doc prompt sync — fetches, parses, diffs, updates local prompt files
   prompts/
-    manifest.json          # Step ordering + display names + sourceUrl (33 entries)
+    manifest.json          # Step ordering + display names + sourceUrl (36 entries)
     loader.js              # Reads manifest + markdown files, exports STEPS/DOC_UPDATE_PROMPT/CHANGELOG_PROMPT
-    steps/                 # 33 individual markdown prompt files (01-documentation.md .. 33-strategic-opportunities.md)
+    steps/                 # 36 individual markdown prompt files (01-documentation.md .. 36-strategic-opportunities.md)
     specials/              # Non-step prompts (doc-update.md, changelog.md)
 test/
   smoke.test.js            # 6 tests — structural integrity, module imports, deploy verification
@@ -144,7 +144,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/consolidation.js` | Post-run action plan — consolidates step outputs into tiered recommendations (returns text for inline embedding) | claude, logger, executor, prompts/loader |
 | `src/setup.js` | `--setup` command: CLAUDE.md integration for target projects | logger, prompts/loader |
 | `src/sync.js` | Google Doc prompt sync — fetches published doc, parses HTML, updates prompt files + manifest + STEPS_HASH | crypto, logger |
-| `src/prompts/loader.js` | Loads 33 prompts + special prompts; `reloadSteps()` for live-reload after sync | fs (data loader) |
+| `src/prompts/loader.js` | Loads 36 prompts + special prompts; `reloadSteps()` for live-reload after sync | fs (data loader) |
 | `gui/server.js` | Desktop GUI backend — HTTP server + native folder dialog + Chrome launcher + session logging | node:http, node:fs, node:child_process |
 | `gui/resources/logic.js` | GUI pure logic — command building, JSON parsing, formatting, rate-limit detection | none (browser + Node.js dual) |
 | `gui/resources/app.js` | GUI state machine — screen transitions, process spawning, progress polling, rate-limit pause/resume overlay | logic.js, marked, server.js (via fetch) |
@@ -154,7 +154,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 ```bash
 npm install               # Install dependencies
 npx nightytidy            # Run (interactive step selection)
-npx nightytidy --all      # Run all 33 steps (non-interactive)
+npx nightytidy --all      # Run all 36 steps (non-interactive)
 npx nightytidy --steps 1,5,12  # Run specific steps by number
 npx nightytidy --list     # List all available steps with descriptions
 npx nightytidy --timeout 90  # Set per-step timeout to 90 minutes (default: 75)
@@ -237,13 +237,13 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | `nightytidy-run-state.json` | Orchestrator run state (steps, results, branch info); also created during rate-limit pause in interactive mode for `--resume` | No (deleted by --finish-run / --resume completion) |
 | `nightytidy-before-*` git tag | Safety snapshot before run | Yes (tag) |
 | `nightytidy/run-*` git branch | All changes from this run | Yes (branch) |
-| `audit-reports/refactor-prompts/*.md` | All 33 step prompts synced for audit trail — stale files from renames auto-removed | Yes (on run branch) |
+| `audit-reports/refactor-prompts/*.md` | All 36 step prompts synced for audit trail — stale files from renames auto-removed | Yes (on run branch) |
 
 ## What NOT to Do
 
 - **Don't add `require()`** — ESM only, no CommonJS
 - **Don't throw from `claude.js`, `executor.js`, `orchestrator.js`, `consolidation.js`, or `sync.js`** — they must return result objects (consolidation returns `null` on failure)
-- **Don't change loader.js export shape** — 33 steps with `{ number, name, prompt }` validated by tests. Edit prompt content in `src/prompts/steps/*.md`, not in loader.js
+- **Don't change loader.js export shape** — 36 steps with `{ number, name, prompt }` validated by tests. Edit prompt content in `src/prompts/steps/*.md`, not in loader.js
 - **Don't remove the logger mock** from any test — it will crash trying to write log files
 - **Don't make notifications blocking** — they must be fire-and-forget
 - **Don't make the dashboard blocking** — it must be fire-and-forget like notifications

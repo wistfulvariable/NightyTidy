@@ -4,8 +4,8 @@ import { fileURLToPath } from 'url';
 import { STEPS, DOC_UPDATE_PROMPT, CHANGELOG_PROMPT, CONSOLIDATION_PROMPT, REPORT_PROMPT, reloadSteps } from '../src/prompts/loader.js';
 
 describe('STEPS', () => {
-  it('has exactly 33 entries', () => {
-    expect(STEPS).toHaveLength(33);
+  it('has exactly 36 entries', () => {
+    expect(STEPS).toHaveLength(36);
   });
 
   it('each entry has number, name, and prompt fields', () => {
@@ -19,9 +19,9 @@ describe('STEPS', () => {
     }
   });
 
-  it('numbers are sequential from 1 to 33', () => {
+  it('numbers are sequential from 1 to 36', () => {
     const numbers = STEPS.map((s) => s.number);
-    const expected = Array.from({ length: 33 }, (_, i) => i + 1);
+    const expected = Array.from({ length: 36 }, (_, i) => i + 1);
     expect(numbers).toEqual(expected);
   });
 
@@ -33,12 +33,12 @@ describe('STEPS', () => {
 });
 
 describe('manifest.json', () => {
-  it('has version 1 and 33 step entries', () => {
+  it('has version 1 and 36 step entries', () => {
     const manifest = JSON.parse(readFileSync(
       fileURLToPath(new URL('../src/prompts/manifest.json', import.meta.url)), 'utf8'
     ));
     expect(manifest.version).toBe(1);
-    expect(manifest.steps).toHaveLength(33);
+    expect(manifest.steps).toHaveLength(36);
   });
 
   it('every manifest ID has a corresponding .md file in steps/', () => {

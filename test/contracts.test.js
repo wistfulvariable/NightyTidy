@@ -468,10 +468,10 @@ describe('contract: steps.js — data shape', () => {
     vi.doUnmock('../src/prompts/loader.js');
   });
 
-  it('STEPS is an array of exactly 33 objects with { number, name, prompt }', async () => {
+  it('STEPS is an array of exactly 36 objects with { number, name, prompt }', async () => {
     const { STEPS } = await import('../src/prompts/loader.js');
 
-    expect(STEPS).toHaveLength(33);
+    expect(STEPS).toHaveLength(36);
 
     for (let i = 0; i < STEPS.length; i++) {
       const step = STEPS[i];

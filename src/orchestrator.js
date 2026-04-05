@@ -405,7 +405,7 @@ function stopDashboardServer(pid) {
  * @param {number} [options.timeout] - Per-step timeout in ms
  * @returns {Promise<InitRunResult>} Result object (never throws)
  */
-export async function initRun(projectDir, { steps, timeout, skipDashboard } = {}) {
+export async function initRun(projectDir, { steps, timeout, skipDashboard, skipSync } = {}) {
   try {
     initLogger(projectDir, { quiet: true });
     info(`NightyTidy v${getVersion()} orchestrator starting (Node ${process.version}, ${process.platform} ${process.arch})`);
@@ -425,26 +425,30 @@ export async function initRun(projectDir, { steps, timeout, skipDashboard } = {}
     writeProgress(projectDir, { status: 'initializing', initPhase: 'pre_checks' });
     await runPreChecks(projectDir, git);
 
-    // Auto-sync prompts from Google Doc (non-blocking)
-    writeProgress(projectDir, { status: 'initializing', initPhase: 'sync_prompts' });
-    try {
-      const { syncPrompts } = await import('./sync.js');
-      const syncResult = await syncPrompts();
-      if (syncResult.success) {
-        const changeCount = syncResult.summary.updated.length +
-          syncResult.summary.added.length +
-          syncResult.summary.removed.length;
-        if (changeCount > 0) {
-          reloadSteps();
-          info(`Prompts synced: ${changeCount} change(s)`);
+    // Auto-sync prompts from Google Doc (skip if already synced by GUI)
+    if (skipSync) {
+      info('Prompt sync skipped (already synced by caller)');
+    } else {
+      writeProgress(projectDir, { status: 'initializing', initPhase: 'sync_prompts' });
+      try {
+        const { syncPrompts } = await import('./sync.js');
+        const syncResult = await syncPrompts();
+        if (syncResult.success) {
+          const changeCount = syncResult.summary.updated.length +
+            syncResult.summary.added.length +
+            syncResult.summary.removed.length;
+          if (changeCount > 0) {
+            reloadSteps();
+            info(`Prompts synced: ${changeCount} change(s)`);
+          } else {
+            info('Prompts up to date');
+          }
         } else {
-          info('Prompts up to date');
+          warn(`Prompt sync failed: ${syncResult.error}. Using cached versions.`);
         }
-      } else {
-        warn(`Prompt sync failed: ${syncResult.error}. Using cached versions.`);
+      } catch (err) {
+        warn(`Prompt sync error: ${err.message}. Using cached versions.`);
       }
-    } catch (err) {
-      warn(`Prompt sync error: ${err.message}. Using cached versions.`);
     }
 
     // Validate and select steps

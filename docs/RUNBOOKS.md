@@ -84,7 +84,7 @@ Symptom-based troubleshooting for common NightyTidy failures. Find your symptom,
 **Fix**:
 1. Free up disk space (empty trash, clear temp files, remove unused dependencies)
 2. NightyTidy warns at <1 GB and blocks at <100 MB
-3. A full 33-step run on a large project can generate significant git data
+3. A full 36-step run on a large project can generate significant git data
 
 ---
 

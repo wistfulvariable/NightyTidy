@@ -668,6 +668,12 @@ async function loadSteps() {
   showStepsSkeleton();
   showScreen(SCREENS.STEPS);
 
+  // Sync prompts from Google Doc before listing steps (mirrors CLI behavior).
+  // Non-blocking: if sync fails (no network, etc.), we still show cached steps.
+  const syncResult = await runCli('--sync');
+  if (syncResult.ok) logToServer('info', 'Prompt sync completed before step list');
+  else logToServer('warn', `Prompt sync failed (using cached steps): ${syncResult.error || 'unknown'}`);
+
   const result = await runCli('--list --json');
   loadingEl.style.display = 'none';
 
@@ -699,7 +705,7 @@ function showStepsSkeleton() {
   const projectPath = document.getElementById('steps-project-path');
   projectPath.textContent = state.projectDir;
 
-  // Show 10 skeleton lines as placeholders (roughly half of 33 steps visible at once)
+  // Show 10 skeleton lines as placeholders (roughly half of 36 steps visible at once)
   let skeletonHtml = '';
   for (let i = 0; i < 10; i++) {
     const widthClass = i % 3 === 0 ? 'short' : i % 2 === 0 ? 'medium' : '';
@@ -777,7 +783,7 @@ async function startRun() {
 
   const stepArgs = NtLogic.buildStepArgs(selected, state.steps.length);
   const timeoutArg = state.timeout !== 75 ? ` --timeout ${state.timeout}` : '';
-  const args = `--init-run ${stepArgs}${timeoutArg} --skip-dashboard`;
+  const args = `--init-run ${stepArgs}${timeoutArg} --skip-dashboard --skip-sync`;
 
   showInitOverlay();
 

@@ -1,14 +1,42 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#312e81"/>
-      <stop offset="100%" stop-color="#1e1b4b"/>
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#0f0f1a"/>
     </linearGradient>
+    <linearGradient id="moon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#e0f7ff"/>
+      <stop offset="100%" stop-color="#00d4ff"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
   </defs>
+  <!-- Background -->
   <rect width="512" height="512" rx="96" fill="url(#bg)"/>
-  <circle cx="220" cy="260" r="148" fill="#c7d2fe"/>
-  <circle cx="296" cy="206" r="138" fill="url(#bg)"/>
-  <path d="M390 130 l10 30 30 10-30 10-10 30-10-30-30-10 30-10z" fill="#fbbf24"/>
-  <path d="M435 245 l6 18 18 6-18 6-6 18-6-18-18-6 18-6z" fill="#fbbf24" opacity="0.6"/>
-  <path d="M350 80 l4 12 12 4-12 4-4 12-4-12-12-4 12-4z" fill="#fbbf24" opacity="0.4"/>
+  <!-- Crescent moon with cyan glow -->
+  <g filter="url(#glow)">
+    <circle cx="230" cy="250" r="140" fill="url(#moon)"/>
+    <circle cx="300" cy="200" r="125" fill="url(#bg)"/>
+  </g>
+  <!-- Sparkle stars (representing "tidy" cleaning magic) -->
+  <g fill="#00d4ff">
+    <!-- Large sparkle -->
+    <path d="M400 120 l12 36 36 12-36 12-12 36-12-36-36-12 36-12z" opacity="1"/>
+    <!-- Medium sparkle -->
+    <path d="M440 260 l8 24 24 8-24 8-8 24-8-24-24-8 24-8z" opacity="0.7"/>
+    <!-- Small sparkle -->
+    <path d="M360 70 l5 15 15 5-15 5-5 15-5-15-15-5 15-5z" opacity="0.5"/>
+    <!-- Extra small sparkle -->
+    <path d="M380 340 l4 12 12 4-12 4-4 12-4-12-12-4 12-4z" opacity="0.4"/>
+  </g>
+  <!-- Subtle sweep lines (tidying motion) -->
+  <g stroke="#00d4ff" stroke-width="3" stroke-linecap="round" opacity="0.3">
+    <path d="M100 380 Q180 350 140 420" fill="none"/>
+    <path d="M120 400 Q200 370 160 440" fill="none"/>
+  </g>
 </svg>

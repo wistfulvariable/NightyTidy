@@ -66,7 +66,7 @@ import { info, warn, error as logError } from './logger.js';
 // SHA-256 of all STEPS[].prompt content — update when prompts change.
 // Detects unexpected modification of prompt data before passing to
 // Claude Code with --dangerously-skip-permissions.
-const STEPS_HASH = 'ba4e25bc096db265682a8576d543c0a3697543e238ab99f852f99038581037be';
+const STEPS_HASH = 'c7bc7408a5dcad59767e09a349a5ce1ba00b28720daddb256a7699e3932b8f95';
 
 // Hard cap on total step duration (all retries + doc-update combined).
 // Without this, retries × phases can exceed the user's expected timeout.
