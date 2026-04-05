@@ -10,7 +10,7 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
 
 | Flag | Type | Default | Behavior |
 |------|------|---------|----------|
-| `--all` | boolean | false | Run all 33 steps non-interactively |
+| `--all` | boolean | false | Run all 36 steps non-interactively |
 | `--steps <n>` | string | -- | Comma-separated: `--steps 1,5,12` |
 | `--list` | boolean | false | Print step numbers + names, exit(0) |
 | `--setup` | boolean | false | Generate CLAUDE.md integration snippet, exit(0) |

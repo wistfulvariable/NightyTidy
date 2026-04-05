@@ -1,6 +1,6 @@
 # NightyTidy
 
-Automated overnight codebase improvement through [Claude Code](https://docs.anthropic.com/en/docs/claude-code). NightyTidy sequences 33 AI-driven improvement prompts against your codebase — handling git branching, retries, rate-limit recovery, notifications, and reporting. Kick it off before bed, review the results in the morning.
+Automated overnight codebase improvement through [Claude Code](https://docs.anthropic.com/en/docs/claude-code). NightyTidy sequences 36 AI-driven improvement prompts against your codebase — handling git branching, retries, rate-limit recovery, notifications, and reporting. Kick it off before bed, review the results in the morning.
 
 Built for vibe coders and small teams who want production-grade code quality without the grind.
 
@@ -32,7 +32,7 @@ npm run gui
 This opens a Chrome app-mode window. From there:
 
 1. **Select your project folder** using the native folder picker
-2. **Pick which steps to run** — or Select All for all 33
+2. **Pick which steps to run** — or Select All for all 36
 3. **Set the timeout** per step (default: 45 minutes)
 4. **Click Start Run** and walk away
 
@@ -40,11 +40,11 @@ NightyTidy handles everything from there: progress tracking, live Claude output,
 
 ## Run Duration and Token Usage
 
-A full 33-step run is a serious workload — expect **6 to 8 hours** with Claude running at full capacity the entire time. Each step gets its own Claude Code session, and many steps involve reading your entire codebase, making changes, running tests, and iterating. This adds up fast.
+A full 36-step run is a serious workload — expect **6 to 8 hours** with Claude running at full capacity the entire time. Each step gets its own Claude Code session, and many steps involve reading your entire codebase, making changes, running tests, and iterating. This adds up fast.
 
 **You will likely hit usage limits** unless you're on Anthropic's Max plan. To avoid mid-run rate limits:
 
-- **Max plan recommended** — A full run burns through a large number of tokens. The Max plan gives you the headroom to complete all 33 steps without interruption.
+- **Max plan recommended** — A full run burns through a large number of tokens. The Max plan gives you the headroom to complete all 36 steps without interruption.
 - **Run in batches** — If you're not on Max, run a quarter or half of the steps at a time (e.g., `--steps 1-8`, then `--steps 9-16` after your usage resets). The GUI's step picker makes this easy.
 - **Use the rate-limit recovery** — If you do hit limits mid-run, NightyTidy pauses automatically and can resume later. Save & Close in the GUI, or use `--resume` in the CLI when your limits reset.
 
@@ -68,7 +68,7 @@ The GUI is the primary way to use NightyTidy. It wraps the CLI orchestrator in a
 | Screen | What it does |
 |--------|-------------|
 | **Setup** | Pick a project folder via native file dialog. Validates git repo and Claude CLI. |
-| **Step Selection** | Browse all 33 steps with checkboxes, Select All / Deselect All, set timeout. Detects and offers to resume paused runs. |
+| **Step Selection** | Browse all 36 steps with checkboxes, Select All / Deselect All, set timeout. Detects and offers to resume paused runs. |
 | **Running** | Live progress bar, per-step status indicators, real-time Claude output panel, elapsed time, cost/token tracking, Skip Step and Stop Run controls. |
 | **Finishing** | Generates an AI-narrated report and merges changes back to your original branch. |
 | **Summary** | Final results — steps completed/failed, total cost, token usage, duration. Click any step to review its full output. |
@@ -92,7 +92,7 @@ For terminal users, scripting, or CI environments:
 # Interactive — pick steps from a checklist
 npx nightytidy
 
-# Run all 33 steps
+# Run all 36 steps
 npx nightytidy --all
 
 # Run specific steps by number
@@ -138,7 +138,7 @@ npx nightytidy --finish-run              # Generate report + merge
 
 Run `npx nightytidy --setup` in your project to add a CLAUDE.md snippet that teaches Claude Code this workflow.
 
-## The 33 Improvement Steps
+## The 36 Improvement Steps
 
 | # | Step | Focus |
 |---|------|-------|
@@ -148,33 +148,36 @@ Run `npx nightytidy --setup` in your project to add a CLAUDE.md snippet that tea
 | 4 | Test Architecture | Structure, patterns, organization |
 | 5 | Test Consolidation | Remove duplicates, merge related tests |
 | 6 | Test Quality | Tautological tests, testing implementation details |
-| 7 | API Design | Consistency, naming, contracts |
-| 8 | Security Sweep | Auth, injection, OWASP top 10 |
-| 9 | Dependency Health | Outdated, unused, vulnerable deps |
-| 10 | Codebase Cleanup | Dead code, unused imports, lint |
-| 11 | Cross-Cutting Concerns | Logging, error handling, validation patterns |
-| 12 | File Decomposition | Large files, single-responsibility splits |
-| 13 | Code Elegance | Readability, naming, simplification |
-| 14 | Architectural Complexity | Over-engineering, unnecessary abstraction |
-| 15 | Type Safety | Type assertions, null safety, contracts |
-| 16 | Logging & Error Messages | Quality, consistency, actionability |
-| 17 | Data Integrity | Validation, constraints, edge cases |
-| 18 | Performance | N+1 queries, memory, algorithmic complexity |
-| 19 | Cost & Resource Optimization | API calls, caching, efficiency |
-| 20 | Error Recovery | Graceful degradation, retry logic |
-| 21 | Race Condition Audit | Concurrency, atomicity, ordering |
-| 22 | Bug Hunt | Logic errors, off-by-ones, silent failures |
-| 23 | Frontend Quality | Components, rendering, accessibility |
-| 24 | UI/UX Audit | Usability, consistency, friction |
-| 25 | State Management | State flow, side effects, synchronization |
-| 26 | Perceived Performance | Loading states, skeleton screens, responsiveness |
-| 27 | DevOps | CI/CD, deployment, environment config |
-| 28 | Scheduled Jobs & Cron | Reliability, idempotency, monitoring |
-| 29 | Observability | Metrics, tracing, alerting |
-| 30 | Backup Check | Data safety, recovery procedures |
-| 31 | Product Polish & UX Friction | Edge cases, empty states, error UX |
-| 32 | Feature Discovery & Opportunity | Missing features, quick wins |
-| 33 | Strategic Opportunities | Architecture direction, scaling, roadmap |
+| 7 | Test Efficiency | Speed, parallelism, resource usage |
+| 8 | Integration & Boundary Testing | Cross-module seams, API boundaries |
+| 9 | API Design & Consistency | Consistency, naming, contracts |
+| 10 | Security Sweep | Auth, injection, OWASP top 10 |
+| 11 | Dependency Health | Outdated, unused, vulnerable deps |
+| 12 | Codebase Cleanup | Dead code, unused imports, lint |
+| 13 | Cross-Cutting Concerns | Logging, error handling, validation patterns |
+| 14 | File Decomposition | Large files, single-responsibility splits |
+| 15 | Code Elegance | Readability, naming, simplification |
+| 16 | Architectural Complexity | Over-engineering, unnecessary abstraction |
+| 17 | Scar Tissue Analysis | Workarounds, tech debt markers, TODO cleanup |
+| 18 | Type Safety | Type assertions, null safety, contracts |
+| 19 | Logging & Error Messages | Quality, consistency, actionability |
+| 20 | Data Integrity | Validation, constraints, edge cases |
+| 21 | Performance | N+1 queries, memory, algorithmic complexity |
+| 22 | Cost & Resource Optimization | API calls, caching, efficiency |
+| 23 | Error Recovery | Graceful degradation, retry logic |
+| 24 | Race Condition Audit | Concurrency, atomicity, ordering |
+| 25 | Bug Hunt | Logic errors, off-by-ones, silent failures |
+| 26 | Frontend Quality | Components, rendering, accessibility |
+| 27 | UI/UX Audit | Usability, consistency, friction |
+| 28 | State Management | State flow, side effects, synchronization |
+| 29 | Perceived Performance | Loading states, skeleton screens, responsiveness |
+| 30 | DevOps | CI/CD, deployment, environment config |
+| 31 | Scheduled Jobs & Cron | Reliability, idempotency, monitoring |
+| 32 | Observability | Metrics, tracing, alerting |
+| 33 | Backup Check | Data safety, recovery procedures |
+| 34 | Product Polish & UX Friction | Edge cases, empty states, error UX |
+| 35 | Feature Discovery & Opportunity | Missing features, quick wins |
+| 36 | Strategic Opportunities | Architecture direction, scaling, roadmap |
 
 Prompts auto-sync from a published Google Doc before every run. Use `--skip-sync` to skip, or `npx nightytidy --sync` to sync manually.
 
@@ -231,7 +234,7 @@ After all steps complete, NightyTidy generates:
 
 - **`audit-reports/00_NIGHTYTIDY-REPORT_*.md`** — AI-narrated run summary with per-step results, costs, token usage, duration, and a prioritized action plan (the `00_` prefix ensures reports sort to the top of the audit-reports folder)
 - **CLAUDE.md update** — Appends a "Last Run" section with the run date and undo instructions
-- **Audit trail** — All 33 step prompts are copied to `audit-reports/refactor-prompts/` so you can see exactly what was asked
+- **Audit trail** — All 36 step prompts are copied to `audit-reports/refactor-prompts/` so you can see exactly what was asked
 
 If the AI report fails verification (junk detection), NightyTidy falls back to a template-based report so you always get results.
 
@@ -241,7 +244,7 @@ If the AI report fails verification (junk detection), NightyTidy falls back to a
 |------|-----------|---------|
 | `audit-reports/00_NIGHTYTIDY-REPORT_NN_YYYY-MM-DD-HHMM.md` | Yes | Run summary with step results + action plan |
 | `CLAUDE.md` (appended section) | Yes | "NightyTidy — Last Run" with undo tag |
-| `audit-reports/refactor-prompts/*.md` | Yes | All 33 prompts for audit trail |
+| `audit-reports/refactor-prompts/*.md` | Yes | All 36 prompts for audit trail |
 | `nightytidy-before-*` git tag | Yes (tag) | Safety snapshot for rollback |
 | `nightytidy/run-*` git branch | Yes (branch) | All changes from the run |
 | `nightytidy-run.log` | No | Detailed timestamped run log |

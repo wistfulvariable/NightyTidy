@@ -504,7 +504,7 @@ function showWelcome() {
     '\u2502                                                              \u2502\n' +
     '\u2502  Welcome to NightyTidy!                                      \u2502\n' +
     '\u2502                                                              \u2502\n' +
-    '\u2502  NightyTidy will run 33 codebase improvement steps through   \u2502\n' +
+    '\u2502  NightyTidy will run 36 codebase improvement steps through   \u2502\n' +
     '\u2502  Claude Code. This typically takes 4-8 hours.                \u2502\n' +
     '\u2502                                                              \u2502\n' +
     '\u2502  All changes happen on a dedicated branch and are            \u2502\n' +
@@ -837,7 +837,7 @@ export async function run() {
   }
 
   if (opts.initRun) {
-    const result = await initRun(projectDir, { steps: opts.steps, timeout: timeoutMs, skipDashboard: opts.skipDashboard });
+    const result = await initRun(projectDir, { steps: opts.steps, timeout: timeoutMs, skipDashboard: opts.skipDashboard, skipSync: opts.skipSync });
     console.log(JSON.stringify(result));
     process.exit(result.success ? 0 : 1);
   }
