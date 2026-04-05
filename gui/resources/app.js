@@ -2253,6 +2253,11 @@ function bindEvents() {
       cancelStopRun();
     }
   });
+
+  document.getElementById('btn-update-now').addEventListener('click', handleUpdateNow);
+  document.getElementById('btn-update-dismiss').addEventListener('click', () => {
+    document.getElementById('update-banner').classList.add('hidden');
+  });
 }
 
 // ── Running totals cache (optimization: avoid O(n) reduce on every 1s tick) ───
@@ -2458,6 +2463,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load config in background (non-blocking)
   loadConfigAsync();
 
+  // Check for NightyTidy updates (non-blocking)
+  checkForUpdate();
+
   // Check for an active run (page-refresh recovery)
   checkForActiveRun().then(active => {
     if (active) reconnectToRun(active.runData, active.progress);
@@ -2493,4 +2501,43 @@ async function loadConfigAsync() {
     const config = await api('config');
     if (config.ok && config.bin) state.bin = config.bin;
   } catch { /* fallback to npx */ }
+}
+
+async function checkForUpdate() {
+  try {
+    const data = await api('check-update', {}, 15_000); // 15s timeout (fetch takes up to 10s)
+    if (!data.updateAvailable) return;
+
+    const text = document.getElementById('update-banner-text');
+    const banner = document.getElementById('update-banner');
+    const count = data.behind === 1 ? '1 commit behind' : `${data.behind} commits behind`;
+    text.textContent = `Update available (${count})`;
+    banner.classList.remove('hidden');
+  } catch {
+    // Silent — update check is best-effort
+  }
+}
+
+async function handleUpdateNow() {
+  const btn = document.getElementById('btn-update-now');
+  const text = document.getElementById('update-banner-text');
+
+  btn.disabled = true;
+  text.innerHTML = '<span class="spinner" aria-hidden="true"></span> Updating...';
+
+  try {
+    const data = await api('pull-update', {}, 35_000); // 35s timeout (pull takes up to 30s)
+    if (data.ok) {
+      text.textContent = 'Updated! Please close and relaunch NightyTidy.';
+      btn.style.display = 'none';
+    } else {
+      text.textContent = `Update failed: ${data.error || 'Unknown error'}`;
+      btn.disabled = false;
+      btn.textContent = 'Retry';
+    }
+  } catch {
+    text.textContent = 'Update failed: could not reach server.';
+    btn.disabled = false;
+    btn.textContent = 'Retry';
+  }
 }
