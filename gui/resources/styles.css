@@ -1078,6 +1078,26 @@ body.drawer-open .screen.active {
 .resume-banner .btn-group { gap: 8px; }
 .resume-banner.hidden { display: none; }
 
+/* ── Update banner ── */
+.update-banner {
+  background: var(--surface);
+  border: 1px solid var(--cyan);
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.update-banner.hidden { display: none; }
+.update-banner #update-banner-text { color: var(--cyan); font-weight: 500; font-size: 0.9rem; }
+.update-banner .update-banner-actions { display: flex; align-items: center; gap: 8px; }
+.update-banner #btn-update-dismiss { font-size: 1.3rem; color: var(--text-dim); padding: 0 4px; line-height: 1; }
+.update-banner #btn-update-dismiss:hover { color: var(--text); }
+.update-banner .spinner { vertical-align: middle; margin-right: 6px; }
+
 /* ── Reduced motion ── */
 @media (prefers-reduced-motion: reduce) {
   *,

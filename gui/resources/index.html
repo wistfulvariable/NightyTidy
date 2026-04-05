@@ -15,6 +15,13 @@
   <!-- ═══ Screen 1: Setup ═══ -->
   <main id="main-content">
   <section id="screen-setup" class="screen active" aria-labelledby="setup-heading">
+    <div id="update-banner" class="update-banner hidden" role="status" aria-live="polite">
+      <span id="update-banner-text"></span>
+      <div class="update-banner-actions">
+        <button class="btn btn-primary btn-sm" id="btn-update-now" type="button">Update Now</button>
+        <button class="link-btn" id="btn-update-dismiss" type="button" aria-label="Dismiss update notice">&times;</button>
+      </div>
+    </div>
     <div class="setup-hero">
       <h1 id="setup-heading">NightyTidy</h1>
       <p>Automated overnight codebase improvement</p>
