@@ -32,6 +32,7 @@ import {
   htmlToMarkdown,
   parseDocSections,
   filterPromptSections,
+  stripNumberPrefix,
   normalizeName,
   headingToId,
   matchToManifest,
@@ -238,6 +239,42 @@ describe('filterPromptSections', () => {
   });
 });
 
+// ── stripNumberPrefix ──────────────────────────────────────────────
+
+describe('stripNumberPrefix', () => {
+  it('strips "07. " prefix', () => {
+    expect(stripNumberPrefix('07. Test Efficiency')).toBe('Test Efficiency');
+  });
+
+  it('strips "17. " prefix', () => {
+    expect(stripNumberPrefix('17. Scar Tissue Analysis')).toBe('Scar Tissue Analysis');
+  });
+
+  it('strips number-only prefix with space', () => {
+    expect(stripNumberPrefix('12 File Decomposition')).toBe('File Decomposition');
+  });
+
+  it('strips number with dash separator', () => {
+    expect(stripNumberPrefix('05- Test Consolidation')).toBe('Test Consolidation');
+  });
+
+  it('strips number with closing paren', () => {
+    expect(stripNumberPrefix('03) Test Hardening')).toBe('Test Hardening');
+  });
+
+  it('leaves headings without number prefix unchanged', () => {
+    expect(stripNumberPrefix('Documentation')).toBe('Documentation');
+  });
+
+  it('leaves headings starting with non-digit unchanged', () => {
+    expect(stripNumberPrefix('UI/UX Audit')).toBe('UI/UX Audit');
+  });
+
+  it('does not strip bare numbers without trailing space', () => {
+    expect(stripNumberPrefix('7Zip Archive')).toBe('7Zip Archive');
+  });
+});
+
 // ── normalizeName ───────────────────────────────────────────────────
 
 describe('normalizeName', () => {
@@ -285,6 +322,14 @@ describe('headingToId', () => {
 
   it('handles double-digit numbers', () => {
     expect(headingToId(33, 'Strategic Opportunities')).toBe('33-strategic-opportunities');
+  });
+
+  it('strips number prefix from heading to prevent doubled IDs', () => {
+    expect(headingToId(7, '07. Test Efficiency')).toBe('07-test-efficiency');
+  });
+
+  it('strips number prefix even when step number differs from heading number', () => {
+    expect(headingToId(17, '17. Scar Tissue Analysis')).toBe('17-scar-tissue-analysis');
   });
 });
 

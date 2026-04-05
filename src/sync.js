@@ -165,13 +165,17 @@ export function filterPromptSections(sections) {
 
 // ── Name normalization & matching ───────────────────────────────────
 
+/** Strip leading number prefix (e.g. "07. ", "12 - ", "33 ") from a heading. */
+export function stripNumberPrefix(heading) {
+  return heading.replace(/^\d+[\.\)\-]?\s+/, '');
+}
+
 /** Normalize a heading or name for fuzzy comparison. */
 export function normalizeName(name) {
-  return name
+  return stripNumberPrefix(name)
     .toLowerCase()
     .replace(/&/g, '')
     .replace(/[^a-z0-9\s]/g, '')
-    .replace(/^\d+\s+/, '')  // strip leading number prefix (e.g. "01 " from "01. Documentation")
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -179,7 +183,7 @@ export function normalizeName(name) {
 /** Convert a heading to a kebab-case ID suitable for filenames. */
 export function headingToId(number, heading) {
   const padded = String(number).padStart(2, '0');
-  const kebab = heading
+  const kebab = stripNumberPrefix(heading)
     .toLowerCase()
     .replace(/&/g, '')
     .replace(/[^a-z0-9\s]/g, '')
@@ -330,13 +334,15 @@ function buildNewManifest(promptSections, matchResult, oldManifest) {
     const a = addedByHeading.get(normalized);
 
     if (m) {
-      // Existing entry — keep name, renumber ID
-      const newId = headingToId(stepNumber, m.entry.name);
-      newSteps.push({ id: newId, name: m.entry.name, _oldId: m.entry.id });
+      // Existing entry — strip any number prefix, renumber ID
+      const cleanName = stripNumberPrefix(m.entry.name);
+      const newId = headingToId(stepNumber, cleanName);
+      newSteps.push({ id: newId, name: cleanName, _oldId: m.entry.id });
     } else if (a) {
-      // New entry
-      const newId = headingToId(stepNumber, a.heading);
-      newSteps.push({ id: newId, name: a.heading, _oldId: null });
+      // New entry — strip any number prefix from doc heading
+      const cleanName = stripNumberPrefix(a.heading);
+      const newId = headingToId(stepNumber, cleanName);
+      newSteps.push({ id: newId, name: cleanName, _oldId: null });
     }
     stepNumber++;
   }
