@@ -330,6 +330,56 @@ function handleConfig(res) {
   sendJson(res, { ok: true, bin: NIGHTYTIDY_BIN });
 }
 
+// ── API: Check for Updates ────────────────────────────────────────
+
+/** NightyTidy's own repo root — resolved from gui/ directory. */
+const NIGHTYTIDY_REPO_ROOT = resolve(__dirname, '..');
+
+/**
+ * Handle /api/check-update - check if local master is behind origin/master.
+ * Runs git commands against NightyTidy's own repo (not the target project).
+ * Silently returns { updateAvailable: false } on any error (no network, not a repo, etc.)
+ * @param {import('http').ServerResponse} res - HTTP response
+ */
+function handleCheckUpdate(res) {
+  const opts = { cwd: NIGHTYTIDY_REPO_ROOT, encoding: 'utf-8', timeout: 10_000, windowsHide: true };
+  try {
+    execSync('git fetch origin master', { ...opts, stdio: 'pipe' });
+    const localRef = execSync('git rev-parse master', { ...opts, stdio: 'pipe' }).trim();
+    const remoteRef = execSync('git rev-parse origin/master', { ...opts, stdio: 'pipe' }).trim();
+
+    if (localRef === remoteRef) {
+      return sendJson(res, { updateAvailable: false, behind: 0, localRef, remoteRef });
+    }
+
+    const countStr = execSync('git rev-list master..origin/master --count', { ...opts, stdio: 'pipe' }).trim();
+    const behind = parseInt(countStr, 10) || 0;
+
+    guiLog('info', `Update available: ${behind} commit(s) behind origin/master`);
+    sendJson(res, { updateAvailable: true, behind, localRef, remoteRef });
+  } catch {
+    sendJson(res, { updateAvailable: false });
+  }
+}
+
+/**
+ * Handle /api/pull-update - pull latest from origin/master.
+ * Runs in NightyTidy's own repo. Returns error message on failure (e.g. local changes).
+ * @param {import('http').ServerResponse} res - HTTP response
+ */
+function handlePullUpdate(res) {
+  const opts = { cwd: NIGHTYTIDY_REPO_ROOT, encoding: 'utf-8', timeout: 30_000, windowsHide: true };
+  try {
+    execSync('git pull origin master', { ...opts, stdio: 'pipe' });
+    guiLog('info', 'Update pulled successfully');
+    sendJson(res, { ok: true });
+  } catch (err) {
+    const msg = (err.stderr || err.message || 'Unknown error').trim();
+    guiLog('warn', `Update pull failed: ${msg}`);
+    sendJson(res, { ok: false, error: msg });
+  }
+}
+
 // ── API: Folder Dialog ─────────────────────────────────────────────
 
 /**
@@ -660,6 +710,12 @@ function handleRequest(req, res) {
   // API routes
   if (url.pathname === '/api/config' && req.method === 'POST') {
     return handleConfig(res);
+  }
+  if (url.pathname === '/api/check-update' && req.method === 'POST') {
+    return handleCheckUpdate(res);
+  }
+  if (url.pathname === '/api/pull-update' && req.method === 'POST') {
+    return handlePullUpdate(res);
   }
   if (url.pathname === '/api/select-folder' && req.method === 'POST') {
     return handleSelectFolder(res);
