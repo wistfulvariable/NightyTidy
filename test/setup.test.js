@@ -13,7 +13,7 @@ vi.mock('../src/logger.js', () => createLoggerMock());
 vi.mock('../src/prompts/loader.js', () => {
   const names = [
     'Documentation', 'Test Coverage', 'Security Sweep', 'Performance',
-    ...Array.from({ length: 29 }, (_, i) => `Step ${i + 5}`),
+    ...Array.from({ length: 32 }, (_, i) => `Step ${i + 5}`),
   ];
   return {
     STEPS: names.map((name, i) => ({ number: i + 1, name, prompt: `prompt ${i + 1}` })),
@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 
 describe('generateIntegrationSnippet', () => {
-  it('returns a string containing the marker and all 33 steps', () => {
+  it('returns a string containing the marker and all 36 steps', () => {
     const snippet = generateIntegrationSnippet();
 
     expect(snippet).toContain('## NightyTidy');
@@ -42,8 +42,8 @@ describe('generateIntegrationSnippet', () => {
     expect(snippet).toContain('nightytidy --finish-run');
     expect(snippet).toContain('nightytidy --list');
 
-    // All 33 steps present
-    for (let i = 1; i <= 33; i++) {
+    // All 36 steps present
+    for (let i = 1; i <= 36; i++) {
       expect(snippet).toContain(`${i}. **`);
     }
   });
