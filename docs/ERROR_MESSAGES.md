@@ -74,7 +74,7 @@ Every error message should follow this pattern:
 | Trigger | Message | Type |
 |---------|---------|------|
 | No steps selected | `No steps selected. Select at least one step to continue.` | Validation (yellow) |
-| Invalid --steps numbers | `Invalid step number(s): [N, ...]. Valid range: 1-36.` | Validation (red) |
+| Invalid --steps numbers | `Invalid step number(s): [N, ...]. Valid range: 1-43.` | Validation (red) |
 | Invalid --timeout | `--timeout expects a positive number of minutes (got "[value]"). Example: --timeout 60` | Validation (red) |
 | First SIGINT | `Stopping NightyTidy... finishing current step.` | Feedback (yellow) |
 | Second SIGINT | `Force stopping.` | Confirmation (plain) |
@@ -111,7 +111,7 @@ Every error message should follow this pattern:
 | Step already failed | `Step [N] has already been attempted and failed in this run.` | Returned in JSON |
 | Step not found | `Step [N] not found in available steps.` | Returned in JSON |
 | No active run (--finish-run) | `No active orchestrator run. Nothing to finish.` | Returned in JSON |
-| Invalid step numbers | `Invalid step number(s): [N, ...]. Valid range: 1-36.` | Returned in JSON |
+| Invalid step numbers | `Invalid step number(s): [N, ...]. Valid range: 1-43.` | Returned in JSON |
 | No valid step numbers | `No valid step numbers provided. Use --list --json to see available steps.` | Returned in JSON |
 
 ## GUI (`gui/resources/app.js`)

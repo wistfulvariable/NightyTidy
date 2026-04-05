@@ -66,13 +66,13 @@ import { info, warn, error as logError } from './logger.js';
 // SHA-256 of all STEPS[].prompt content — update when prompts change.
 // Detects unexpected modification of prompt data before passing to
 // Claude Code with --dangerously-skip-permissions.
-const STEPS_HASH = 'c7bc7408a5dcad59767e09a349a5ce1ba00b28720daddb256a7699e3932b8f95';
+const STEPS_HASH = '7fa8f33ce090005ae7fc055c7c8f6285d0a4950177c25f6398cb0e3ed1e5c512';
 
 // Hard cap on total step duration (all retries + doc-update combined).
 // Without this, retries × phases can exceed the user's expected timeout.
 // Must match claude.js DEFAULT_TIMEOUT — kept as a separate constant
 // to avoid adding claude.js mock requirements to all test files.
-const DEFAULT_STEP_TIMEOUT_MS = 75 * 60 * 1000; // 75 minutes
+const DEFAULT_STEP_TIMEOUT_MS = 120 * 60 * 1000; // 120 minutes
 
 // A step completing under 2 minutes is suspicious — Claude likely bailed
 // without doing real work. Triggers one automatic retry with context.

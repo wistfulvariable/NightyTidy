@@ -235,7 +235,7 @@ What recurring anti-patterns did you see? These inform team conventions:
 
 ## Output
 
-Create `audit-reports/` in project root if needed. Save as `audit-reports/15_CODE_ELEGANCE_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
+Create `audit-reports/` in project root if needed. Save as `audit-reports/16_CODE_ELEGANCE_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
 
 ### Report Structure
 

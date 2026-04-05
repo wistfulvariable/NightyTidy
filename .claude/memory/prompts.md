@@ -8,7 +8,7 @@ Assumes CLAUDE.md loaded. Prompt content lives in individual markdown files.
 src/prompts/
   manifest.json       # Ordered list: [{ id, name }] — controls step order + display names
   loader.js           # Reads manifest + markdown files, exports STEPS, DOC_UPDATE_PROMPT, CHANGELOG_PROMPT
-  steps/              # 36 individual markdown prompt files (01-documentation.md .. 36-strategic-opportunities.md)
+  steps/              # 43 individual markdown prompt files (01-documentation.md .. 43-strategic-opportunities.md)
   specials/           # Non-step prompts (doc-update.md, changelog.md)
 ```
 
@@ -16,7 +16,7 @@ src/prompts/
 
 | Export | Type | Description |
 |--------|------|-------------|
-| `STEPS` | `Array<{ number, name, prompt }>` | 36 improvement prompts, numbered 1-36 |
+| `STEPS` | `Array<{ number, name, prompt }>` | 43 improvement prompts, numbered 1-43 |
 | `DOC_UPDATE_PROMPT` | `string` | One-liner asking Claude to update docs and commit |
 | `CHANGELOG_PROMPT` | `string` | Multi-paragraph prompt for narrated changelog |
 
@@ -24,7 +24,7 @@ src/prompts/
 
 ```js
 {
-  number: 1,                    // Sequential 1-36 (from array position)
+  number: 1,                    // Sequential 1-43 (from array position)
   name: "Documentation",       // From manifest.json `name` field
   prompt: `...`                 // Content of the corresponding .md file
 }
@@ -54,12 +54,12 @@ Google Doc tab headings sometimes include number prefixes (e.g. "07. Test Effici
 
 ## Validation Tests (steps.test.js)
 
-- Exactly 36 entries
+- Exactly 43 entries
 - Each has `number` (number), `name` (string), `prompt` (string)
-- Numbers sequential 1-36
+- Numbers sequential 1-43
 - No empty prompts
 - `DOC_UPDATE_PROMPT` and `CHANGELOG_PROMPT` are non-empty strings
-- Manifest has version 1 and 36 entries
+- Manifest has version 1 and 43 entries
 - Every manifest ID has a corresponding `.md` file in `steps/`
 
 ## Loader Internals

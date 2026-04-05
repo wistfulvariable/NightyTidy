@@ -40,7 +40,7 @@ import { cleanEnv } from './env.js';
 
 /**
  * @typedef {Object} RunPromptOptions
- * @property {number} [timeout] - Timeout per attempt in milliseconds (default: 75 min)
+ * @property {number} [timeout] - Timeout per attempt in milliseconds (default: 120 min)
  * @property {number} [retries] - Number of retry attempts (default: 3)
  * @property {string} [label] - Human-readable label for logging
  * @property {AbortSignal} [signal] - Abort signal for cancellation
@@ -49,7 +49,7 @@ import { cleanEnv } from './env.js';
  * @property {number} [inactivityTimeout] - Max silence per attempt in ms (default: 5 min; 0 disables)
  */
 
-const DEFAULT_TIMEOUT = 75 * 60 * 1000; // 75 minutes
+const DEFAULT_TIMEOUT = 120 * 60 * 1000; // 120 minutes
 const DEFAULT_RETRIES = 3;
 const RETRY_DELAY = 10000; // 10 seconds
 const SIGKILL_DELAY = 5000; // grace period before SIGKILL after initial kill

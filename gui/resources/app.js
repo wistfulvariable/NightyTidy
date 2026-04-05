@@ -29,7 +29,7 @@ window.onunhandledrejection = (event) => {
 // ── API helpers ────────────────────────────────────────────────────
 
 const API_DEFAULT_TIMEOUT_MS = 30_000;        // 30s for short API calls
-const API_COMMAND_TIMEOUT_MS = 80 * 60_000;   // 80 min for run-command (step timeout is 75 min)
+const API_COMMAND_TIMEOUT_MS = 125 * 60_000;  // 125 min for run-command (step timeout is 120 min)
 
 async function api(endpoint, body = {}, timeoutMs) {
   const timeout = timeoutMs ?? (endpoint === 'run-command' ? API_COMMAND_TIMEOUT_MS : API_DEFAULT_TIMEOUT_MS);
@@ -174,7 +174,7 @@ const state = {
   bin: null,              // absolute path to bin/nightytidy.js (from /api/config)
   steps: [],              // from --list --json: [{ number, name, description }]
   selectedSteps: [],      // step numbers user checked
-  timeout: 75,            // minutes
+  timeout: 120,           // minutes
   runInfo: null,          // from --init-run response
   completedSteps: [],     // step numbers completed
   failedSteps: [],        // step numbers failed
@@ -590,7 +590,7 @@ async function handleResumeRun() {
   const rateLimited = (runState.failedSteps || []).filter(s => s.errorType === 'rate_limit');
 
   state.selectedSteps = runState.selectedSteps || [];
-  state.timeout = runState.timeout ? Math.round(runState.timeout / 60000) : 75;
+  state.timeout = runState.timeout ? Math.round(runState.timeout / 60000) : 120;
   state.completedSteps = (runState.completedSteps || []).map(s => s.number);
   state.failedSteps = genuinelyFailed.map(s => s.number);
   state.stepResults = [
@@ -705,7 +705,7 @@ function showStepsSkeleton() {
   const projectPath = document.getElementById('steps-project-path');
   projectPath.textContent = state.projectDir;
 
-  // Show 10 skeleton lines as placeholders (roughly half of 36 steps visible at once)
+  // Show 10 skeleton lines as placeholders (roughly half of 43 steps visible at once)
   let skeletonHtml = '';
   for (let i = 0; i < 10; i++) {
     const widthClass = i % 3 === 0 ? 'short' : i % 2 === 0 ? 'medium' : '';
@@ -774,7 +774,7 @@ async function startRun() {
   startBtn.textContent = 'Starting...';
 
   state.selectedSteps = selected;
-  state.timeout = parseInt(document.getElementById('timeout-input').value, 10) || 75;
+  state.timeout = parseInt(document.getElementById('timeout-input').value, 10) || 120;
   state.completedSteps = [];
   state.failedSteps = [];
   state.stepResults = [];
@@ -782,7 +782,7 @@ async function startRun() {
   resetCachedTotals();
 
   const stepArgs = NtLogic.buildStepArgs(selected, state.steps.length);
-  const timeoutArg = state.timeout !== 75 ? ` --timeout ${state.timeout}` : '';
+  const timeoutArg = state.timeout !== 120 ? ` --timeout ${state.timeout}` : '';
   const args = `--init-run ${stepArgs}${timeoutArg} --skip-dashboard --skip-sync`;
 
   showInitOverlay();
@@ -1068,7 +1068,7 @@ async function runNextStep() {
     await new Promise(r => setTimeout(r, 3000));
     result = { ok: true, data: { step: next, name: step?.name || `Step ${next}`, status: 'completed', duration: 3000, attempts: 1, output: '[Simulated] Step completed successfully.', costUSD: 0.01, inputTokens: 500, outputTokens: 200 } };
   } else {
-    const timeoutArg = state.timeout !== 75 ? ` --timeout ${state.timeout}` : '';
+    const timeoutArg = state.timeout !== 120 ? ` --timeout ${state.timeout}` : '';
     result = await runCli(`--run-step ${next}${timeoutArg}`);
   }
 
@@ -2109,7 +2109,7 @@ function resetApp() {
 
   state.steps = [];
   state.selectedSteps = [];
-  state.timeout = 75;
+  state.timeout = 120;
   state.runInfo = null;
   state.completedSteps = [];
   state.failedSteps = [];

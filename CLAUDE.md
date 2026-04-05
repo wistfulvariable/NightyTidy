@@ -1,6 +1,6 @@
 # NightyTidy — AI Codebase Guide
 
-Automated overnight codebase improvement through Claude Code. NightyTidy is an orchestration layer — it sequences 36 AI-driven improvement prompts against a target codebase, handling git branching, retries, notifications, and reporting. Claude Code (spawned as a subprocess) does the actual code changes. Targets vibe coders at small companies.
+Automated overnight codebase improvement through Claude Code. NightyTidy is an orchestration layer — it sequences 43 AI-driven improvement prompts against a target codebase, handling git branching, retries, notifications, and reporting. Claude Code (spawned as a subprocess) does the actual code changes. Targets vibe coders at small companies.
 
 ## Workflow Rules
 
@@ -52,9 +52,9 @@ src/
   setup.js                 # --setup command: generates CLAUDE.md integration snippet for target projects
   sync.js                  # Google Doc prompt sync — fetches, parses, diffs, updates local prompt files
   prompts/
-    manifest.json          # Step ordering + display names + sourceUrl (36 entries)
+    manifest.json          # Step ordering + display names + sourceUrl (43 entries)
     loader.js              # Reads manifest + markdown files, exports STEPS/DOC_UPDATE_PROMPT/CHANGELOG_PROMPT
-    steps/                 # 36 individual markdown prompt files (01-documentation.md .. 36-strategic-opportunities.md)
+    steps/                 # 43 individual markdown prompt files (01-documentation.md .. 43-strategic-opportunities.md)
     specials/              # Non-step prompts (doc-update.md, changelog.md)
 test/
   smoke.test.js            # 6 tests — structural integrity, module imports, deploy verification
@@ -144,7 +144,7 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 | `src/consolidation.js` | Post-run action plan — consolidates step outputs into tiered recommendations (returns text for inline embedding) | claude, logger, executor, prompts/loader |
 | `src/setup.js` | `--setup` command: CLAUDE.md integration for target projects | logger, prompts/loader |
 | `src/sync.js` | Google Doc prompt sync — fetches published doc, parses HTML, updates prompt files + manifest + STEPS_HASH | crypto, logger |
-| `src/prompts/loader.js` | Loads 36 prompts + special prompts; `reloadSteps()` for live-reload after sync | fs (data loader) |
+| `src/prompts/loader.js` | Loads 43 prompts + special prompts; `reloadSteps()` for live-reload after sync | fs (data loader) |
 | `gui/server.js` | Desktop GUI backend — HTTP server + native folder dialog + Chrome launcher + session logging | node:http, node:fs, node:child_process |
 | `gui/resources/logic.js` | GUI pure logic — command building, JSON parsing, formatting, rate-limit detection | none (browser + Node.js dual) |
 | `gui/resources/app.js` | GUI state machine — screen transitions, process spawning, progress polling, rate-limit pause/resume overlay | logic.js, marked, server.js (via fetch) |
@@ -154,10 +154,10 @@ vitest.config.js           # Coverage thresholds + strip-shebang Vite plugin (Wi
 ```bash
 npm install               # Install dependencies
 npx nightytidy            # Run (interactive step selection)
-npx nightytidy --all      # Run all 36 steps (non-interactive)
+npx nightytidy --all      # Run all 43 steps (non-interactive)
 npx nightytidy --steps 1,5,12  # Run specific steps by number
 npx nightytidy --list     # List all available steps with descriptions
-npx nightytidy --timeout 90  # Set per-step timeout to 90 minutes (default: 75)
+npx nightytidy --timeout 90  # Set per-step timeout to 90 minutes (default: 120)
 npx nightytidy --dry-run  # Run pre-checks + step selection, show plan, exit without running
 npx nightytidy --skip-sync  # Skip automatic prompt sync from Google Doc before running
 npx nightytidy --skip-dashboard  # Skip standalone dashboard server (GUI passes this automatically)
@@ -237,13 +237,13 @@ NightyTidy creates these files/artifacts in the project it runs against:
 | `nightytidy-run-state.json` | Orchestrator run state (steps, results, branch info); also created during rate-limit pause in interactive mode for `--resume` | No (deleted by --finish-run / --resume completion) |
 | `nightytidy-before-*` git tag | Safety snapshot before run | Yes (tag) |
 | `nightytidy/run-*` git branch | All changes from this run | Yes (branch) |
-| `audit-reports/refactor-prompts/*.md` | All 36 step prompts synced for audit trail — stale files from renames auto-removed | Yes (on run branch) |
+| `audit-reports/refactor-prompts/*.md` | All 43 step prompts synced for audit trail — stale files from renames auto-removed | Yes (on run branch) |
 
 ## What NOT to Do
 
 - **Don't add `require()`** — ESM only, no CommonJS
 - **Don't throw from `claude.js`, `executor.js`, `orchestrator.js`, `consolidation.js`, or `sync.js`** — they must return result objects (consolidation returns `null` on failure)
-- **Don't change loader.js export shape** — 36 steps with `{ number, name, prompt }` validated by tests. Edit prompt content in `src/prompts/steps/*.md`, not in loader.js
+- **Don't change loader.js export shape** — 43 steps with `{ number, name, prompt }` validated by tests. Edit prompt content in `src/prompts/steps/*.md`, not in loader.js
 - **Don't remove the logger mock** from any test — it will crash trying to write log files
 - **Don't make notifications blocking** — they must be fire-and-forget
 - **Don't make the dashboard blocking** — it must be fire-and-forget like notifications
@@ -256,8 +256,8 @@ NightyTidy creates these files/artifacts in the project it runs against:
 - **Dashboard CSRF**: POST `/stop` requires a CSRF token (generated per session via `crypto.randomBytes`). Token is embedded in served HTML and verified server-side. Tests in `dashboard.test.js`.
 - **Dashboard security headers**: All responses (200 and 4xx) include CSP, X-Frame-Options, X-Content-Type-Options. CSP allows `'unsafe-inline'` for inline scripts/styles.
 - **Dashboard body limits**: POST `/stop` enforces 1 KB body size limit to prevent memory exhaustion.
-- **GUI server security**: Binds to `127.0.0.1` only. No CORS headers. Body limit 1 MB. Path traversal protection with trailing separator boundary check. Security headers on all responses (HTML, JSON, and error responses). CSP uses `'self'` + `worker-src blob:` (no inline scripts). Frontend heartbeat uses two layers: Web Worker with absolute URL (immune to Chrome tab throttling) + main-thread `setInterval` backup (both run simultaneously). Server watchdog skips heartbeat checks entirely when `activeProcesses.size > 0` — the server will NEVER self-terminate while steps are running. The 78-min process safety timeout handles truly stuck processes. When idle, watchdog uses 15s threshold to detect browser gone. **Singleton guard**: lock file in `os.tmpdir()/nightytidy-gui.lock` (PID + URL + port). On startup, checks if existing PID is alive + HTTP-probes the server; if responsive, prints "already running", calls `launchChrome()` to focus the existing window, and exits. Stale locks (dead PID or unresponsive server) are removed automatically. Lock is removed in `cleanup()`. `NIGHTYTIDY_NO_CHROME=1` env var suppresses Chrome launch (used in tests).
-- **GUI timeout layering**: Three timeout layers prevent hung GUI runs: (1) `api()` in `app.js` uses `AbortController` — 30s for short calls, 80 min for `run-command`; (2) `handleRunCommand()` in `server.js` has a 78-min process safety timeout that force-kills stuck subprocesses; (3) `server.requestTimeout = 0` (disabled — the per-process timeout handles this instead; a 30s requestTimeout previously caused silent HTTP response drops mid-step). All layers log diagnostics to `nightytidy-gui.log`.
+- **GUI server security**: Binds to `127.0.0.1` only. No CORS headers. Body limit 1 MB. Path traversal protection with trailing separator boundary check. Security headers on all responses (HTML, JSON, and error responses). CSP uses `'self'` + `worker-src blob:` (no inline scripts). Frontend heartbeat uses two layers: Web Worker with absolute URL (immune to Chrome tab throttling) + main-thread `setInterval` backup (both run simultaneously). Server watchdog skips heartbeat checks entirely when `activeProcesses.size > 0` — the server will NEVER self-terminate while steps are running. The 125-min process safety timeout handles truly stuck processes. When idle, watchdog uses 15s threshold to detect browser gone. **Singleton guard**: lock file in `os.tmpdir()/nightytidy-gui.lock` (PID + URL + port). On startup, checks if existing PID is alive + HTTP-probes the server; if responsive, prints "already running", calls `launchChrome()` to focus the existing window, and exits. Stale locks (dead PID or unresponsive server) are removed automatically. Lock is removed in `cleanup()`. `NIGHTYTIDY_NO_CHROME=1` env var suppresses Chrome launch (used in tests).
+- **GUI timeout layering**: Three timeout layers prevent hung GUI runs: (1) `api()` in `app.js` uses `AbortController` — 30s for short calls, 125 min for `run-command`; (2) `handleRunCommand()` in `server.js` has a 125-min process safety timeout that force-kills stuck subprocesses; (3) `server.requestTimeout = 0` (disabled — the per-process timeout handles this instead; a 30s requestTimeout previously caused silent HTTP response drops mid-step). All layers log diagnostics to `nightytidy-gui.log`.
 - **Security headers on error responses**: All HTTP servers must include `SECURITY_HEADERS` on error responses (403, 404), not just 200 responses. This prevents header-based fingerprinting of error vs success paths.
 - **Lock file is atomic**: `acquireLock()` uses `fs.openSync(path, 'wx')` (O_EXCL) to prevent TOCTOU races between concurrent processes.
 - **Inactivity timeout**: `waitForChild()` in `claude.js` kills the subprocess after 3 minutes of no stdout/stderr activity (`INACTIVITY_TIMEOUT_MS`). Prevents hung Claude Code processes from blocking runs. Configurable via `inactivityTimeout` option (0 disables). The retry loop in `runPrompt()` automatically retries after an inactivity kill.

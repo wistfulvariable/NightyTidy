@@ -504,7 +504,7 @@ function showWelcome() {
     '\u2502                                                              \u2502\n' +
     '\u2502  Welcome to NightyTidy!                                      \u2502\n' +
     '\u2502                                                              \u2502\n' +
-    '\u2502  NightyTidy will run 36 codebase improvement steps through   \u2502\n' +
+    '\u2502  NightyTidy will run 43 codebase improvement steps through   \u2502\n' +
     '\u2502  Claude Code. This typically takes 4-8 hours.                \u2502\n' +
     '\u2502                                                              \u2502\n' +
     '\u2502  All changes happen on a dedicated branch and are            \u2502\n' +
@@ -802,7 +802,7 @@ export async function run() {
     .option('--steps <numbers>', 'Run specific steps by number (comma-separated, e.g. --steps 1,5,12)')
     .option('--list', 'List all available steps and exit')
     .option('--setup', 'Add NightyTidy integration to this project\u2019s CLAUDE.md so Claude Code knows how to use it')
-    .option('--timeout <minutes>', 'Timeout per step in minutes (default: 75)', parseInt)
+    .option('--timeout <minutes>', 'Timeout per step in minutes (default: 120)', parseInt)
     .option('--dry-run', 'Run pre-checks and show selected steps without executing')
     .option('--json', 'Output as JSON (use with --list)')
     .option('--init-run', 'Initialize an orchestrated run (pre-checks, git setup, state file)')
@@ -939,7 +939,7 @@ export async function run() {
       console.log(`Pre-checks: ${chalk.green('passed')}`);
       console.log(`Steps selected: ${selected.length}`);
       console.log(`Estimated time: ${Math.ceil(selected.length * 15)}\u2013${selected.length * 30} minutes`);
-      console.log(`Timeout per step: ${opts.timeout ? `${opts.timeout} min` : '75 min (default)'}\n`);
+      console.log(`Timeout per step: ${opts.timeout ? `${opts.timeout} min` : '120 min (default)'}\n`);
       for (const step of selected) {
         console.log(`  ${step.number}. ${step.name}`);
       }

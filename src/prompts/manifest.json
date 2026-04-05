@@ -55,95 +55,123 @@
       "name": "Cross-Cutting Concerns"
     },
     {
-      "id": "14-file-decomposition",
+      "id": "14-datetime-handling",
+      "name": "Date/Time Handling"
+    },
+    {
+      "id": "15-file-decomposition",
       "name": "File Decomposition"
     },
     {
-      "id": "15-code-elegance",
+      "id": "16-code-elegance",
       "name": "Code Elegance"
     },
     {
-      "id": "16-architectural-complexity",
+      "id": "17-architectural-complexity",
       "name": "Architectural Complexity"
     },
     {
-      "id": "17-scar-tissue-analysis",
+      "id": "18-scar-tissue-analysis",
       "name": "Scar Tissue Analysis"
     },
     {
-      "id": "18-type-safety",
+      "id": "19-default-values-magic-constants",
+      "name": "Default Values & Magic Constants"
+    },
+    {
+      "id": "20-type-safety",
       "name": "Type Safety"
     },
     {
-      "id": "19-logging-error-message",
+      "id": "21-contract-schema-drift",
+      "name": "Contract & Schema Drift"
+    },
+    {
+      "id": "22-logging-error-message",
       "name": "Logging & Error Message"
     },
     {
-      "id": "20-data-integrity",
+      "id": "23-data-integrity",
       "name": "Data Integrity"
     },
     {
-      "id": "21-performance",
+      "id": "24-performance",
       "name": "Performance"
     },
     {
-      "id": "22-cost-resource-optimization",
+      "id": "25-cost-resource-optimization",
       "name": "Cost & Resource Optimization"
     },
     {
-      "id": "23-error-recovery",
+      "id": "26-error-recovery",
       "name": "Error Recovery"
     },
     {
-      "id": "24-race-condition-audit",
+      "id": "27-resource-lifecycle-cleanup",
+      "name": "Resource Lifecycle & Cleanup"
+    },
+    {
+      "id": "28-race-condition-audit",
       "name": "Race Condition Audit"
     },
     {
-      "id": "25-bug-hunt",
+      "id": "29-idempotency-safe-retry",
+      "name": "Idempotency & Safe Retry"
+    },
+    {
+      "id": "30-bug-hunt",
       "name": "Bug Hunt"
     },
     {
-      "id": "26-frontend-quality",
+      "id": "31-implicit-ordering-hidden-dependencies",
+      "name": "Implicit Ordering & Hidden Dependencies"
+    },
+    {
+      "id": "32-external-integration-reliability",
+      "name": "External Integration Reliability"
+    },
+    {
+      "id": "33-frontend-quality",
       "name": "Frontend Quality"
     },
     {
-      "id": "27-uiux-audit",
+      "id": "34-uiux-audit",
       "name": "UI/UX Audit"
     },
     {
-      "id": "28-state-management",
+      "id": "35-state-management",
       "name": "State Management"
     },
     {
-      "id": "29-perceived-performance",
+      "id": "36-perceived-performance",
       "name": "Perceived Performance"
     },
     {
-      "id": "30-devops",
+      "id": "37-devops",
       "name": "DevOps"
     },
     {
-      "id": "31-scheduled-job-chron-jobs",
-      "name": "Scheduled Job & Chron Jobs"
+      "id": "38-scheduled-job-cron-jobs",
+      "name": "Scheduled Job & Cron Jobs"
     },
     {
-      "id": "32-observability",
+      "id": "39-observability",
       "name": "Observability"
     },
     {
-      "id": "33-backup-check",
+      "id": "40-backup-check",
       "name": "Backup Check"
     },
     {
-      "id": "34-product-polish-ux-friction",
+      "id": "41-product-polish-ux-friction",
       "name": "Product Polish & UX Friction"
     },
     {
-      "id": "35-feature-discovery-opportunity",
+      "id": "42-feature-discovery-opportunity",
       "name": "Feature Discovery & Opportunity"
     },
     {
-      "id": "36-strategic-opportunities",
+      "id": "43-strategic-opportunities",
       "name": "Strategic Opportunities"
     }
   ]

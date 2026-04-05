@@ -212,7 +212,7 @@ Group into:
 
 ## Output
 
-Create `audit-reports/` in project root if needed. Save as `audit-reports/16_ARCHITECTURAL_COMPLEXITY_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
+Create `audit-reports/` in project root if needed. Save as `audit-reports/17_ARCHITECTURAL_COMPLEXITY_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
 
 ### Report Structure
 

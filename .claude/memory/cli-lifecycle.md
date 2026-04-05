@@ -10,11 +10,11 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
 
 | Flag | Type | Default | Behavior |
 |------|------|---------|----------|
-| `--all` | boolean | false | Run all 36 steps non-interactively |
+| `--all` | boolean | false | Run all 43 steps non-interactively |
 | `--steps <n>` | string | -- | Comma-separated: `--steps 1,5,12` |
 | `--list` | boolean | false | Print step numbers + names, exit(0) |
 | `--setup` | boolean | false | Generate CLAUDE.md integration snippet, exit(0) |
-| `--timeout <min>` | number | 45 | Per-step timeout in minutes (validated: positive finite) |
+| `--timeout <min>` | number | 120 | Per-step timeout in minutes (validated: positive finite) |
 | `--dry-run` | boolean | false | Pre-checks + step selection, show plan, no execution |
 | `--json` | boolean | false | JSON output (use with `--list`) |
 | `--init-run` | boolean | false | Initialize orchestrated run |

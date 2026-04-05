@@ -453,8 +453,8 @@ async function handleSelectFolder(res) {
 
 // ── API: Run Command ───────────────────────────────────────────────
 
-/** Process safety timeout (78 min) - exceeds step timeout (75 min) + overhead */
-const PROCESS_TIMEOUT_MS = 78 * 60_000;
+/** Process safety timeout (125 min) - exceeds step timeout (120 min) + overhead */
+const PROCESS_TIMEOUT_MS = 125 * 60_000;
 
 /**
  * Handle /api/run-command - spawn a shell command.
@@ -889,7 +889,7 @@ function cleanup() {
     // CRITICAL: When processes are actively running, SKIP the heartbeat check entirely.
     // Chrome aggressively throttles/freezes background tabs (even --app mode), which
     // can stop heartbeat timers. The per-process safety timeout in handleRunCommand()
-    // (48 min) handles truly stuck processes. We must NEVER kill the server while
+    // (125 min) handles truly stuck processes. We must NEVER kill the server while
     // steps are running — that's the #1 cause of "Run Failed" for users.
     const watchdog = setInterval(() => {
       if (activeProcesses.size > 0) return; // Never self-terminate during active work
