@@ -2505,17 +2505,28 @@ async function loadConfigAsync() {
 }
 
 async function checkForUpdate() {
-  try {
-    const data = await api('check-update', {}, 15_000); // 15s timeout (fetch takes up to 10s)
-    if (!data.updateAvailable) return;
+  const text = document.getElementById('update-banner-text');
+  const banner = document.getElementById('update-banner');
+  const btn = document.getElementById('btn-update-now');
 
-    const text = document.getElementById('update-banner-text');
-    const banner = document.getElementById('update-banner');
+  try {
+    // Show checking status so the user knows something is happening
+    text.textContent = 'Checking for updates...';
+    btn.hidden = true;
+    banner.classList.remove('hidden');
+
+    const data = await api('check-update', {}, 15_000); // 15s timeout (fetch takes up to 10s)
+    if (!data.updateAvailable) {
+      banner.classList.add('hidden');
+      return;
+    }
+
     const count = data.behind === 1 ? '1 commit behind' : `${data.behind} commits behind`;
     text.textContent = `Update available (${count})`;
-    banner.classList.remove('hidden');
+    btn.hidden = false;
   } catch {
     // Silent — update check is best-effort
+    banner.classList.add('hidden');
   }
 }
 
@@ -2529,7 +2540,7 @@ async function handleUpdateNow() {
   spinner.className = 'spinner';
   spinner.setAttribute('aria-hidden', 'true');
   text.appendChild(spinner);
-  text.appendChild(document.createTextNode(' Updating...'));
+  text.appendChild(document.createTextNode(' Pulling latest changes from GitHub...'));
 
   try {
     const data = await api('pull-update', {}, 35_000); // 35s timeout (pull takes up to 30s)
