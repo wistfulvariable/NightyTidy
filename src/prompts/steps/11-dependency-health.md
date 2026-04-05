@@ -119,7 +119,7 @@ DO NOT replace or inline dependencies in this pass unless it's trivially simple.
 
 ## Output Requirements
 
-Create the `audit-reports/` directory in the project root if it doesn't already exist. Save the report as `audit-reports/09_DEPENDENCY_HEALTH_REPORT_[run-number]_[date]_[time in user's local time].md` (e.g., `09_DEPENDENCY_HEALTH_REPORT_01_2026-02-16_2129.md`). Increment the run number based on any existing reports with the same name prefix in that folder.
+Create the `audit-reports/` directory in the project root if it doesn't already exist. Save the report as `audit-reports/11_DEPENDENCY_HEALTH_REPORT_[run-number]_[date]_[time in user's local time].md` (e.g., `11_DEPENDENCY_HEALTH_REPORT_01_2026-02-16_2129.md`). Increment the run number based on any existing reports with the same name prefix in that folder.
 
 ### Report Structure
 

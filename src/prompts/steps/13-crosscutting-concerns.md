@@ -2,7 +2,7 @@
 
 Find patterns that should be identical across the codebase but have drifted. Other audits check within a single module; this one checks each pattern **across every instance, file, and layer** — drift between implementations is the bug.
 
-Branch: `cross-cutting-consistency-[date]`. Report: `audit-reports/11_CROSS_CUTTING_CONSISTENCY_REPORT_[run-number]_[date]_[time in user's local time].md`.
+Branch: `cross-cutting-consistency-[date]`. Report: `audit-reports/13_CROSS_CUTTING_CONSISTENCY_REPORT_[run-number]_[date]_[time in user's local time].md`.
 
 ---
 

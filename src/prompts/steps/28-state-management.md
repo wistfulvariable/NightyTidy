@@ -138,7 +138,7 @@ Document: scenario, current behavior, expected behavior, user impact, fix comple
 
 ## Output
 
-Save as `audit-reports/25_STATE_MANAGEMENT_REPORT_[run-number]_[date]_[time in user's local time].md`.
+Save as `audit-reports/28_STATE_MANAGEMENT_REPORT_[run-number]_[date]_[time in user's local time].md`.
 
 ### Report sections
 

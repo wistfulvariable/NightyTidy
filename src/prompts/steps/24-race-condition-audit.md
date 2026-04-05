@@ -117,7 +117,7 @@ Call each protected endpoint/job twice with the same input. Verify single side e
 
 ## Output
 
-Save as `audit-reports/21_RACE_CONDITION_REPORT_[run-number]_[date]_[time in user's local time].md`. Increment run number based on existing reports.
+Save as `audit-reports/24_RACE_CONDITION_REPORT_[run-number]_[date]_[time in user's local time].md`. Increment run number based on existing reports.
 
 ### Report Structure
 

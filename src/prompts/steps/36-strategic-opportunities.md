@@ -114,7 +114,7 @@ Look at the codebase through an AI lens:
 
 ## Output Requirements
 
-Create the `audit-reports/` directory in the project root if it doesn't already exist. Save the report as `audit-reports/33_STRATEGIC_DISCOVERY_REPORT_[run-number]_[date]_[time in user's local time].md` (e.g., `33_STRATEGIC_DISCOVERY_REPORT_01_2026-02-16_2129.md`). Increment the run number based on any existing reports with the same name prefix in that folder.
+Create the `audit-reports/` directory in the project root if it doesn't already exist. Save the report as `audit-reports/36_STRATEGIC_DISCOVERY_REPORT_[run-number]_[date]_[time in user's local time].md` (e.g., `36_STRATEGIC_DISCOVERY_REPORT_01_2026-02-16_2129.md`). Increment the run number based on any existing reports with the same name prefix in that folder.
 
 ### Report Structure
 

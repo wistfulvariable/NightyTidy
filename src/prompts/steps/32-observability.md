@@ -90,7 +90,7 @@ Document current state and recommend improvements.
 
 ## Output Requirements
 
-Create `audit-reports/` in project root if needed. Save as `audit-reports/29_OBSERVABILITY_REPORT_[run-number]_[date]_[time in user's local time].md`. Increment run number based on existing reports.
+Create `audit-reports/` in project root if needed. Save as `audit-reports/32_OBSERVABILITY_REPORT_[run-number]_[date]_[time in user's local time].md`. Increment run number based on existing reports.
 
 ### Report Structure
 

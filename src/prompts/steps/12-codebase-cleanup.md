@@ -107,7 +107,7 @@ Commit these as `chore: misc cleanup in [module/file]`
 
 ## Output Requirements
 
-Create the `audit-reports/` directory in the project root if it doesn't already exist. Save the report as `audit-reports/10_CODEBASE_CLEANUP_REPORT_[run-number]_[date]_[time in user's local time].md` (e.g., `10_CODEBASE_CLEANUP_REPORT_01_2026-02-16_2129.md`). Increment the run number based on any existing reports with the same name prefix in that folder.
+Create the `audit-reports/` directory in the project root if it doesn't already exist. Save the report as `audit-reports/12_CODEBASE_CLEANUP_REPORT_[run-number]_[date]_[time in user's local time].md` (e.g., `12_CODEBASE_CLEANUP_REPORT_01_2026-02-16_2129.md`). Increment the run number based on any existing reports with the same name prefix in that folder.
 
 ### Report Structure
 

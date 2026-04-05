@@ -99,7 +99,7 @@ Document the dominant convention for each category — this becomes the target f
 
 ## Output
 
-Create `audit-reports/` in project root if needed. Save as `audit-reports/07_API_DESIGN_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
+Create `audit-reports/` in project root if needed. Save as `audit-reports/09_API_DESIGN_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
 
 ### Report Structure
 

@@ -122,7 +122,7 @@ Auth flow changes, permission model changes, session/JWT configuration, password
 
 ### Phase 6: Report
 
-Save as `audit-reports/08_SECURITY_AUDIT_REPORT_[run-number]_[date]_[time in user's local time].md` (create directory if needed, increment run number based on existing reports).
+Save as `audit-reports/10_SECURITY_AUDIT_REPORT_[run-number]_[date]_[time in user's local time].md` (create directory if needed, increment run number based on existing reports).
 
 ### Report Structure
 1. **Executive Summary** — 3-5 sentences on overall security posture, including what was found AND fixed

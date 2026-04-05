@@ -78,7 +78,7 @@ Identify multi-table or conditional invariants that can't be expressed as DB con
 
 ## Output
 
-Save to `audit-reports/17_DATA_INTEGRITY_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
+Save to `audit-reports/20_DATA_INTEGRITY_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
 
 ### Report Structure
 
