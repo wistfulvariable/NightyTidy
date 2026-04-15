@@ -33,6 +33,10 @@ vi.mock('@inquirer/checkbox', () => ({
   default: vi.fn(),
 }));
 
+vi.mock('@inquirer/select', () => ({
+  default: vi.fn().mockResolvedValue('default'),
+}));
+
 vi.mock('ora', () => ({
   default: vi.fn(() => ({
     start: vi.fn().mockReturnThis(),
@@ -52,6 +56,7 @@ vi.mock('chalk', () => {
   passthrough.green = passthrough;
   passthrough.yellow = passthrough;
   passthrough.red = passthrough;
+  passthrough.blue = passthrough;
   return { default: passthrough };
 });
 
@@ -86,9 +91,9 @@ vi.mock('../src/claude.js', () => ({
 
 vi.mock('../src/prompts/loader.js', () => ({
   STEPS: [
-    { number: 1, name: 'Lint', prompt: 'lint the code' },
-    { number: 2, name: 'Format', prompt: 'format the code' },
-    { number: 3, name: 'Test', prompt: 'test the code' },
+    { number: 1, name: 'Lint', prompt: 'lint the code', mode: 'write' },
+    { number: 2, name: 'Format', prompt: 'format the code', mode: 'read' },
+    { number: 3, name: 'Test', prompt: 'test the code', mode: 'read-locked' },
   ],
   REPORT_PROMPT: 'mock report prompt template',
   CONSOLIDATION_PROMPT: 'consolidate actions',
@@ -107,6 +112,8 @@ vi.mock('../src/executor.js', () => ({
   executeSteps: vi.fn(),
   copyPromptsToProject: vi.fn(),
   SAFETY_PREAMBLE: '',
+  READ_PREAMBLE: 'MODE OVERRIDE',
+  WRITE_PREAMBLE: 'MODE: IMPLEMENTATION',
 }));
 
 vi.mock('../src/notifications.js', () => ({
@@ -147,7 +154,7 @@ vi.mock('../src/orchestrator.js', () => ({
   readState: vi.fn(),
   writeState: vi.fn(),
   deleteState: vi.fn(),
-  STATE_VERSION: 1,
+  STATE_VERSION: 2,
 }));
 
 // ---------------------------------------------------------------------------
@@ -177,7 +184,7 @@ const RUN_BRANCH = 'nightytidy/run-2026-03-01-0100';
  */
 function makeValidState({ selectedSteps = [1, 2, 3], completedSteps = [], failedSteps = [] } = {}) {
   return {
-    version: 1,
+    version: 2,
     originalBranch: 'main',
     runBranch: RUN_BRANCH,
     tagName: 'nightytidy-before-2026-03-01-0100',
@@ -287,7 +294,7 @@ describe('cli.js --resume functionality', () => {
     runPreChecks.mockResolvedValue(undefined);
 
     // Default checkbox mock for normal-flow tests (rate-limit tests)
-    checkbox.mockResolvedValue([{ number: 1, name: 'Lint', prompt: 'lint the code' }]);
+    checkbox.mockResolvedValue([{ number: 1, name: 'Lint', prompt: 'lint the code', mode: 'write' }]);
     executeSteps.mockResolvedValue(makeExecutionResults({ completedCount: 1, failedCount: 0 }));
 
     // Default git mock returns branches including run branch
@@ -591,7 +598,7 @@ describe('cli.js --resume functionality', () => {
       // writeState should have been called with run state for later resume
       expect(writeState).toHaveBeenCalledTimes(1);
       const [dir, stateArg] = writeState.mock.calls[0];
-      expect(stateArg.version).toBe(1);
+      expect(stateArg.version).toBe(2);
       expect(stateArg.runBranch).toBe('nightytidy/run-2026-03-01-0100');
       expect(stateArg.originalBranch).toBe('main');
       expect(stateArg.completedSteps).toHaveLength(1);
@@ -738,7 +745,7 @@ describe('cli.js --resume functionality', () => {
     it('--resume with incomplete state (missing branch data) exits with error', async () => {
       mockOpts = { resume: true };
       readState.mockReturnValue({
-        version: 1,
+        version: 2,
         originalBranch: null,
         runBranch: null,
         selectedSteps: [1],

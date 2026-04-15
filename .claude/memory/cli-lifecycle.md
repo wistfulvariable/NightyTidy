@@ -10,7 +10,7 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
 
 | Flag | Type | Default | Behavior |
 |------|------|---------|----------|
-| `--all` | boolean | false | Run all 43 steps non-interactively |
+| `--all` | boolean | false | Run all 44 steps non-interactively |
 | `--steps <n>` | string | -- | Comma-separated: `--steps 1,5,12` |
 | `--list` | boolean | false | Print step numbers + names, exit(0) |
 | `--setup` | boolean | false | Generate CLAUDE.md integration snippet, exit(0) |
@@ -21,6 +21,9 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
 | `--run-step <N>` | number | -- | Run single step (validated: positive finite integer) |
 | `--finish-run` | boolean | false | Finish orchestrated run |
 | `--skip-sync` | boolean | false | Skip automatic prompt sync from Google Doc before running |
+| `--resume` | boolean | false | Resume a previously paused run |
+| `--mode <preset>` | string | default | Run mode preset: `default`, `audit` (all read), `improve` (write only, skips read-locked) |
+| `--step-modes <json>` | string | -- | Per-step mode overrides as JSON (internal, used by GUI) |
 | `--version` | boolean | false | Print version, exit(0) |
 
 **Input validation**: `--timeout` and `--run-step` both use `parseInt` + `Number.isFinite` + positivity check. Invalid values produce actionable error messages with examples.
@@ -38,7 +41,7 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
 - `executeRunFlow(selected, projectDir, ctx)` — dashboard, git branching, step execution, abort handling
 - `finalizeRun(executionResults, projectDir, ctx)` — changelog, report, commit, merge, summary, dashboard shutdown
 
-`ctx` fields: `spinner`, `runStarted`, `tagName`, `runBranch`, `originalBranch`, `dashState`, `abortController`, `timeoutMs`
+`ctx` fields: `spinner`, `runStarted`, `tagName`, `runBranch`, `originalBranch`, `dashState`, `abortController`, `timeoutMs`, `stepModes`
 
 ## Lifecycle Steps (in order)
 
@@ -49,7 +52,8 @@ Assumes CLAUDE.md loaded. Orchestration in `src/cli.js`.
 5. **Welcome screen**: `showWelcome()` — ASCII banner
 6. **`setupGitAndPreChecks()`**: `initGit()` → `excludeEphemeralFiles()` → spinner + `runPreChecks()`
 7. **Auto-sync prompts**: `autoSyncPrompts(opts)` — syncs from Google Doc, calls `reloadSteps()` if changes. Non-blocking on failure. Skipped with `--skip-sync`.
-8. **Step selection**: `@inquirer/checkbox` or `--all`/`--steps` parsing
+8. **Step selection**: `@inquirer/checkbox` or `--all`/`--steps` parsing → returns `{ steps, stepModes }`
+8b. **Mode selection**: `@inquirer/select` preset prompt (Default/Audit/Improve) or `--mode` flag → `buildStepModesFromPreset()` builds stepModes map
 9. **`executeRunFlow()`**: dashboard → git branching → `copyPromptsToProject()` + commit → notify → spinner + `executeSteps()` → abort handling
 10. **`finalizeRun()`**: changelog → action plan → report (with inline action plan) → commit → merge → summary → dashboard shutdown
 

@@ -178,7 +178,7 @@ Write idempotency tests for every fix:
 
 Do NOT fix:
 
-Create audit-reports/ in project root if needed. Save as audit-reports/29_IDEMPOTENCY_REPORT_[run-number]_[date]_[time in user's local time].md, incrementing run number based on existing reports.
+Create audit-reports/ in project root if needed. Save as audit-reports/30_IDEMPOTENCY_REPORT_[run-number]_[date]_[time in user's local time].md, incrementing run number based on existing reports.
 
 In addition to writing the full report file, you MUST print a summary directly in the conversation when you finish. Do not make the user open the report to get the highlights. The chat summary should include:
 One sentence: what you did, how long it took, and whether all tests still pass.

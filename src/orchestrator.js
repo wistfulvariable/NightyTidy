@@ -68,7 +68,7 @@ const PROGRESS_FILENAME = 'nightytidy-progress.json';
 const URL_FILENAME = 'nightytidy-dashboard.url';
 
 const STATE_FILENAME = 'nightytidy-run-state.json';
-export const STATE_VERSION = 1;
+export const STATE_VERSION = 2;
 const DASHBOARD_STARTUP_TIMEOUT = 5000; // ms — max wait for dashboard server to respond
 const SSE_FLUSH_DELAY = 500; // ms — brief delay to let last SSE event reach clients
 
@@ -93,7 +93,15 @@ export function readState(projectDir) {
   if (!existsSync(fp)) return null;
   try {
     const data = JSON.parse(readFileSync(fp, 'utf8'));
-    if (data.version !== STATE_VERSION) return null;
+    if (data.version !== STATE_VERSION && data.version !== STATE_VERSION - 1) return null;
+    if (!data.stepModes) {
+      data.stepModes = {};
+      for (const num of data.selectedSteps || []) {
+        const step = STEPS.find(s => s.number === num);
+        data.stepModes[num] = step?.mode || 'write';
+      }
+    }
+    data.version = STATE_VERSION;
     return data;
   } catch {
     return null;
@@ -405,7 +413,7 @@ function stopDashboardServer(pid) {
  * @param {number} [options.timeout] - Per-step timeout in ms
  * @returns {Promise<InitRunResult>} Result object (never throws)
  */
-export async function initRun(projectDir, { steps, timeout, skipDashboard, skipSync } = {}) {
+export async function initRun(projectDir, { steps, timeout, skipDashboard, skipSync, modes } = {}) {
   try {
     initLogger(projectDir, { quiet: true });
     info(`NightyTidy v${getVersion()} orchestrator starting (Node ${process.version}, ${process.platform} ${process.arch})`);
@@ -472,6 +480,14 @@ export async function initRun(projectDir, { steps, timeout, skipDashboard, skipS
       selectedNums = STEPS.map(s => s.number);
     }
 
+    const stepModes = modes ? { ...modes } : {};
+    for (const num of selectedNums) {
+      if (!stepModes[num]) {
+        const step = STEPS.find(s => s.number === num);
+        stepModes[num] = step?.mode || 'write';
+      }
+    }
+
     writeProgress(projectDir, { status: 'initializing', initPhase: 'git_branch' });
     const originalBranch = await getCurrentBranch();
     const tagName = await createPreRunTag();
@@ -497,6 +513,7 @@ export async function initRun(projectDir, { steps, timeout, skipDashboard, skipS
       runBranch,
       tagName,
       selectedSteps: selectedNums,
+      stepModes,
       completedSteps: [],
       failedSteps: [],
       startTime: Date.now(),
@@ -605,7 +622,9 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
     // Stream Claude output to progress file for dashboard consumption
     const onOutput = createOutputHandler(progress, projectDir);
 
-    let result = await executeSingleStep(step, projectDir, { timeout: stepTimeout, onOutput });
+    const stepMode = state.stepModes?.[stepNumber] || step.mode || 'write';
+
+    let result = await executeSingleStep(step, projectDir, { timeout: stepTimeout, onOutput, mode: stepMode });
 
     // ── 3-Tier Recovery ──────────────────────────────────────────────
     // Tier 1 already ran above. If it failed (non-rate-limit), try:
@@ -624,7 +643,7 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
       const prodPrompt = SAFETY_PREAMBLE + PROD_PREAMBLE + step.prompt;
       const prodResult = await executeSingleStep(step, projectDir, {
         timeout: stepTimeout, onOutput: prodOutput,
-        continueSession: true, promptOverride: prodPrompt,
+        continueSession: true, promptOverride: prodPrompt, mode: stepMode,
       });
 
       result = {
@@ -649,7 +668,7 @@ export async function runStep(projectDir, stepNumber, { timeout } = {}) {
 
         const freshOutput = createOutputHandler(progress, projectDir);
         const freshResult = await executeSingleStep(step, projectDir, {
-          timeout: stepTimeout, onOutput: freshOutput,
+          timeout: stepTimeout, onOutput: freshOutput, mode: stepMode,
         });
 
         result = {

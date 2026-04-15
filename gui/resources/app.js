@@ -731,17 +731,37 @@ function renderStepChecklist() {
   const projectPath = document.getElementById('steps-project-path');
   projectPath.textContent = state.projectDir;
 
-  container.innerHTML = state.steps.map(s => `
+  container.innerHTML = state.steps.map(s => {
+    const mode = s.mode || 'write';
+    const isLocked = mode === 'read-locked';
+    const displayMode = isLocked ? 'read' : mode;
+    const badgeClass = displayMode === 'read' ? 'mode-read' : 'mode-write';
+    const badgeText = displayMode === 'read' ? 'R' : 'W';
+    const lockIcon = isLocked ? ' \u{1F512}' : '';
+    const lockedClass = isLocked ? ' mode-locked' : '';
+    return `
     <label class="step-check-item">
       <input type="checkbox" value="${s.number}" checked>
       <span class="step-num">${s.number}.</span>
       <span class="step-label">${NtLogic.escapeHtml(s.name)}</span>
+      <span class="mode-badge ${badgeClass}${lockedClass}" data-step="${s.number}" ${isLocked ? '' : 'role="button" tabindex="0"'}>${badgeText}${lockIcon}</span>
     </label>
-  `).join('');
+  `}).join('');
 
   updateStepCount();
   container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
     cb.addEventListener('change', updateStepCount);
+  });
+  container.querySelectorAll('.mode-badge:not(.mode-locked)').forEach(badge => {
+    badge.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const isRead = badge.classList.contains('mode-read');
+      badge.classList.toggle('mode-read', !isRead);
+      badge.classList.toggle('mode-write', isRead);
+      badge.textContent = isRead ? 'W' : 'R';
+      updateStepCount();
+    });
   });
 }
 
@@ -751,9 +771,20 @@ function getCheckedSteps() {
 }
 
 function updateStepCount() {
-  const count = getCheckedSteps().length;
-  document.getElementById('step-count-badge').textContent = `${count} step${count !== 1 ? 's' : ''} selected`;
-  document.getElementById('btn-start-run').disabled = count === 0;
+  const checked = getCheckedSteps();
+  const badges = document.querySelectorAll('#step-checklist .mode-badge');
+  let writeCount = 0, readCount = 0;
+  badges.forEach(b => {
+    const stepNum = parseInt(b.dataset.step, 10);
+    if (checked.includes(stepNum)) {
+      if (b.classList.contains('mode-write')) writeCount++;
+      else readCount++;
+    }
+  });
+  const total = checked.length;
+  document.getElementById('step-count-badge').textContent =
+    `${writeCount}W + ${readCount}R = ${total} selected`;
+  document.getElementById('btn-start-run').disabled = total === 0;
 }
 
 function selectAllSteps(checked) {
@@ -761,6 +792,51 @@ function selectAllSteps(checked) {
     cb.checked = checked;
   });
   updateStepCount();
+}
+
+function applyModePreset(preset) {
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`btn-mode-${preset}`).classList.add('active');
+
+  document.querySelectorAll('#step-checklist .mode-badge').forEach(badge => {
+    const stepNum = parseInt(badge.dataset.step, 10);
+    const step = state.steps.find(s => s.number === stepNum);
+    if (!step) return;
+    const isLocked = step.mode === 'read-locked';
+    const cb = badge.closest('.step-check-item').querySelector('input[type="checkbox"]');
+
+    if (preset === 'audit') {
+      badge.classList.remove('mode-write');
+      badge.classList.add('mode-read');
+      badge.textContent = isLocked ? 'R \u{1F512}' : 'R';
+    } else if (preset === 'improve') {
+      if (isLocked) {
+        cb.checked = false;
+      } else {
+        badge.classList.remove('mode-read');
+        badge.classList.add('mode-write');
+        badge.textContent = 'W';
+        cb.checked = true;
+      }
+    } else {
+      // default
+      const defaultMode = isLocked ? 'read' : (step.mode || 'write');
+      badge.classList.toggle('mode-read', defaultMode === 'read');
+      badge.classList.toggle('mode-write', defaultMode === 'write');
+      badge.textContent = defaultMode === 'read' ? (isLocked ? 'R \u{1F512}' : 'R') : 'W';
+      cb.checked = true;
+    }
+  });
+  updateStepCount();
+}
+
+function getStepModes() {
+  const modes = {};
+  document.querySelectorAll('#step-checklist .mode-badge').forEach(badge => {
+    const stepNum = parseInt(badge.dataset.step, 10);
+    modes[stepNum] = badge.classList.contains('mode-write') ? 'write' : 'read';
+  });
+  return modes;
 }
 
 async function startRun() {
@@ -783,7 +859,9 @@ async function startRun() {
 
   const stepArgs = NtLogic.buildStepArgs(selected, state.steps.length);
   const timeoutArg = state.timeout !== 120 ? ` --timeout ${state.timeout}` : '';
-  const args = `--init-run ${stepArgs}${timeoutArg} --skip-dashboard --skip-sync`;
+  const modes = getStepModes();
+  const modesArg = ` --step-modes '${JSON.stringify(modes)}'`;
+  const args = `--init-run ${stepArgs}${timeoutArg}${modesArg} --skip-dashboard --skip-sync`;
 
   showInitOverlay();
 
@@ -2187,6 +2265,9 @@ function bindEvents() {
   document.getElementById('btn-change-folder').addEventListener('click', selectFolder);
   document.getElementById('btn-select-all').addEventListener('click', () => selectAllSteps(true));
   document.getElementById('btn-select-none').addEventListener('click', () => selectAllSteps(false));
+  document.getElementById('btn-mode-default').addEventListener('click', () => applyModePreset('default'));
+  document.getElementById('btn-mode-audit').addEventListener('click', () => applyModePreset('audit'));
+  document.getElementById('btn-mode-improve').addEventListener('click', () => applyModePreset('improve'));
   document.getElementById('btn-back-setup').addEventListener('click', () => showScreen(SCREENS.SETUP));
   document.getElementById('btn-start-run').addEventListener('click', startRun);
   document.getElementById('btn-resume-run').addEventListener('click', handleResumeRun);

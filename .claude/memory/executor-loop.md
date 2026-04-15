@@ -6,8 +6,10 @@ Assumes CLAUDE.md loaded. Core loop in `src/executor.js`.
 
 - `executeSteps(selectedSteps, projectDir, options)` — main loop
 - `executeSingleStep(step, projectDir, options)` — single step with fast-completion detection
-- `copyPromptsToProject(projectDir)` — syncs all 43 STEPS to `audit-reports/refactor-prompts/`, removes stale files from renames
+- `copyPromptsToProject(projectDir)` — syncs all 44 STEPS to `audit-reports/refactor-prompts/`, removes stale files from renames
 - `SAFETY_PREAMBLE` — constraint string prepended to every prompt
+- `READ_PREAMBLE` — read-only mode override prepended after SAFETY_PREAMBLE (no file changes, no commits, analysis only)
+- `WRITE_PREAMBLE` — implementation mode header prepended after SAFETY_PREAMBLE (analyze + implement + commit)
 - `FAST_COMPLETION_THRESHOLD_MS` — 120,000ms (2 min); steps completing faster trigger auto-retry
 
 ## Safety Preamble
@@ -27,25 +29,26 @@ For each step in `selectedSteps`:
 1. Check abort signal → break if aborted
 2. onStepStart(step, i, total)
 3. Capture pre-step HEAD hash via getHeadHash()
-4. Run improvement: runPrompt(SAFETY_PREAMBLE + step.prompt, projectDir, { signal, label })
-5. If failed → log, notify, push failed result, onStepFail, continue
-6. **Fast-completion check**: if improvement succeeded in < FAST_COMPLETION_THRESHOLD_MS (2 min):
+4. Resolve mode: `mode` param > `step.mode` > `'write'`; select `READ_PREAMBLE` or `WRITE_PREAMBLE`
+5. Run improvement: runPrompt(SAFETY_PREAMBLE + modePreamble + step.prompt, projectDir, { signal, label })
+6. If failed → log, notify, push failed result, onStepFail, continue
+7. **Fast-completion check** (write mode only): if improvement succeeded in < FAST_COMPLETION_THRESHOLD_MS (2 min):
    - Log warning, run ONE retry with FAST_RETRY_PREFIX + original prompt
    - If retry succeeds → use retry result (costs/attempts summed with original)
    - If retry fails → fall back to original fast result
    - Set `suspiciousFast: true` on result either way
-7. Run doc update: runPrompt(SAFETY_PREAMBLE + DOC_UPDATE_PROMPT, ...)
-8. If doc update failed → warn (non-fatal, step still completed)
-9. Check commits: hasNewCommit(preStepHash)
-10. If no new commit → fallbackCommit(step.number, step.name)
-11. Push completed result, onStepComplete
+8. Run doc update (write mode only): runPrompt(SAFETY_PREAMBLE + WRITE_PREAMBLE + DOC_UPDATE_PROMPT, ...)
+9. If doc update failed → warn (non-fatal, step still completed)
+10. Commit verification (write mode only): hasNewCommit(preStepHash) → fallbackCommit if needed
+11. **Commit guard** (read mode only): if hasNewCommit → warn + set `modeViolation: true` on result
+12. Push completed result, onStepComplete
 ```
 
 ## Result Object
 
 ```js
 {
-  results: [{ step: { number, name }, status, output, duration, attempts, error, cost, suspiciousFast?, errorType?, retryAfterMs? }],
+  results: [{ step: { number, name }, status, output, duration, attempts, error, cost, suspiciousFast?, modeViolation?, errorType?, retryAfterMs? }],
   totalDuration: number,
   completedCount: number,
   failedCount: number,

@@ -31,6 +31,20 @@ function extractStepDescription(prompt) {
   return desc;
 }
 
+export function buildStepModesFromPreset(preset, steps) {
+  const modes = {};
+  for (const step of steps) {
+    if (preset === 'audit') {
+      modes[step.number] = 'read';
+    } else if (preset === 'improve') {
+      modes[step.number] = step.mode === 'read-locked' ? 'read' : 'write';
+    } else {
+      modes[step.number] = step.mode === 'read-locked' ? 'read' : step.mode;
+    }
+  }
+  return modes;
+}
+
 function buildStepCallbacks(spinner, selected, dashState, { ctx, projectDir } = {}) {
   const stepStartTimes = new Map();
   let runStartTime = null;
@@ -182,6 +196,7 @@ function saveRunState(projectDir, ctx, snapshot) {
     runBranch: ctx.runBranch,
     tagName: ctx.tagName,
     selectedSteps: ctx.selectedStepNumbers,
+    stepModes: ctx.stepModes || {},
     completedSteps: completed,
     failedSteps: failed,
     startTime: ctx.runStartTime || Date.now(),
@@ -352,6 +367,7 @@ async function handleResume(projectDir, timeoutMs) {
   const executionResults = await executeSteps(remainingSteps, projectDir, {
     signal: ctx.abortController.signal,
     timeout: ctx.timeoutMs,
+    stepModes: state.stepModes,
     ...buildStepCallbacks(ctx.spinner, remainingSteps, ctx.dashState, { ctx, projectDir }),
   });
 
@@ -455,7 +471,8 @@ function printCompletionSummary(executionResults, mergeResult, { runBranch, tagN
 async function selectSteps(opts) {
   if (opts.all) {
     info(`Running all ${STEPS.length} steps (--all)`);
-    return STEPS;
+    const stepModes = buildStepModesFromPreset(opts.mode || 'default', STEPS);
+    return { steps: STEPS, stepModes };
   }
 
   if (opts.steps) {
@@ -465,9 +482,13 @@ async function selectSteps(opts) {
       console.log(chalk.red(`Invalid step number(s): ${invalid.join(', ')}. Valid range: 1-${STEPS.length}.`));
       process.exit(1);
     }
-    const selected = STEPS.filter(step => requestedNums.includes(step.number));
+    let selected = STEPS.filter(step => requestedNums.includes(step.number));
     info(`Running ${selected.length} selected step(s) (--steps ${opts.steps})`);
-    return selected;
+    const stepModes = buildStepModesFromPreset(opts.mode || 'default', selected);
+    if (opts.mode === 'improve') {
+      selected = selected.filter(s => s.mode !== 'read-locked');
+    }
+    return { steps: selected, stepModes };
   }
 
   if (!process.stdin.isTTY) {
@@ -479,7 +500,7 @@ async function selectSteps(opts) {
   }
 
   const { default: checkbox } = await import('@inquirer/checkbox');
-  const selected = await checkbox({
+  let selected = await checkbox({
     message: 'Select steps to run (Enter to run all):',
     choices: STEPS.map(step => ({
       name: `${step.number}. ${step.name}`,
@@ -494,7 +515,26 @@ async function selectSteps(opts) {
     process.exit(0);
   }
 
-  return selected;
+  if (process.stdin.isTTY && !opts.mode) {
+    const { default: select } = await import('@inquirer/select');
+    const preset = await select({
+      message: 'Run mode:',
+      choices: [
+        { name: 'Default (uses step defaults)', value: 'default' },
+        { name: 'Audit Only (all read — analysis reports only)', value: 'audit' },
+        { name: 'Improvement Only (write steps only, skip read-only analysis)', value: 'improve' },
+      ],
+    });
+    opts.mode = preset;
+  }
+
+  const stepModes = buildStepModesFromPreset(opts.mode || 'default', selected);
+
+  if (opts.mode === 'improve') {
+    selected = selected.filter(s => s.mode !== 'read-locked');
+  }
+
+  return { steps: selected, stepModes };
 }
 
 function showWelcome() {
@@ -504,7 +544,7 @@ function showWelcome() {
     '\u2502                                                              \u2502\n' +
     '\u2502  Welcome to NightyTidy!                                      \u2502\n' +
     '\u2502                                                              \u2502\n' +
-    '\u2502  NightyTidy will run 43 codebase improvement steps through   \u2502\n' +
+    '\u2502  NightyTidy will run 44 codebase improvement steps through   \u2502\n' +
     '\u2502  Claude Code. This typically takes 4-8 hours.                \u2502\n' +
     '\u2502                                                              \u2502\n' +
     '\u2502  All changes happen on a dedicated branch and are            \u2502\n' +
@@ -557,12 +597,16 @@ function printStepList() {
   const numWidth = String(STEPS.length).length;
   for (const step of STEPS) {
     const num = String(step.number).padStart(numWidth);
+    const mode = step.mode || 'write';
+    const modeTag = mode === 'read-locked' ? chalk.blue('[read-locked]')
+      : mode === 'read' ? chalk.blue('[read]')
+      : chalk.green('[write]');
     const desc = extractStepDescription(step.prompt);
     if (desc) {
-      console.log(`  ${num}. ${step.name}`);
+      console.log(`  ${num}. ${step.name} ${modeTag}`);
       console.log(chalk.dim(`      ${desc}`));
     } else {
-      console.log(`  ${num}. ${step.name}`);
+      console.log(`  ${num}. ${step.name} ${modeTag}`);
     }
   }
   console.log(chalk.dim(`\nUse --steps 1,5,12 to run specific steps, or --all to run everything.`));
@@ -682,6 +726,7 @@ async function executeRunFlow(selected, projectDir, ctx) {
   const executionResults = await executeSteps(selected, projectDir, {
     signal: ctx.abortController.signal,
     timeout: ctx.timeoutMs,
+    stepModes: ctx.stepModes,
     ...buildStepCallbacks(ctx.spinner, selected, ctx.dashState, { ctx, projectDir }),
   });
 
@@ -813,7 +858,9 @@ export async function run() {
     .option('--sync-url <url>', 'Override the Google Doc URL for sync')
     .option('--skip-sync', 'Skip automatic prompt sync from Google Doc before running')
     .option('--skip-dashboard', 'Skip launching the standalone dashboard server (used by GUI)')
-    .option('--resume', 'Resume a previously paused run (usage limit / manual restart)');
+    .option('--resume', 'Resume a previously paused run (usage limit / manual restart)')
+    .option('--mode <preset>', 'Run mode preset: default, audit, improve')
+    .option('--step-modes <json>', 'Per-step mode overrides as JSON (internal, used by GUI)');
 
   program.parse();
   const opts = program.opts();
@@ -831,13 +878,24 @@ export async function run() {
       number: s.number,
       name: s.name,
       description: extractStepDescription(s.prompt),
+      mode: s.mode || 'write',
+      locked: s.mode === 'read-locked',
     }));
     console.log(JSON.stringify({ steps }));
     process.exit(0);
   }
 
   if (opts.initRun) {
-    const result = await initRun(projectDir, { steps: opts.steps, timeout: timeoutMs, skipDashboard: opts.skipDashboard, skipSync: opts.skipSync });
+    let modes;
+    if (opts.stepModes) {
+      try { modes = JSON.parse(opts.stepModes); } catch {
+        console.log(JSON.stringify({ success: false, error: '--step-modes must be valid JSON' }));
+        process.exit(1);
+      }
+    } else if (opts.mode) {
+      modes = buildStepModesFromPreset(opts.mode, STEPS);
+    }
+    const result = await initRun(projectDir, { steps: opts.steps, timeout: timeoutMs, skipDashboard: opts.skipDashboard, skipSync: opts.skipSync, modes });
     console.log(JSON.stringify(result));
     process.exit(result.success ? 0 : 1);
   }
@@ -932,16 +990,20 @@ export async function run() {
     await setupGitAndPreChecks(projectDir);
     await autoSyncPrompts(opts);
 
-    const selected = await selectSteps(opts);
+    const { steps: selected, stepModes } = await selectSteps(opts);
+    ctx.stepModes = stepModes;
 
     if (opts.dryRun) {
       console.log(chalk.cyan(`\n--- Dry Run ---\n`));
       console.log(`Pre-checks: ${chalk.green('passed')}`);
       console.log(`Steps selected: ${selected.length}`);
+      console.log(`Mode: ${opts.mode || 'default'}`);
       console.log(`Estimated time: ${Math.ceil(selected.length * 15)}\u2013${selected.length * 30} minutes`);
       console.log(`Timeout per step: ${opts.timeout ? `${opts.timeout} min` : '120 min (default)'}\n`);
       for (const step of selected) {
-        console.log(`  ${step.number}. ${step.name}`);
+        const mode = stepModes[step.number] || step.mode || 'write';
+        const modeTag = mode === 'read' ? '[read]' : '[write]';
+        console.log(`  ${step.number}. ${step.name} ${modeTag}`);
       }
       console.log(chalk.dim(`\nRemove --dry-run to start the actual run.`));
       process.exit(0);

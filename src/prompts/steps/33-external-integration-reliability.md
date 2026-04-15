@@ -365,7 +365,7 @@ After applying all fixes:
 
 Document only — do NOT fix:
 
-Create audit-reports/ in project root if needed. Save as audit-reports/32_EXTERNAL_INTEGRATION_REPORT_[run-number]_[date]_[time in user's local time].md, incrementing run number based on existing reports.
+Create audit-reports/ in project root if needed. Save as audit-reports/33_EXTERNAL_INTEGRATION_REPORT_[run-number]_[date]_[time in user's local time].md, incrementing run number based on existing reports.
 
 | Service | SDK/Client | Version | Criticality | Operations | Credential Storage | Data Sensitivity | Actively Maintained? |
 

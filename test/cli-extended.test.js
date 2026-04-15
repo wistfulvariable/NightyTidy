@@ -32,6 +32,10 @@ vi.mock('@inquirer/checkbox', () => ({
   default: vi.fn(),
 }));
 
+vi.mock('@inquirer/select', () => ({
+  default: vi.fn().mockResolvedValue('default'),
+}));
+
 vi.mock('ora', () => ({
   default: vi.fn(() => ({
     start: vi.fn().mockReturnThis(),
@@ -49,6 +53,7 @@ vi.mock('chalk', () => {
   passthrough.green = passthrough;
   passthrough.yellow = passthrough;
   passthrough.red = passthrough;
+  passthrough.blue = passthrough;
   return { default: passthrough };
 });
 
@@ -81,9 +86,9 @@ vi.mock('../src/claude.js', () => ({
 
 vi.mock('../src/prompts/loader.js', () => ({
   STEPS: [
-    { number: 1, name: 'Lint', prompt: 'lint the code' },
-    { number: 2, name: 'Format', prompt: 'format the code' },
-    { number: 3, name: 'Test', prompt: 'test the code' },
+    { number: 1, name: 'Lint', prompt: 'lint the code', mode: 'write' },
+    { number: 2, name: 'Format', prompt: 'format the code', mode: 'read' },
+    { number: 3, name: 'Test', prompt: 'test the code', mode: 'read-locked' },
   ],
   REPORT_PROMPT: 'mock report prompt template',
   CONSOLIDATION_PROMPT: 'consolidate actions',
@@ -102,6 +107,8 @@ vi.mock('../src/executor.js', () => ({
   executeSteps: vi.fn(),
   copyPromptsToProject: vi.fn(),
   SAFETY_PREAMBLE: '',
+  READ_PREAMBLE: 'MODE OVERRIDE',
+  WRITE_PREAMBLE: 'MODE: IMPLEMENTATION',
 }));
 
 vi.mock('../src/notifications.js', () => ({
@@ -135,7 +142,7 @@ vi.mock('../src/dashboard.js', () => ({
 // Imports — after mocks
 // ---------------------------------------------------------------------------
 
-import { run } from '../src/cli.js';
+import { run, buildStepModesFromPreset } from '../src/cli.js';
 import { existsSync, readFileSync, unlinkSync, openSync } from 'fs';
 import checkbox from '@inquirer/checkbox';
 import { Command } from 'commander';
@@ -189,7 +196,7 @@ describe('cli.js extended coverage', () => {
     processOnSpy = vi.spyOn(process, 'on').mockImplementation(() => process);
     process.stdin.isTTY = true;
 
-    checkbox.mockResolvedValue([{ number: 1, name: 'Lint', prompt: 'lint the code' }]);
+    checkbox.mockResolvedValue([{ number: 1, name: 'Lint', prompt: 'lint the code', mode: 'write' }]);
     executeSteps.mockResolvedValue(makeExecutionResults({ completedCount: 1, failedCount: 0 }));
     runPrompt.mockResolvedValue({ success: true, output: 'Report text', error: null });
     runPreChecks.mockResolvedValue(undefined);
@@ -379,8 +386,8 @@ describe('cli.js extended coverage', () => {
     it('onStepComplete starts spinner for next step when more steps remain', async () => {
       // Select 2 steps so the callback can reference selected[1]
       checkbox.mockResolvedValue([
-        { number: 1, name: 'Lint', prompt: 'lint the code' },
-        { number: 2, name: 'Format', prompt: 'format the code' },
+        { number: 1, name: 'Lint', prompt: 'lint the code', mode: 'write' },
+        { number: 2, name: 'Format', prompt: 'format the code', mode: 'read' },
       ]);
 
       executeSteps.mockImplementation(async (steps, dir, opts) => {
@@ -668,6 +675,57 @@ describe('cli.js extended coverage', () => {
 
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Failed steps:'));
       expect(consoleLogSpy).toHaveBeenCalledWith(expect.stringContaining('Format'));
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // --mode flag and buildStepModesFromPreset
+  // -------------------------------------------------------------------------
+  describe('--mode flag and buildStepModesFromPreset', () => {
+    const testSteps = [
+      { number: 1, name: 'A', prompt: 'a', mode: 'write' },
+      { number: 2, name: 'B', prompt: 'b', mode: 'read' },
+      { number: 3, name: 'C', prompt: 'c', mode: 'read-locked' },
+    ];
+
+    it('default preset preserves step defaults, locked becomes read', () => {
+      const modes = buildStepModesFromPreset('default', testSteps);
+      expect(modes).toEqual({ 1: 'write', 2: 'read', 3: 'read' });
+    });
+
+    it('audit preset sets all to read', () => {
+      const modes = buildStepModesFromPreset('audit', testSteps);
+      expect(modes).toEqual({ 1: 'read', 2: 'read', 3: 'read' });
+    });
+
+    it('improve preset sets non-locked to write, locked stays read', () => {
+      const modes = buildStepModesFromPreset('improve', testSteps);
+      expect(modes).toEqual({ 1: 'write', 2: 'write', 3: 'read' });
+    });
+
+    it('--list text output shows mode badge', async () => {
+      const program = new Command();
+      program.opts.mockReturnValueOnce({ list: true });
+
+      try { await run(); } catch {}
+
+      const output = consoleLogSpy.mock.calls.map(c => c[0]).join('\n');
+      expect(output).toContain('[write]');
+    });
+
+    it('--list --json includes mode and locked fields', async () => {
+      const program = new Command();
+      program.opts.mockReturnValueOnce({ list: true, json: true });
+
+      try { await run(); } catch {}
+
+      const jsonCall = consoleLogSpy.mock.calls.find(c => {
+        try { JSON.parse(c[0]); return true; } catch { return false; }
+      });
+      expect(jsonCall).toBeDefined();
+      const parsed = JSON.parse(jsonCall[0]);
+      expect(parsed.steps[0]).toHaveProperty('mode');
+      expect(parsed.steps[0]).toHaveProperty('locked');
     });
   });
 });

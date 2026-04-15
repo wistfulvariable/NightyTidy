@@ -390,7 +390,7 @@ service.destroy();
 expect(service.intervalId).toBeNull();
 });
 
-Create audit-reports/ in project root if it does not exist. Save as audit-reports/27_RESOURCE_LIFECYCLE_REPORT_[run-number]_[date]_[time in user's local time].md (e.g., 27_RESOURCE_LIFECYCLE_REPORT_01_2026-04-05_0317.md). Increment the run number based on any existing reports with the same prefix in that directory.
+Create audit-reports/ in project root if it does not exist. Save as audit-reports/28_RESOURCE_LIFECYCLE_REPORT_[run-number]_[date]_[time in user's local time].md (e.g., 28_RESOURCE_LIFECYCLE_REPORT_01_2026-04-05_0317.md). Increment the run number based on any existing reports with the same prefix in that directory.
 In addition to writing the full report file, you MUST print a summary directly in the conversation when you finish. Do not make the user open the report to get the highlights. The chat summary should include:
 One sentence: what you did, how long it took, and whether all tests still pass.
 The most important things discovered — bugs, risks, wins, or surprises. Each bullet should be specific and actionable, not vague. Lead with severity or impact.

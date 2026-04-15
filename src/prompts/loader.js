@@ -26,6 +26,7 @@ function loadAllSteps() {
     number: index + 1,
     name: entry.name,
     prompt: loadFile('steps', `${entry.id}.md`),
+    mode: entry.mode || 'write',
   }));
 }
 

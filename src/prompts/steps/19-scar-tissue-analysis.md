@@ -36,7 +36,7 @@ Good example: "The order validation in checkout/validate.ts has accumulated 23 e
 
 Bad example: "This code is messy and should be refactored."
 
-Create audit-reports/ in project root if needed. Save as audit-reports/18_SCAR_TISSUE_ANALYSIS_REPORT_[run-number]_[date]_[time in user's local time].md, incrementing run number based on existing reports.
+Create audit-reports/ in project root if needed. Save as audit-reports/19_SCAR_TISSUE_ANALYSIS_REPORT_[run-number]_[date]_[time in user's local time].md, incrementing run number based on existing reports.
 
 | Rank | File/Module | Score (0-18) | Churn | Fix Ratio | Complexity | Annotations | Audit Recurrence | Author Spread | Top Signal |
 

@@ -60,6 +60,8 @@ vi.mock('../src/executor.js', () => ({
   }),
   SAFETY_PREAMBLE: 'MOCK_PREAMBLE\n',
   PROD_PREAMBLE: 'MOCK_PROD\n',
+  READ_PREAMBLE: 'MOCK_READ\n',
+  WRITE_PREAMBLE: 'MOCK_WRITE\n',
 }));
 
 vi.mock('../src/notifications.js', () => ({
@@ -83,9 +85,9 @@ vi.mock('../src/lock.js', () => ({
 
 vi.mock('../src/prompts/loader.js', () => ({
   STEPS: [
-    { number: 1, name: 'Documentation', prompt: 'Fix docs' },
-    { number: 2, name: 'Test Coverage', prompt: 'Add tests' },
-    { number: 3, name: 'Security Audit', prompt: 'Check security' },
+    { number: 1, name: 'Documentation', prompt: 'Fix docs', mode: 'write' },
+    { number: 2, name: 'Test Coverage', prompt: 'Add tests', mode: 'write' },
+    { number: 3, name: 'Security Audit', prompt: 'Check security', mode: 'read' },
   ],
   DOC_UPDATE_PROMPT: 'Update docs',
   REPORT_PROMPT: 'mock report prompt template',
@@ -102,7 +104,7 @@ vi.mock('../src/sync.js', () => ({
 }));
 
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
-import { initRun, runStep, finishRun } from '../src/orchestrator.js';
+import { initRun, runStep, finishRun, readState, writeState, STATE_VERSION } from '../src/orchestrator.js';
 import { initLogger } from '../src/logger.js';
 import { runPreChecks } from '../src/checks.js';
 import { getCurrentBranch, createPreRunTag, createRunBranch, mergeRunBranch, getGitInstance, ensureOnBranch } from '../src/git.js';
@@ -183,7 +185,7 @@ describe('initRun', () => {
     const stateCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
     expect(stateCall).toBeDefined();
     const state = JSON.parse(stateCall[1]);
-    expect(state.version).toBe(1);
+    expect(state.version).toBe(2);
     expect(state.selectedSteps).toEqual([1, 2]);
     expect(state.runBranch).toBe('nightytidy/run-2026-03-06-1430');
   });
@@ -1285,5 +1287,215 @@ describe('runStep branch guard', () => {
     for (const call of ensureOnBranch.mock.calls) {
       expect(call[0]).toBe('nightytidy/run-2026-03-06-1430');
     }
+  });
+});
+
+// ── stepModes — mode propagation through orchestrator ───────────
+
+describe('stepModes', () => {
+  it('STATE_VERSION is 2', () => {
+    expect(STATE_VERSION).toBe(2);
+  });
+
+  it('initRun stores stepModes in state from modes option', async () => {
+    runPreChecks.mockResolvedValue();
+    getCurrentBranch.mockResolvedValue('main');
+    createPreRunTag.mockResolvedValue('tag');
+    createRunBranch.mockResolvedValue('nightytidy/run-1');
+    acquireLock.mockResolvedValue();
+
+    const result = await initRun('/fake/project', {
+      steps: '1,2',
+      modes: { 1: 'read', 2: 'write' },
+      skipDashboard: true,
+      skipSync: true,
+    });
+
+    expect(result.success).toBe(true);
+    // Check the state that was written
+    const writeCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
+    const state = JSON.parse(writeCall[1]);
+    expect(state.stepModes).toEqual({ 1: 'read', 2: 'write' });
+  });
+
+  it('initRun defaults stepModes from manifest when modes not provided', async () => {
+    runPreChecks.mockResolvedValue();
+    getCurrentBranch.mockResolvedValue('main');
+    createPreRunTag.mockResolvedValue('tag');
+    createRunBranch.mockResolvedValue('nightytidy/run-1');
+    acquireLock.mockResolvedValue();
+
+    const result = await initRun('/fake/project', {
+      steps: '1,3',
+      skipDashboard: true,
+      skipSync: true,
+    });
+
+    expect(result.success).toBe(true);
+    const writeCall = writeFileSync.mock.calls.find(c => c[0].includes('nightytidy-run-state.json.tmp'));
+    const state = JSON.parse(writeCall[1]);
+    expect(state.stepModes[1]).toBe('write');
+    expect(state.stepModes[3]).toBe('read');
+  });
+
+  it('runStep passes mode to executeSingleStep', async () => {
+    const stateData = {
+      version: 2,
+      originalBranch: 'main',
+      runBranch: 'nightytidy/run-1',
+      tagName: 'tag',
+      selectedSteps: [1, 3],
+      stepModes: { 1: 'write', 3: 'read' },
+      completedSteps: [],
+      failedSteps: [],
+      startTime: Date.now(),
+      timeout: null,
+      dashboardPid: null,
+      dashboardUrl: null,
+    };
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify(stateData));
+    executeSingleStep.mockResolvedValue({
+      status: 'completed',
+      output: 'done',
+      duration: 5000,
+      attempts: 1,
+      cost: null,
+      error: null,
+    });
+
+    await runStep('/fake/project', 3);
+
+    expect(executeSingleStep).toHaveBeenCalledWith(
+      expect.objectContaining({ number: 3 }),
+      '/fake/project',
+      expect.objectContaining({ mode: 'read' })
+    );
+  });
+
+  it('runStep defaults to step.mode when stepModes missing from state', async () => {
+    const stateData = {
+      version: 1,
+      originalBranch: 'main',
+      runBranch: 'nightytidy/run-1',
+      tagName: 'tag',
+      selectedSteps: [3],
+      completedSteps: [],
+      failedSteps: [],
+      startTime: Date.now(),
+      timeout: null,
+      dashboardPid: null,
+      dashboardUrl: null,
+    };
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify(stateData));
+    executeSingleStep.mockResolvedValue({
+      status: 'completed',
+      output: 'done',
+      duration: 5000,
+      attempts: 1,
+      cost: null,
+      error: null,
+    });
+
+    await runStep('/fake/project', 3);
+
+    // readState migrates v1 → v2 and populates stepModes from manifest
+    // Step 3 has mode: 'read' in mock STEPS
+    expect(executeSingleStep).toHaveBeenCalledWith(
+      expect.objectContaining({ number: 3 }),
+      '/fake/project',
+      expect.objectContaining({ mode: 'read' })
+    );
+  });
+
+  it('runStep passes mode through all 3 recovery tiers', async () => {
+    const stateData = {
+      version: 2,
+      originalBranch: 'main',
+      runBranch: 'nightytidy/run-1',
+      tagName: 'tag',
+      selectedSteps: [3],
+      stepModes: { 3: 'read' },
+      completedSteps: [],
+      failedSteps: [],
+      startTime: Date.now(),
+      timeout: null,
+      dashboardPid: null,
+      dashboardUrl: null,
+    };
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify(stateData));
+
+    // Tier 1 fails, Tier 2 fails, Tier 3 succeeds
+    executeSingleStep
+      .mockResolvedValueOnce({
+        status: 'failed', output: '', duration: 1000, attempts: 4,
+        error: 'timeout', errorType: 'unknown',
+      })
+      .mockResolvedValueOnce({
+        status: 'failed', output: '', duration: 1000, attempts: 4,
+        error: 'timeout', errorType: 'unknown',
+      })
+      .mockResolvedValueOnce({
+        status: 'completed', output: 'done', duration: 1000, attempts: 1,
+        error: null,
+      });
+
+    await runStep('/fake/project', 3);
+
+    expect(executeSingleStep).toHaveBeenCalledTimes(3);
+    // All 3 calls should pass mode: 'read'
+    for (const call of executeSingleStep.mock.calls) {
+      expect(call[2]).toEqual(expect.objectContaining({ mode: 'read' }));
+    }
+  });
+
+  it('readState migrates v1 state by adding stepModes from manifest', () => {
+    const v1State = {
+      version: 1,
+      originalBranch: 'main',
+      runBranch: 'nightytidy/run-1',
+      tagName: 'tag',
+      selectedSteps: [1, 3],
+      completedSteps: [],
+      failedSteps: [],
+      startTime: Date.now(),
+      timeout: null,
+    };
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify(v1State));
+
+    const state = readState('/fake/project');
+
+    expect(state).not.toBeNull();
+    expect(state.version).toBe(2);
+    expect(state.stepModes[1]).toBe('write');
+    expect(state.stepModes[3]).toBe('read');
+  });
+
+  it('readState preserves existing stepModes in v2 state', () => {
+    const v2State = {
+      version: 2,
+      originalBranch: 'main',
+      runBranch: 'nightytidy/run-1',
+      tagName: 'tag',
+      selectedSteps: [1, 3],
+      stepModes: { 1: 'read', 3: 'write' },
+      completedSteps: [],
+      failedSteps: [],
+      startTime: Date.now(),
+      timeout: null,
+    };
+    existsSync.mockReturnValue(true);
+    readFileSync.mockReturnValue(JSON.stringify(v2State));
+
+    const state = readState('/fake/project');
+
+    expect(state).not.toBeNull();
+    expect(state.version).toBe(2);
+    // Should preserve user-specified modes, not override from manifest
+    expect(state.stepModes[1]).toBe('read');
+    expect(state.stepModes[3]).toBe('write');
   });
 });

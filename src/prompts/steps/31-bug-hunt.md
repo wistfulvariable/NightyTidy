@@ -181,7 +181,7 @@ For each finding meeting ALL fix criteria:
 
 ## Output
 
-Save to `audit-reports/30_BUG_HUNT_REPORT_[run-number]_[date]_[time in user's local time].md` (create dir if needed, increment run number).
+Save to `audit-reports/31_BUG_HUNT_REPORT_[run-number]_[date]_[time in user's local time].md` (create dir if needed, increment run number).
 
 ### Report Sections
 1. **Executive Summary** — Total bugs, confidence breakdown, fixed vs documented, critical count, highest-density areas.

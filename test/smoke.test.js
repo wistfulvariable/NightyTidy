@@ -94,11 +94,11 @@ describe('smoke tests', () => {
   // -------------------------------------------------------------------------
   // 4. Steps data is structurally valid (critical path for execution)
   // -------------------------------------------------------------------------
-  it('steps data exports 43 valid steps and special prompts', async () => {
+  it('steps data exports 44 valid steps and special prompts', async () => {
     const { STEPS, DOC_UPDATE_PROMPT, CHANGELOG_PROMPT, CONSOLIDATION_PROMPT } = await import('../src/prompts/loader.js');
 
-    // Must have exactly 43 steps
-    expect(STEPS).toHaveLength(43);
+    // Must have exactly 44 steps
+    expect(STEPS).toHaveLength(44);
 
     // First and last steps have required shape
     expect(STEPS[0]).toMatchObject({
@@ -106,8 +106,8 @@ describe('smoke tests', () => {
       name: expect.any(String),
       prompt: expect.any(String),
     });
-    expect(STEPS[42]).toMatchObject({
-      number: 43,
+    expect(STEPS[43]).toMatchObject({
+      number: 44,
       name: expect.any(String),
       prompt: expect.any(String),
     });
