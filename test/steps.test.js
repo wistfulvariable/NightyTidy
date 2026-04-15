@@ -5,7 +5,7 @@ import { STEPS, DOC_UPDATE_PROMPT, CHANGELOG_PROMPT, CONSOLIDATION_PROMPT, REPOR
 
 describe('STEPS', () => {
   it('has exactly 43 entries', () => {
-    expect(STEPS).toHaveLength(43);
+    expect(STEPS).toHaveLength(44);
   });
 
   it('each entry has number, name, and prompt fields', () => {
@@ -21,7 +21,7 @@ describe('STEPS', () => {
 
   it('numbers are sequential from 1 to 43', () => {
     const numbers = STEPS.map((s) => s.number);
-    const expected = Array.from({ length: 43 }, (_, i) => i + 1);
+    const expected = Array.from({ length: 44 }, (_, i) => i + 1);
     expect(numbers).toEqual(expected);
   });
 
@@ -29,6 +29,28 @@ describe('STEPS', () => {
     for (const step of STEPS) {
       expect(step.prompt.trim().length).toBeGreaterThan(0);
     }
+  });
+
+  it('each entry has a mode field with valid value', () => {
+    for (const step of STEPS) {
+      expect(step).toHaveProperty('mode');
+      expect(['write', 'read', 'read-locked']).toContain(step.mode);
+    }
+  });
+
+  it('has exactly 5 read-locked steps', () => {
+    const locked = STEPS.filter(s => s.mode === 'read-locked');
+    expect(locked.map(s => s.number)).toEqual([4, 41, 42, 43, 44]);
+  });
+
+  it('has exactly 5 read steps', () => {
+    const readSteps = STEPS.filter(s => s.mode === 'read');
+    expect(readSteps.map(s => s.number)).toEqual([6, 17, 18, 19, 32]);
+  });
+
+  it('remaining 34 steps are write mode', () => {
+    const writeSteps = STEPS.filter(s => s.mode === 'write');
+    expect(writeSteps).toHaveLength(34);
   });
 });
 
@@ -38,7 +60,7 @@ describe('manifest.json', () => {
       fileURLToPath(new URL('../src/prompts/manifest.json', import.meta.url)), 'utf8'
     ));
     expect(manifest.version).toBe(1);
-    expect(manifest.steps).toHaveLength(43);
+    expect(manifest.steps).toHaveLength(44);
   });
 
   it('every manifest ID has a corresponding .md file in steps/', () => {
