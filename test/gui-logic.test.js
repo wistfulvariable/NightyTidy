@@ -547,3 +547,48 @@ describe('getInitPhaseIndex', () => {
     expect(NtLogic.getInitPhaseIndex(undefined)).toBe(-1);
   });
 });
+
+// ── buildStepModes ────────────────────────────────────────────────
+
+describe('buildStepModes', () => {
+  it('returns mode map from steps and checked numbers', () => {
+    const steps = [
+      { number: 1, name: 'A', mode: 'write' },
+      { number: 2, name: 'B', mode: 'read' },
+      { number: 3, name: 'C', mode: 'read-locked' },
+    ];
+    const result = NtLogic.buildStepModes(steps, [1, 2, 3], {});
+    expect(result).toEqual({ 1: 'write', 2: 'read', 3: 'read' });
+  });
+
+  it('applies overrides for non-locked steps', () => {
+    const steps = [
+      { number: 1, name: 'A', mode: 'write' },
+      { number: 2, name: 'B', mode: 'read' },
+    ];
+    const result = NtLogic.buildStepModes(steps, [1, 2], { 1: 'read', 2: 'write' });
+    expect(result).toEqual({ 1: 'read', 2: 'write' });
+  });
+
+  it('respects read-locked — cannot override to write', () => {
+    const steps = [{ number: 3, name: 'C', mode: 'read-locked' }];
+    const result = NtLogic.buildStepModes(steps, [3], { 3: 'write' });
+    expect(result[3]).toBe('read');
+  });
+
+  it('only includes checked steps in output', () => {
+    const steps = [
+      { number: 1, name: 'A', mode: 'write' },
+      { number: 2, name: 'B', mode: 'read' },
+    ];
+    const result = NtLogic.buildStepModes(steps, [1], {});
+    expect(result).toEqual({ 1: 'write' });
+    expect(result[2]).toBeUndefined();
+  });
+
+  it('defaults missing mode to write', () => {
+    const steps = [{ number: 1, name: 'A' }];
+    const result = NtLogic.buildStepModes(steps, [1], {});
+    expect(result).toEqual({ 1: 'write' });
+  });
+});

@@ -707,6 +707,60 @@ describe('syncPrompts', () => {
     expect(result.summary.newStepsHash).toMatch(/^[a-f0-9]{64}$/);
   });
 
+  it('preserves mode field from existing manifest entries', async () => {
+    const manifestWithModes = {
+      ...fakeManifest,
+      steps: fakeManifest.steps.map((s, i) =>
+        i === 0 ? { ...s, mode: 'read-locked' }
+        : i === 1 ? { ...s, mode: 'read' }
+        : { ...s, mode: 'write' }
+      ),
+    };
+    setupMocks({ manifestJson: JSON.stringify(manifestWithModes) });
+    const result = await syncPrompts({ dryRun: false });
+    expect(result.success).toBe(true);
+
+    const manifestWrite = writeFileSync.mock.calls.find(
+      c => c[0].replace(/\\/g, '/').includes('manifest.json')
+    );
+    expect(manifestWrite).toBeDefined();
+    const written = JSON.parse(manifestWrite[1]);
+    const docStep = written.steps.find(s => s.name === 'Documentation');
+    expect(docStep.mode).toBe('read-locked');
+    const testCovStep = written.steps.find(s => s.name === 'Test Coverage');
+    expect(testCovStep.mode).toBe('read');
+    const hardenStep = written.steps.find(s => s.name === 'Test Hardening');
+    expect(hardenStep.mode).toBe('write');
+  });
+
+  it('defaults new prompts to write mode', async () => {
+    // Use a manifest that lacks some sections from the fixture
+    const smallManifest = {
+      version: 1,
+      sourceUrl: 'https://example.com/doc',
+      steps: [
+        { id: '01-documentation', name: 'Documentation', mode: 'read' },
+      ],
+    };
+    setupMocks({ manifestJson: JSON.stringify(smallManifest) });
+    const result = await syncPrompts({ dryRun: false });
+    expect(result.success).toBe(true);
+
+    const manifestWrite = writeFileSync.mock.calls.find(
+      c => c[0].replace(/\\/g, '/').includes('manifest.json')
+    );
+    expect(manifestWrite).toBeDefined();
+    const written = JSON.parse(manifestWrite[1]);
+    // Existing step preserves mode
+    const docStep = written.steps.find(s => s.name === 'Documentation');
+    expect(docStep.mode).toBe('read');
+    // New steps default to write
+    const newSteps = written.steps.filter(s => s.name !== 'Documentation');
+    for (const step of newSteps) {
+      expect(step.mode).toBe('write');
+    }
+  });
+
   it('deletes removed prompt files', async () => {
     // Fixture has: Documentation, Test Coverage, Test Hardening, Security Sweep, Bug Hunt
     // Manifest has same 5. If we add an extra step to manifest that's NOT in fixture...

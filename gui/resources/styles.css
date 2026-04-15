@@ -267,6 +267,58 @@ body {
 }
 .step-check-item .step-label { flex: 1; }
 
+.mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 0 4px;
+}
+.mode-label {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+.mode-btn {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 3px 10px;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.mode-btn:hover { border-color: var(--cyan); }
+.mode-btn.active {
+  background: var(--cyan);
+  color: var(--bg);
+  border-color: var(--cyan);
+}
+.mode-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 3px;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.mode-badge.mode-write {
+  background: rgba(80, 200, 120, 0.15);
+  color: #50c878;
+  border: 1px solid rgba(80, 200, 120, 0.3);
+}
+.mode-badge.mode-read {
+  background: rgba(100, 149, 237, 0.15);
+  color: #6495ed;
+  border: 1px solid rgba(100, 149, 237, 0.3);
+}
+.mode-badge.mode-locked {
+  opacity: 0.6;
+  cursor: default;
+}
+
 .options-bar {
   display: flex;
   align-items: center;

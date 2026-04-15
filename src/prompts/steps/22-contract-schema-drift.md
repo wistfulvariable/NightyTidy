@@ -247,7 +247,7 @@ Apply fixes in this order to minimize cascading issues:
 
 After completing all fixes:
 
-Create audit-reports/ in project root if needed. Save as audit-reports/21_CONTRACT_SCHEMA_DRIFT_REPORT_[run-number]_[date]_[time in user's local time].md, incrementing run number based on existing reports.
+Create audit-reports/ in project root if needed. Save as audit-reports/22_CONTRACT_SCHEMA_DRIFT_REPORT_[run-number]_[date]_[time in user's local time].md, incrementing run number based on existing reports.
 
 | File | Change | Phase Source | Source of Truth | Lines Changed |     |------|--------|-------------|-----------------|---------------|     | src/models/User.ts | Added middleName nullable field | Phase 1, Row 3 | DB migration #42 | 1 |
 

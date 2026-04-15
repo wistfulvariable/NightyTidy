@@ -33,6 +33,10 @@ vi.mock('@inquirer/checkbox', () => ({
   default: vi.fn(),
 }));
 
+vi.mock('@inquirer/select', () => ({
+  default: vi.fn().mockResolvedValue('default'),
+}));
+
 vi.mock('ora', () => ({
   default: vi.fn(() => ({
     start: vi.fn().mockReturnThis(),
@@ -52,6 +56,7 @@ vi.mock('chalk', () => {
   passthrough.green = passthrough;
   passthrough.yellow = passthrough;
   passthrough.red = passthrough;
+  passthrough.blue = passthrough;
   return { default: passthrough };
 });
 
@@ -86,9 +91,9 @@ vi.mock('../src/claude.js', () => ({
 
 vi.mock('../src/prompts/loader.js', () => ({
   STEPS: [
-    { number: 1, name: 'Lint', prompt: 'lint the code' },
-    { number: 2, name: 'Format', prompt: 'format the code' },
-    { number: 3, name: 'Test', prompt: 'test the code' },
+    { number: 1, name: 'Lint', prompt: 'lint the code', mode: 'write' },
+    { number: 2, name: 'Format', prompt: 'format the code', mode: 'read' },
+    { number: 3, name: 'Test', prompt: 'test the code', mode: 'read-locked' },
   ],
   REPORT_PROMPT: 'mock report prompt template',
   CONSOLIDATION_PROMPT: 'consolidate actions',
@@ -107,6 +112,8 @@ vi.mock('../src/executor.js', () => ({
   executeSteps: vi.fn(),
   copyPromptsToProject: vi.fn(),
   SAFETY_PREAMBLE: '',
+  READ_PREAMBLE: 'MODE OVERRIDE',
+  WRITE_PREAMBLE: 'MODE: IMPLEMENTATION',
 }));
 
 vi.mock('../src/notifications.js', () => ({
@@ -287,7 +294,7 @@ describe('cli.js --resume functionality', () => {
     runPreChecks.mockResolvedValue(undefined);
 
     // Default checkbox mock for normal-flow tests (rate-limit tests)
-    checkbox.mockResolvedValue([{ number: 1, name: 'Lint', prompt: 'lint the code' }]);
+    checkbox.mockResolvedValue([{ number: 1, name: 'Lint', prompt: 'lint the code', mode: 'write' }]);
     executeSteps.mockResolvedValue(makeExecutionResults({ completedCount: 1, failedCount: 0 }));
 
     // Default git mock returns branches including run branch

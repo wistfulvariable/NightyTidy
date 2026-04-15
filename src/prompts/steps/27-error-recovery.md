@@ -84,7 +84,7 @@ If the app uses message queues or background jobs:
 
 ## Output
 
-Create `audit-reports/` in project root if needed. Save as `audit-reports/26_ERROR_RECOVERY_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
+Create `audit-reports/` in project root if needed. Save as `audit-reports/27_ERROR_RECOVERY_REPORT_[run-number]_[date]_[time in user's local time].md`, incrementing run number based on existing reports.
 
 ### Report Structure
 

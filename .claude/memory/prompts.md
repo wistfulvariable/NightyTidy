@@ -6,9 +6,9 @@ Assumes CLAUDE.md loaded. Prompt content lives in individual markdown files.
 
 ```
 src/prompts/
-  manifest.json       # Ordered list: [{ id, name }] — controls step order + display names
+  manifest.json       # Ordered list: [{ id, name, mode }] — controls step order + display names + run mode
   loader.js           # Reads manifest + markdown files, exports STEPS, DOC_UPDATE_PROMPT, CHANGELOG_PROMPT
-  steps/              # 43 individual markdown prompt files (01-documentation.md .. 43-strategic-opportunities.md)
+  steps/              # 44 individual markdown prompt files (01-documentation.md .. 44-strategic-opportunities.md)
   specials/           # Non-step prompts (doc-update.md, changelog.md)
 ```
 
@@ -16,7 +16,7 @@ src/prompts/
 
 | Export | Type | Description |
 |--------|------|-------------|
-| `STEPS` | `Array<{ number, name, prompt }>` | 43 improvement prompts, numbered 1-43 |
+| `STEPS` | `Array<{ number, name, prompt, mode }>` | 44 improvement prompts, numbered 1-44. `mode` is `write`, `read`, or `read-locked` |
 | `DOC_UPDATE_PROMPT` | `string` | One-liner asking Claude to update docs and commit |
 | `CHANGELOG_PROMPT` | `string` | Multi-paragraph prompt for narrated changelog |
 
@@ -24,9 +24,10 @@ src/prompts/
 
 ```js
 {
-  number: 1,                    // Sequential 1-43 (from array position)
+  number: 1,                    // Sequential 1-44 (from array position)
   name: "Documentation",       // From manifest.json `name` field
-  prompt: `...`                 // Content of the corresponding .md file
+  prompt: `...`,                // Content of the corresponding .md file
+  mode: "write"                // "write" | "read" | "read-locked" (from manifest.json)
 }
 ```
 
@@ -54,12 +55,13 @@ Google Doc tab headings sometimes include number prefixes (e.g. "07. Test Effici
 
 ## Validation Tests (steps.test.js)
 
-- Exactly 43 entries
-- Each has `number` (number), `name` (string), `prompt` (string)
-- Numbers sequential 1-43
+- Exactly 44 entries
+- Each has `number` (number), `name` (string), `prompt` (string), `mode` (string)
+- Numbers sequential 1-44
 - No empty prompts
+- 5 read-locked steps (#4, #41-44), 5 read steps (#6, #17-19, #32), 34 write steps
 - `DOC_UPDATE_PROMPT` and `CHANGELOG_PROMPT` are non-empty strings
-- Manifest has version 1 and 43 entries
+- Manifest has version 1 and 44 entries
 - Every manifest ID has a corresponding `.md` file in `steps/`
 
 ## Loader Internals

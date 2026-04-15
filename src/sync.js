@@ -337,12 +337,12 @@ function buildNewManifest(promptSections, matchResult, oldManifest) {
       // Existing entry — strip any number prefix, renumber ID
       const cleanName = stripNumberPrefix(m.entry.name);
       const newId = headingToId(stepNumber, cleanName);
-      newSteps.push({ id: newId, name: cleanName, _oldId: m.entry.id });
+      newSteps.push({ id: newId, name: cleanName, _oldId: m.entry.id, mode: m.entry.mode || 'write' });
     } else if (a) {
       // New entry — strip any number prefix from doc heading
       const cleanName = stripNumberPrefix(a.heading);
       const newId = headingToId(stepNumber, cleanName);
-      newSteps.push({ id: newId, name: cleanName, _oldId: null });
+      newSteps.push({ id: newId, name: cleanName, _oldId: null, mode: 'write' });
     }
     stepNumber++;
   }
@@ -350,7 +350,7 @@ function buildNewManifest(promptSections, matchResult, oldManifest) {
   return {
     version: oldManifest.version || 1,
     sourceUrl: oldManifest.sourceUrl,
-    steps: newSteps.map(({ id, name }) => ({ id, name })),
+    steps: newSteps.map(({ id, name, mode }) => ({ id, name, mode })),
     _internal: newSteps, // includes _oldId for file rename tracking
   };
 }

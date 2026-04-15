@@ -284,6 +284,29 @@ function getInitPhaseIndex(phaseKey) {
   return INIT_PHASES.findIndex(p => p.key === phaseKey);
 }
 
+/**
+ * Build a step-number → mode map for checked steps, respecting locks and overrides.
+ * @param {Array<{number: number, mode?: string}>} steps - All available steps
+ * @param {number[]} checkedSteps - Step numbers the user checked
+ * @param {Object<number, string>} overrides - Per-step mode overrides from the UI
+ * @returns {Object<number, string>} Map of step number → 'write' | 'read'
+ */
+function buildStepModes(steps, checkedSteps, overrides) {
+  const modes = {};
+  for (const num of checkedSteps) {
+    const step = steps.find(s => s.number === num);
+    if (!step) continue;
+    if (step.mode === 'read-locked') {
+      modes[num] = 'read';
+    } else if (overrides && overrides[num]) {
+      modes[num] = overrides[num];
+    } else {
+      modes[num] = step.mode || 'write';
+    }
+  }
+  return modes;
+}
+
 // Export for browser (app.js) and for Node.js tests
 const NtLogic = {
   buildCommand,
@@ -302,6 +325,7 @@ const NtLogic = {
   preprocessClaudeOutput,
   INIT_PHASES,
   getInitPhaseIndex,
+  buildStepModes,
 };
 
 // Browser: attach to window. Node.js: attach to globalThis.
