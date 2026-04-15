@@ -1024,7 +1024,7 @@ describe('contract: orchestrator.js — never throws, returns result objects', (
     expect(mod.readState).toBeTypeOf('function');
     expect(mod.writeState).toBeTypeOf('function');
     expect(mod.deleteState).toBeTypeOf('function');
-    expect(mod.STATE_VERSION).toBe(1);
+    expect(mod.STATE_VERSION).toBe(2);
   });
 });
 

@@ -94,9 +94,9 @@ vi.mock('../src/lock.js', () => ({
 
 vi.mock('../src/prompts/loader.js', () => ({
   STEPS: [
-    { number: 1, name: 'Documentation', prompt: 'Fix docs' },
-    { number: 2, name: 'Test Coverage', prompt: 'Add tests' },
-    { number: 3, name: 'Security Audit', prompt: 'Check security' },
+    { number: 1, name: 'Documentation', prompt: 'Fix docs', mode: 'write' },
+    { number: 2, name: 'Test Coverage', prompt: 'Add tests', mode: 'write' },
+    { number: 3, name: 'Security Audit', prompt: 'Check security', mode: 'read' },
   ],
   DOC_UPDATE_PROMPT: 'Update docs',
   REPORT_PROMPT: 'mock report prompt template',

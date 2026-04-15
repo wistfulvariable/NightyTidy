@@ -147,7 +147,7 @@ vi.mock('../src/orchestrator.js', () => ({
   readState: vi.fn(),
   writeState: vi.fn(),
   deleteState: vi.fn(),
-  STATE_VERSION: 1,
+  STATE_VERSION: 2,
 }));
 
 // ---------------------------------------------------------------------------
@@ -177,7 +177,7 @@ const RUN_BRANCH = 'nightytidy/run-2026-03-01-0100';
  */
 function makeValidState({ selectedSteps = [1, 2, 3], completedSteps = [], failedSteps = [] } = {}) {
   return {
-    version: 1,
+    version: 2,
     originalBranch: 'main',
     runBranch: RUN_BRANCH,
     tagName: 'nightytidy-before-2026-03-01-0100',
@@ -591,7 +591,7 @@ describe('cli.js --resume functionality', () => {
       // writeState should have been called with run state for later resume
       expect(writeState).toHaveBeenCalledTimes(1);
       const [dir, stateArg] = writeState.mock.calls[0];
-      expect(stateArg.version).toBe(1);
+      expect(stateArg.version).toBe(2);
       expect(stateArg.runBranch).toBe('nightytidy/run-2026-03-01-0100');
       expect(stateArg.originalBranch).toBe('main');
       expect(stateArg.completedSteps).toHaveLength(1);
@@ -738,7 +738,7 @@ describe('cli.js --resume functionality', () => {
     it('--resume with incomplete state (missing branch data) exits with error', async () => {
       mockOpts = { resume: true };
       readState.mockReturnValue({
-        version: 1,
+        version: 2,
         originalBranch: null,
         runBranch: null,
         selectedSteps: [1],
