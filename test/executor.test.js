@@ -30,15 +30,15 @@ vi.mock('../src/prompts/loader.js', () => ({
   reloadSteps: vi.fn(),
 }));
 
-import { executeSteps, executeSingleStep, FAST_COMPLETION_THRESHOLD_MS, copyPromptsToProject } from '../src/executor.js';
+import { executeSteps, executeSingleStep, FAST_COMPLETION_THRESHOLD_MS, copyPromptsToProject, READ_PREAMBLE, WRITE_PREAMBLE } from '../src/executor.js';
 import { runPrompt, sleep } from '../src/claude.js';
 import { getHeadHash, hasNewCommit, fallbackCommit } from '../src/git.js';
 import { notify } from '../src/notifications.js';
 import { warn, info } from '../src/logger.js';
 import * as loader from '../src/prompts/loader.js';
 
-function makeStep(number, name = `Step ${number}`) {
-  return { number, name, prompt: `prompt for ${name}` };
+function makeStep(number, name = `Step ${number}`, mode = 'write') {
+  return { number, name, prompt: `prompt for ${name}`, mode };
 }
 
 beforeEach(() => {
@@ -1020,6 +1020,89 @@ describe('executeSteps rate-limit handling', () => {
     expect(result.results).toHaveLength(2);
     expect(result.results[0].output).toBe('step1 done');
     expect(result.results[1].output).toBe('step2 done');
+  });
+});
+
+describe('mode preambles', () => {
+  it('injects WRITE_PREAMBLE for write mode steps', async () => {
+    runPrompt.mockResolvedValue({ success: true, output: 'done', attempts: 1, cost: null });
+    await executeSingleStep(makeStep(1, 'Test', 'write'), '/tmp/proj');
+    const prompt = runPrompt.mock.calls[0][0];
+    expect(prompt).toContain('MODE: IMPLEMENTATION');
+    expect(prompt).not.toContain('MODE OVERRIDE');
+  });
+
+  it('injects READ_PREAMBLE for read mode steps', async () => {
+    runPrompt.mockResolvedValue({ success: true, output: 'analysis', attempts: 1, cost: null });
+    hasNewCommit.mockResolvedValue(false);
+    await executeSingleStep(makeStep(1, 'Test', 'read'), '/tmp/proj', { mode: 'read' });
+    const prompt = runPrompt.mock.calls[0][0];
+    expect(prompt).toContain('MODE OVERRIDE');
+    expect(prompt).toContain('READ-ONLY');
+  });
+
+  it('skips doc-update phase for read mode', async () => {
+    runPrompt.mockResolvedValue({ success: true, output: 'analysis', attempts: 1, cost: null });
+    hasNewCommit.mockResolvedValue(false);
+    await executeSingleStep(makeStep(1, 'Test', 'read'), '/tmp/proj', { mode: 'read' });
+    expect(runPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('runs doc-update for write mode', async () => {
+    runPrompt.mockResolvedValue({ success: true, output: 'done', attempts: 1, cost: null });
+    await executeSingleStep(makeStep(1, 'Test', 'write'), '/tmp/proj');
+    expect(runPrompt).toHaveBeenCalledTimes(2);
+  });
+
+  it('skips fallback commit for read mode', async () => {
+    runPrompt.mockResolvedValue({ success: true, output: 'analysis', attempts: 1, cost: null });
+    hasNewCommit.mockResolvedValue(false);
+    await executeSingleStep(makeStep(1, 'Test', 'read'), '/tmp/proj', { mode: 'read' });
+    expect(fallbackCommit).not.toHaveBeenCalled();
+  });
+
+  it('skips fast-completion detection for read mode', async () => {
+    runPrompt.mockResolvedValue({ success: true, output: 'fast', attempts: 1, cost: null, duration: 30_000 });
+    hasNewCommit.mockResolvedValue(false);
+    await executeSingleStep(makeStep(1, 'Test', 'read'), '/tmp/proj', { mode: 'read' });
+    expect(runPrompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('detects mode violation when read step produces commits', async () => {
+    runPrompt.mockResolvedValue({ success: true, output: 'oops', attempts: 1, cost: null });
+    hasNewCommit.mockResolvedValue(true);
+    const result = await executeSingleStep(makeStep(1, 'Test', 'read'), '/tmp/proj', { mode: 'read' });
+    expect(result.status).toBe('completed');
+    expect(result.modeViolation).toBe(true);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('read-mode step produced commits'));
+  });
+
+  it('defaults to write mode when mode not specified', async () => {
+    runPrompt.mockResolvedValue({ success: true, output: 'done', attempts: 1, cost: null });
+    await executeSingleStep({ number: 1, name: 'Test', prompt: 'do stuff' }, '/tmp/proj');
+    const prompt = runPrompt.mock.calls[0][0];
+    expect(prompt).toContain('MODE: IMPLEMENTATION');
+  });
+
+  it('mode option overrides step.mode', async () => {
+    runPrompt.mockResolvedValue({ success: true, output: 'analysis', attempts: 1, cost: null });
+    hasNewCommit.mockResolvedValue(false);
+    await executeSingleStep(makeStep(1, 'Test', 'write'), '/tmp/proj', { mode: 'read' });
+    const prompt = runPrompt.mock.calls[0][0];
+    expect(prompt).toContain('MODE OVERRIDE');
+  });
+});
+
+describe('executeSteps with stepModes', () => {
+  it('passes mode from stepModes map to each step', async () => {
+    runPrompt.mockResolvedValue({ success: true, output: 'done', attempts: 1, cost: null });
+    hasNewCommit.mockResolvedValue(false);
+    const steps = [makeStep(1, 'A', 'write'), makeStep(2, 'B', 'write')];
+    await executeSteps(steps, '/tmp/proj', { stepModes: { 1: 'read', 2: 'write' } });
+    // Step 1 should be read mode (1 call — no doc update)
+    // Step 2 should be write mode (2 calls — with doc update)
+    const call1 = runPrompt.mock.calls[0][0];
+    expect(call1).toContain('MODE OVERRIDE');
   });
 });
 

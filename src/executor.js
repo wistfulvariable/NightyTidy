@@ -66,7 +66,7 @@ import { info, warn, error as logError } from './logger.js';
 // SHA-256 of all STEPS[].prompt content — update when prompts change.
 // Detects unexpected modification of prompt data before passing to
 // Claude Code with --dangerously-skip-permissions.
-const STEPS_HASH = '7fa8f33ce090005ae7fc055c7c8f6285d0a4950177c25f6398cb0e3ed1e5c512';
+const STEPS_HASH = 'c5d88e275f73595c91a4078db9526fe6aabfa21f9e442770dd7faac9fff5ed82';
 
 // Hard cap on total step duration (all retries + doc-update combined).
 // Without this, retries × phases can exceed the user's expected timeout.
@@ -127,6 +127,22 @@ export const SAFETY_PREAMBLE =
   '- Do NOT create, switch, or merge git branches. The orchestrator manages all branching.\n' +
   '- Do NOT run destructive git commands (reset, clean, checkout, rm).\n' +
   '- Commit your changes with a descriptive message when done.\n' +
+  '---\n\n';
+
+export const READ_PREAMBLE =
+  'MODE OVERRIDE — READ-ONLY (this takes absolute precedence over ANY ' +
+  'conflicting instructions in the prompt below):\n' +
+  '- This is a READ-ONLY analysis. Do NOT modify, create, or delete any files.\n' +
+  '- Do NOT create git branches or make git commits.\n' +
+  '- Analyze the codebase and report findings only.\n' +
+  '- If the prompt below says to "fix", "implement", "create branch", or ' +
+  '"commit" — IGNORE those instructions. Report what you WOULD do instead.\n' +
+  '---\n\n';
+
+export const WRITE_PREAMBLE =
+  'MODE: IMPLEMENTATION\n' +
+  '- Analyze the codebase, then implement improvements directly.\n' +
+  '- Commit your changes with descriptive messages when done.\n' +
   '---\n\n';
 
 /**
@@ -193,9 +209,12 @@ function makeStepResult(step, status, result, duration, extra = {}) {
  * @param {(chunk: string) => void} [options.onOutput] - Streaming callback
  * @returns {Promise<StepResult>} Step result (never throws)
  */
-export async function executeSingleStep(step, projectDir, { signal, timeout, onOutput, continueSession, promptOverride } = {}) {
+export async function executeSingleStep(step, projectDir, { signal, timeout, onOutput, continueSession, promptOverride, mode } = {}) {
   const stepLabel = `Step ${step.number}: ${step.name}`;
   info(`${stepLabel} — starting`);
+
+  const effectiveMode = mode || step.mode || 'write';
+  const modePreamble = effectiveMode === 'read' ? READ_PREAMBLE : WRITE_PREAMBLE;
 
   // Step-level timeout: hard cap on total step duration (improvement + retries
   // + fast-retry + doc-update combined). Without this, a step with 4 retry
@@ -219,7 +238,7 @@ export async function executeSingleStep(step, projectDir, { signal, timeout, onO
     const preStepHash = await getHeadHash();
 
     // Run improvement prompt
-    const improvementPrompt = promptOverride || (SAFETY_PREAMBLE + step.prompt);
+    const improvementPrompt = promptOverride || (SAFETY_PREAMBLE + modePreamble + step.prompt);
     const result = await runPrompt(improvementPrompt, projectDir, {
       label: `Step ${step.number} — ${step.name}${continueSession ? ' (prod)' : ''}`,
       signal: effectiveSignal,
@@ -245,7 +264,7 @@ export async function executeSingleStep(step, projectDir, { signal, timeout, onO
     let improvementResult = result;
     let fastRetried = false;
 
-    if (!continueSession && result.duration < FAST_COMPLETION_THRESHOLD_MS) {
+    if (effectiveMode !== 'read' && !continueSession && result.duration < FAST_COMPLETION_THRESHOLD_MS) {
       warn(
         `${stepLabel}: completed in ${Math.round(result.duration / 1000)}s — ` +
         `suspiciously fast (threshold: ${FAST_COMPLETION_THRESHOLD_MS / 1000}s). Retrying with context.`
@@ -253,7 +272,7 @@ export async function executeSingleStep(step, projectDir, { signal, timeout, onO
       fastRetried = true;
 
       const retryResult = await runPrompt(
-        SAFETY_PREAMBLE + FAST_RETRY_PREFIX + step.prompt,
+        SAFETY_PREAMBLE + modePreamble + FAST_RETRY_PREFIX + step.prompt,
         projectDir,
         { label: `Step ${step.number} — ${step.name} (fast-retry)`, signal: effectiveSignal, timeout, onOutput },
       );
@@ -270,51 +289,66 @@ export async function executeSingleStep(step, projectDir, { signal, timeout, onO
       }
     }
 
-    // Run doc update in the same Claude session that made the changes
-    const docResult = await runPrompt(SAFETY_PREAMBLE + DOC_UPDATE_PROMPT, projectDir, {
-      label: `Step ${step.number} — doc update`,
-      signal: effectiveSignal,
-      timeout,
-      continueSession: true,
-      onOutput,
-    });
+    // Run doc update in the same Claude session that made the changes (skip for read-mode)
+    let docResult = { success: true, cost: null };
+    if (effectiveMode !== 'read') {
+      docResult = await runPrompt(SAFETY_PREAMBLE + WRITE_PREAMBLE + DOC_UPDATE_PROMPT, projectDir, {
+        label: `Step ${step.number} — doc update`,
+        signal: effectiveSignal,
+        timeout,
+        continueSession: true,
+        onOutput,
+      });
 
-    if (!docResult.success) {
-      warn(`${stepLabel}: Doc update failed after retries — improvement changes preserved but docs may be stale`);
+      if (!docResult.success) {
+        warn(`${stepLabel}: Doc update failed after retries — improvement changes preserved but docs may be stale`);
+      }
     }
 
     // Combine costs from improvement + doc-update calls
     const combinedCost = sumCosts(improvementResult.cost, docResult.cost);
 
-    // Commit verification
-    const committed = await hasNewCommit(preStepHash);
-    if (committed) {
-      info(`${stepLabel}: committed by Claude Code \u2713`);
-    } else {
-      try {
-        await fallbackCommit(step.number, step.name);
-      } catch (err) {
-        warn(`${stepLabel}: automatic commit failed (${err.message}) — changes remain staged`);
+    // Commit verification + commit guard for read-mode steps
+    let modeViolation = false;
+    if (effectiveMode !== 'read') {
+      const committed = await hasNewCommit(preStepHash);
+      if (committed) {
+        info(`${stepLabel}: committed by Claude Code \u2713`);
+      } else {
+        try {
+          await fallbackCommit(step.number, step.name);
+        } catch (err) {
+          warn(`${stepLabel}: automatic commit failed (${err.message}) — changes remain staged`);
+        }
       }
-    }
 
-    // Sweep: always stage+commit any remaining untracked/unstaged files.
-    // Claude often commits its code changes but forgets to git-add report
-    // or audit files it created. Without this sweep, those files stay
-    // untracked and are lost if the user stops the run.
-    if (committed) {
-      try {
-        const swept = await fallbackCommit(step.number, step.name);
-        if (swept) info(`${stepLabel}: swept uncommitted files \u2713`);
-      } catch (err) {
-        warn(`${stepLabel}: sweep commit failed (${err.message}) — some files may remain unstaged`);
+      // Sweep: always stage+commit any remaining untracked/unstaged files.
+      // Claude often commits its code changes but forgets to git-add report
+      // or audit files it created. Without this sweep, those files stay
+      // untracked and are lost if the user stops the run.
+      if (committed) {
+        try {
+          const swept = await fallbackCommit(step.number, step.name);
+          if (swept) info(`${stepLabel}: swept uncommitted files \u2713`);
+        } catch (err) {
+          warn(`${stepLabel}: sweep commit failed (${err.message}) — some files may remain unstaged`);
+        }
+      }
+    } else {
+      const hadCommit = await hasNewCommit(preStepHash);
+      if (hadCommit) {
+        warn(`${stepLabel}: read-mode step produced commits — mode override may not have been respected`);
+        modeViolation = true;
       }
     }
 
     const duration = Date.now() - stepStart;
     info(`${stepLabel} — completed (${Math.round(duration / 1000)}s)`);
 
-    const extra = fastRetried ? { suspiciousFast: true } : {};
+    const extra = {
+      ...(fastRetried ? { suspiciousFast: true } : {}),
+      ...(modeViolation ? { modeViolation: true } : {}),
+    };
     return makeStepResult(step, 'completed', { ...improvementResult, cost: combinedCost }, duration, extra);
   } finally {
     clearTimeout(stepTimer);
@@ -406,7 +440,7 @@ async function waitForRateLimit(retryAfterMs, signal, projectDir) {
  * @param {ExecuteStepsOptions} [options] - Execution options
  * @returns {Promise<ExecutionResults>} Results object (never throws)
  */
-export async function executeSteps(selectedSteps, projectDir, { signal, timeout, onStepStart, onStepComplete, onStepFail, onOutput, onRateLimitPause, onRateLimitResume } = {}) {
+export async function executeSteps(selectedSteps, projectDir, { signal, timeout, onStepStart, onStepComplete, onStepFail, onOutput, onRateLimitPause, onRateLimitResume, stepModes } = {}) {
   verifyStepsIntegrity(STEPS);
 
   const results = [];
@@ -424,7 +458,8 @@ export async function executeSteps(selectedSteps, projectDir, { signal, timeout,
     const step = selectedSteps[i];
     onStepStart?.(step, i, totalSteps);
 
-    const stepResult = await executeSingleStep(step, projectDir, { signal, timeout, onOutput });
+    const stepMode = stepModes?.[step.number] || step.mode || 'write';
+    const stepResult = await executeSingleStep(step, projectDir, { signal, timeout, onOutput, mode: stepMode });
     results.push(stepResult);
 
     // Success path — increment and notify
