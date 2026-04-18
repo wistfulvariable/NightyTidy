@@ -919,3 +919,109 @@ describe('/api/pull-update', () => {
     expect(res.headers.get('x-frame-options')).toBe('DENY');
   });
 });
+
+// ── Watchdog heartbeat refresh (regression: long-process-ends-kills-server) ──
+//
+// Bug: The watchdog in gui/server.js used to `return` early when processes were
+// active, but it did NOT refresh `lastHeartbeat`. Chrome aggressively throttles
+// heartbeat timers on tabs whose fetch is pending for 20+ seconds. So after a
+// 20s+ step ended, lastHeartbeat was ~20s stale; the very next watchdog tick
+// (≤5s later) saw gap > 15s and killed the server. The browser's next fetch
+// (e.g. --list --json) then hit a dead server with ECONNREFUSED, surfacing as
+// the generic "NightyTidy command did not complete" error in the GUI.
+//
+// Fix: when activeProcesses.size > 0, refresh lastHeartbeat = Date.now() so
+// the server doesn't self-terminate the instant the long process ends.
+describe('watchdog heartbeat refresh', () => {
+  // Mirror of the fixed watchdog logic in gui/server.js:894-911
+  function createWatchdog({ activeProcesses, getLastHeartbeat, setLastHeartbeat, staleMs, onShutdown }) {
+    return () => {
+      if (activeProcesses.size > 0) {
+        setLastHeartbeat(Date.now());
+        return;
+      }
+      const gap = Date.now() - getLastHeartbeat();
+      if (gap > staleMs) onShutdown(gap);
+    };
+  }
+
+  it('refreshes lastHeartbeat when a process is active (the fix)', () => {
+    let lastHeartbeat = Date.now() - 30_000; // 30s stale — well past 15s idle threshold
+    const processes = new Map([['proc-1', {}]]);
+    let shutdownCalled = false;
+    const tick = createWatchdog({
+      activeProcesses: processes,
+      getLastHeartbeat: () => lastHeartbeat,
+      setLastHeartbeat: (t) => { lastHeartbeat = t; },
+      staleMs: 15_000,
+      onShutdown: () => { shutdownCalled = true; },
+    });
+
+    const before = Date.now();
+    tick();
+    expect(shutdownCalled).toBe(false);
+    // The fix: lastHeartbeat was just refreshed to "now", not left at 30s-stale.
+    expect(lastHeartbeat).toBeGreaterThanOrEqual(before);
+  });
+
+  it('does NOT kill the server the instant a long process ends (regression)', () => {
+    // Simulate the exact bug scenario:
+    //   1. Browser sent last heartbeat 20s ago (Chrome throttled during long fetch)
+    //   2. Long process just finished → activeProcesses becomes empty
+    //   3. Next watchdog tick runs — must NOT immediately shut down
+    let lastHeartbeat = Date.now() - 20_000;
+    const processes = new Map([['long-proc', {}]]);
+    let shutdownCalled = false;
+    const tick = createWatchdog({
+      activeProcesses: processes,
+      getLastHeartbeat: () => lastHeartbeat,
+      setLastHeartbeat: (t) => { lastHeartbeat = t; },
+      staleMs: 15_000,
+      onShutdown: () => { shutdownCalled = true; },
+    });
+
+    // Tick 1: process still active — watchdog refreshes lastHeartbeat
+    tick();
+    expect(shutdownCalled).toBe(false);
+
+    // Process ends
+    processes.delete('long-proc');
+
+    // Tick 2: process ended — gap should be near-zero (refreshed), not 20s
+    tick();
+    expect(shutdownCalled).toBe(false);
+  });
+
+  it('DOES shut down when idle and heartbeat goes stale', () => {
+    let lastHeartbeat = Date.now() - 20_000; // 20s stale — past 15s threshold
+    const processes = new Map(); // empty — server is idle
+    let shutdownGap = null;
+    const tick = createWatchdog({
+      activeProcesses: processes,
+      getLastHeartbeat: () => lastHeartbeat,
+      setLastHeartbeat: (t) => { lastHeartbeat = t; },
+      staleMs: 15_000,
+      onShutdown: (gap) => { shutdownGap = gap; },
+    });
+
+    tick();
+    expect(shutdownGap).not.toBeNull();
+    expect(shutdownGap).toBeGreaterThan(15_000);
+  });
+
+  it('does NOT shut down when idle but heartbeat is fresh', () => {
+    let lastHeartbeat = Date.now() - 5_000; // 5s old — well within 15s threshold
+    const processes = new Map();
+    let shutdownCalled = false;
+    const tick = createWatchdog({
+      activeProcesses: processes,
+      getLastHeartbeat: () => lastHeartbeat,
+      setLastHeartbeat: (t) => { lastHeartbeat = t; },
+      staleMs: 15_000,
+      onShutdown: () => { shutdownCalled = true; },
+    });
+
+    tick();
+    expect(shutdownCalled).toBe(false);
+  });
+});

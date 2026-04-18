@@ -892,7 +892,14 @@ function cleanup() {
     // (125 min) handles truly stuck processes. We must NEVER kill the server while
     // steps are running — that's the #1 cause of "Run Failed" for users.
     const watchdog = setInterval(() => {
-      if (activeProcesses.size > 0) return; // Never self-terminate during active work
+      if (activeProcesses.size > 0) {
+        // A process is running. Chrome may throttle/freeze heartbeat timers on
+        // tabs whose fetch is pending for 20+ seconds. Refresh the clock so we
+        // don't self-terminate the instant the process ends — the browser needs
+        // a moment to resume sending heartbeats after the long fetch resolves.
+        lastHeartbeat = Date.now();
+        return;
+      }
       const gap = Date.now() - lastHeartbeat;
       if (gap > HEARTBEAT_STALE_IDLE_MS) {
         guiLog('warn', `No heartbeat for ${Math.round(gap / 1000)}s — shutting down (server was idle)`);

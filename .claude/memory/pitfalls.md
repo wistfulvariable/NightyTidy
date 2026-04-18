@@ -132,3 +132,6 @@ When `spawn()` fails (ENOENT), Node emits both `error` and `close`. If both hand
 
 ### Hardcoded Windows Platform in app.js
 `runCli()` passes `'Windows'` to `buildCommand()`. GUI on macOS/Linux generates wrong `cd /d` command. Must detect platform via server API if cross-platform GUI is desired.
+
+### Watchdog Must Refresh lastHeartbeat During Active Work
+`gui/server.js` watchdog skips the idle-shutdown check when `activeProcesses.size > 0` — but it must ALSO refresh `lastHeartbeat = Date.now()` on those skipped ticks. Chrome throttles heartbeat timers on tabs whose fetch has been pending for 20+ seconds; without the refresh, `lastHeartbeat` goes 20s+ stale during a long step. The moment the step ends (activeProcesses empties), the next watchdog tick sees a stale gap and kills the server. The browser's next fetch hits ECONNREFUSED → GUI surfaces the generic "NightyTidy command did not complete" error. General pattern: any watchdog that gates its own check on external state MUST reset its reference clock on every skipped tick, or it fires retroactively. Tests in `test/gui-server.test.js` "watchdog heartbeat refresh" describe block.
